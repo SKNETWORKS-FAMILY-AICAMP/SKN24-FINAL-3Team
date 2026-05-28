@@ -35,22 +35,9 @@ def search_rag(
     limit: int = 5,
 ):
     client = get_client()
-    try:
-        embedder = get_embedder()
-    except OSError as exc:
-        if getattr(exc, "errno", None) == 28:
-            print(f"[WARN] RAG 임베딩 모델 로드 실패: 디스크 공간 부족으로 검색을 생략합니다. {exc}")
-            return []
-        raise
-    except Exception as exc:
-        print(f"[WARN] RAG 임베딩 모델 로드 실패로 검색을 생략합니다: {exc}")
-        return []
+    embedder = get_embedder()
 
-    try:
-        query_vector = embedder.encode(query, normalize_embeddings=True).tolist()
-    except Exception as exc:
-        print(f"[WARN] RAG 임베딩 생성 실패로 검색을 생략합니다: {exc}")
-        return []
+    query_vector = embedder.encode(query, normalize_embeddings=True).tolist()
 
     conditions = [
         FieldCondition(key="is_active", match=MatchValue(value=True))
