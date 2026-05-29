@@ -18,6 +18,7 @@ class LLMService:
                 return call_llm(
                     system_prompt,
                     user_prompt,
+                    max_tokens=int(os.getenv("SRS_MAX_TOKENS", "2048")),
                     timeout=int(os.getenv("SRS_LLM_TIMEOUT", "60")),
                 )
             except RuntimeError as e:
