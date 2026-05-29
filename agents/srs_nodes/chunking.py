@@ -3,10 +3,10 @@ import os
 from typing import Any
 
 
-MAX_ITEMS_PER_CHUNK = int(os.getenv("SRS_CHUNK_MAX_ITEMS", "5"))
-MAX_CHARS_PER_CHUNK = int(os.getenv("SRS_CHUNK_MAX_CHARS", "6000"))
-MAX_FIELD_CHARS = int(os.getenv("SRS_FIELD_MAX_CHARS", "1200"))
-MAX_CONTEXT_CHARS = int(os.getenv("SRS_CONTEXT_MAX_CHARS", "2000"))
+MAX_ITEMS_PER_CHUNK = int(os.getenv("SRS_CHUNK_MAX_ITEMS", "2"))
+MAX_CHARS_PER_CHUNK = int(os.getenv("SRS_CHUNK_MAX_CHARS", "2500"))
+MAX_FIELD_CHARS = int(os.getenv("SRS_FIELD_MAX_CHARS", "500"))
+MAX_CONTEXT_CHARS = int(os.getenv("SRS_CONTEXT_MAX_CHARS", "800"))
 
 _DROP_KEYS = {
     "raw_text",
