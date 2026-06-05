@@ -1,5 +1,7 @@
 # RAG 데이터 파이프라인 
 
+<img width="1055" height="360" alt="RAG용 전처리 파이프라인" src="https://github.com/user-attachments/assets/9c3121a2-0d1a-4c6a-a4b1-21b38e5f2dce" />
+
 ## 2.2.1 수집 데이터
 
 LLM 기반 요구사항 생성 및 RAG(Retrieval-Augmented Generation) 구축을 위해 정책·규정, 기술 표준, 공공 가이드라인, 실제 공공사업 RFP 문서를 수집하였다.
