@@ -1,5 +1,7 @@
+
 ## Retrieval-Augmented Generation (RAG) 아키텍처
 
+<img width="1024" height="1536" alt="LLM_RAG flow" src="https://github.com/user-attachments/assets/cbd4d0dd-4d8c-47e3-a4e6-daa3a1dff2e3" />
 
 ### 개요
 
