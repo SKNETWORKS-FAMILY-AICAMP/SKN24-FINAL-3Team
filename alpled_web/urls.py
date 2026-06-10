@@ -17,12 +17,16 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 
-from users.views import user_list
+from common.views import set_current_project_view
+from docs.views import document_list
 from projects.views import project_list
+from users.views import user_list
 
 urlpatterns = [
     path("", user_list, name="home"),
     path("users/", user_list, name="user_list"),
     path("projects/", project_list, name="project_list"),
+    path("docs/", document_list, name="doc_list"),
+    path("projects/current/", set_current_project_view, name="set_current_project"),
     path('admin/', admin.site.urls),
 ]

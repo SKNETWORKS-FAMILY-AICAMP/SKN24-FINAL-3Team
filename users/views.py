@@ -1,9 +1,16 @@
-from django.db.models import Q
-from django.shortcuts import render
+from django.contrib import messages
+from django.db import transaction
+from django.db.models import Max, Q
+from django.shortcuts import redirect, render
 
 from common.signals import ensure_initial_reference_data
+from common.models import YesNoChoices
 from projects.models import ProjectUserRole
+
 from .models import User
+
+
+TEMP_PASSWORD = "abc1234"
 
 
 def _demo_users():
@@ -11,8 +18,8 @@ def _demo_users():
         {
             "sn": index,
             "user_id": f"USER{index:03d}",
-            "name": f"사용자 {index:03d}",
-            "department": "개발부서" if index != 3 else "부서001",
+            "name": f"사용자{index:03d}",
+            "department": "개발부서" if index != 3 else "부서01",
             "position": "사원" if index % 2 else "대리",
             "use_yn": "N" if index == 3 else "Y",
         }
@@ -20,8 +27,76 @@ def _demo_users():
     ]
 
 
+def _next_sn(model):
+    current_max = model.objects.aggregate(max_sn=Max("sn"))["max_sn"] or 0
+    return current_max + 1
+
+
+def _get_actor():
+    return User.objects.filter(user_id="admin").first() or User.objects.order_by("sn").first()
+
+
+def _build_create_form_data(request=None):
+    source = request.POST if request is not None else {}
+    return {
+        "user_id": source.get("user_id", "").strip(),
+        "name": source.get("name", "").strip(),
+        "department": source.get("department", "").strip(),
+        "position": source.get("position", "").strip(),
+        "use_yn": source.get("use_yn", YesNoChoices.YES),
+    }
+
+
+@transaction.atomic
+def _create_user(request):
+    form_data = _build_create_form_data(request)
+
+    if not form_data["user_id"]:
+        messages.error(request, "사원번호를 입력해 주세요.")
+        return False, form_data
+
+    if not form_data["name"]:
+        messages.error(request, "이름을 입력해 주세요.")
+        return False, form_data
+
+    if form_data["use_yn"] not in {YesNoChoices.YES, YesNoChoices.NO}:
+        messages.error(request, "활성화 여부 값이 올바르지 않습니다.")
+        return False, form_data
+
+    if User.objects.filter(user_id=form_data["user_id"]).exists():
+        messages.error(request, "이미 존재하는 사원번호입니다.")
+        return False, form_data
+
+    actor = _get_actor()
+    User.objects.create_user(
+        sn=_next_sn(User),
+        user_id=form_data["user_id"],
+        password=TEMP_PASSWORD,
+        name=form_data["name"],
+        department=form_data["department"] or None,
+        position=form_data["position"] or None,
+        sys_mngr_yn=YesNoChoices.NO,
+        tmpr_pswd_yn=YesNoChoices.YES,
+        use_yn=form_data["use_yn"],
+        created_by=actor,
+        updated_by=actor,
+    )
+    messages.success(request, "사용자를 추가했습니다.")
+    return True, _build_create_form_data()
+
+
 def user_list(request):
     ensure_initial_reference_data()
+    create_form = _build_create_form_data()
+    open_user_create_modal = False
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action == "create_user":
+            created, create_form = _create_user(request)
+            if created:
+                return redirect("user_list")
+            open_user_create_modal = True
 
     active = request.GET.get("active", "all")
     search_field = request.GET.get("field", "all")
@@ -61,11 +136,11 @@ def user_list(request):
     else:
         role_rows = [
             {
-                "project": {"name": "AI-DLC Project (팀장)"},
+                "project": {"name": "AI-DLC Project (예시)"},
                 "role": {"code": "MANAGER"},
             },
             {
-                "project": {"name": "Camp Project (팀원)"},
+                "project": {"name": "Camp Project (예시)"},
                 "role": {"code": "MEMBER"},
             },
         ]
@@ -80,5 +155,8 @@ def user_list(request):
         "query": query,
         "page_size": request.GET.get("page_size", "10"),
         "title": "사용자 관리",
+        "create_user_form": create_form,
+        "open_user_create_modal": open_user_create_modal,
+        "temp_password": TEMP_PASSWORD,
     }
     return render(request, "users/user_list.html", context)

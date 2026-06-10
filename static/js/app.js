@@ -1,4 +1,8 @@
 (function () {
+  const DOC_ALLOWED_EXTENSIONS = new Set(["docx", "hwp", "pdf"]);
+  const DOC_MAX_FILE_SIZE = 10 * 1024 * 1024;
+  const DOC_MAX_FILES_PER_TYPE = 5;
+
   function showModal(modal) {
     if (!modal) return;
     modal.classList.remove("hidden");
@@ -52,7 +56,7 @@
   }
 
   function getRoleLabel(role) {
-    return role === "manager" ? "프로젝트 관리자" : "담당";
+    return role === "manager" ? "프로젝트 관리자" : "멤버";
   }
 
   function getProjectUserItemTemplate() {
@@ -117,7 +121,7 @@
       const metaParts = [];
       if (user.userPosition) metaParts.push(user.userPosition);
       if (user.userDepartment) metaParts.push(user.userDepartment);
-      metaField.textContent = metaParts.join(" · ") || getRoleLabel(role);
+      metaField.textContent = metaParts.join(" / ") || getRoleLabel(role);
     }
 
     const emptyState = list.querySelector("[data-project-empty]");
@@ -145,7 +149,7 @@
         emptyMessage.className = "rounded-xl bg-slate-100 px-4 py-5 text-center text-sm text-slate-500";
         emptyMessage.textContent = role === "manager"
           ? "아직 추가된 관리자가 없습니다."
-          : "아직 추가된 담당자가 없습니다.";
+          : "아직 추가된 멤버가 없습니다.";
         list.appendChild(emptyMessage);
       }
       syncProjectRole(role);
@@ -217,10 +221,185 @@
     }
   }
 
+  function createDocStore() {
+    return {
+      rfp: new DataTransfer(),
+      meeting: new DataTransfer(),
+    };
+  }
+
+  const docStore = createDocStore();
+
+  function getDocInput(section) {
+    return document.querySelector(`[data-doc-file-input="${section}"]`);
+  }
+
+  function getDocList(section) {
+    return document.querySelector(`[data-doc-file-list="${section}"]`);
+  }
+
+  function fileKey(file) {
+    return [file.name, file.size, file.lastModified].join(":");
+  }
+
+  function renderDocFiles(section) {
+    const list = getDocList(section);
+    if (!list) return;
+
+    const files = Array.from(docStore[section].files);
+    list.innerHTML = "";
+
+    if (files.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500";
+      empty.textContent = "선택된 파일이 없습니다.";
+      list.appendChild(empty);
+      return;
+    }
+
+    files.forEach((file, index) => {
+      const row = document.createElement("div");
+      row.className = "flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm";
+
+      const meta = document.createElement("div");
+      meta.className = "min-w-0";
+
+      const name = document.createElement("p");
+      name.className = "truncate text-sm font-medium text-slate-900";
+      name.textContent = file.name;
+      meta.appendChild(name);
+
+      const size = document.createElement("p");
+      size.className = "mt-1 text-xs text-slate-500";
+      size.textContent = `${(file.size / (1024 * 1024)).toFixed(2)} MB`;
+      meta.appendChild(size);
+
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "rounded-lg px-3 py-2 text-sm font-semibold text-slate-500 transition hover:bg-slate-100 hover:text-slate-900";
+      removeButton.dataset.docRemoveFile = section;
+      removeButton.dataset.docFileIndex = String(index);
+      removeButton.textContent = "삭제";
+
+      row.appendChild(meta);
+      row.appendChild(removeButton);
+      list.appendChild(row);
+    });
+  }
+
+  function syncDocInput(section) {
+    const input = getDocInput(section);
+    if (!input) return;
+    input.files = docStore[section].files;
+  }
+
+  function addDocFiles(section, fileList) {
+    if (!fileList || fileList.length === 0) return;
+
+    const currentFiles = Array.from(docStore[section].files);
+    const seen = new Set(currentFiles.map(fileKey));
+    const nextFiles = [...currentFiles];
+
+    for (const file of Array.from(fileList)) {
+      const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+      if (!DOC_ALLOWED_EXTENSIONS.has(extension)) {
+        window.alert("docx, hwp, pdf 파일만 업로드할 수 있습니다.");
+        continue;
+      }
+      if (file.size > DOC_MAX_FILE_SIZE) {
+        window.alert("각 파일은 10MB 이하만 업로드할 수 있습니다.");
+        continue;
+      }
+      if (seen.has(fileKey(file))) {
+        continue;
+      }
+      if (nextFiles.length >= DOC_MAX_FILES_PER_TYPE) {
+        window.alert("각 섹션에는 최대 5개 파일만 첨부할 수 있습니다.");
+        break;
+      }
+
+      seen.add(fileKey(file));
+      nextFiles.push(file);
+    }
+
+    const transfer = new DataTransfer();
+    nextFiles.forEach((file) => transfer.items.add(file));
+    docStore[section] = transfer;
+    syncDocInput(section);
+    renderDocFiles(section);
+  }
+
+  function removeDocFile(section, index) {
+    const files = Array.from(docStore[section].files);
+    const transfer = new DataTransfer();
+    files.forEach((file, currentIndex) => {
+      if (currentIndex !== index) {
+        transfer.items.add(file);
+      }
+    });
+    docStore[section] = transfer;
+    syncDocInput(section);
+    renderDocFiles(section);
+  }
+
+  function openDocFileDialog(section) {
+    const input = getDocInput(section);
+    if (!input) return;
+    input.click();
+  }
+
+  function prepareDocUploadUI() {
+    renderDocFiles("rfp");
+    renderDocFiles("meeting");
+  }
+
+  function handleDocAction(button) {
+    const form = button.closest("form");
+    if (!form) return true;
+
+    const checked = form.querySelectorAll('[data-docs-item-checkbox]:checked');
+    if (checked.length === 0) {
+      window.alert("파일을 하나 이상 선택하세요.");
+      return false;
+    }
+
+    if (button.dataset.docsAction === "download") {
+      return window.confirm("다운로드하시겠습니까?");
+    }
+    if (button.dataset.docsAction === "delete") {
+      return window.confirm("삭제하시겠습니까?");
+    }
+
+    return true;
+  }
+
+  function syncDocsSelectAll(trigger) {
+    const form = trigger.closest("form");
+    if (!form) return;
+    form.querySelectorAll("[data-docs-item-checkbox]").forEach((checkbox) => {
+      checkbox.checked = trigger.checked;
+    });
+  }
+
   document.addEventListener("click", function (event) {
     const projectSearchTrigger = event.target.closest("[data-project-open-search]");
     if (projectSearchTrigger) {
       openProjectUserSearch(projectSearchTrigger.dataset.projectOpenSearch);
+      return;
+    }
+
+    const docSelectTrigger = event.target.closest("[data-doc-upload-select]");
+    if (docSelectTrigger) {
+      openDocFileDialog(docSelectTrigger.dataset.docUploadSelect);
+      return;
+    }
+
+    const docRemoveButton = event.target.closest("[data-doc-remove-file]");
+    if (docRemoveButton) {
+      removeDocFile(
+        docRemoveButton.dataset.docRemoveFile,
+        Number.parseInt(docRemoveButton.dataset.docFileIndex || "-1", 10),
+      );
       return;
     }
 
@@ -264,7 +443,65 @@
     }
   });
 
+  document.addEventListener("change", function (event) {
+    const currentProjectSelect = event.target.closest("[data-current-project-select]");
+    if (currentProjectSelect) {
+      currentProjectSelect.form?.submit();
+      return;
+    }
+
+    const docInput = event.target.closest("[data-doc-file-input]");
+    if (docInput) {
+      addDocFiles(docInput.dataset.docFileInput, docInput.files);
+      docInput.value = "";
+      return;
+    }
+
+    const selectAll = event.target.closest("[data-docs-select-all]");
+    if (selectAll) {
+      syncDocsSelectAll(selectAll);
+    }
+  });
+
+  document.addEventListener("dragover", function (event) {
+    const zone = event.target.closest("[data-doc-drop-zone]");
+    if (!zone) return;
+    event.preventDefault();
+    zone.classList.add("border-blue-300", "bg-blue-50");
+  });
+
+  document.addEventListener("dragleave", function (event) {
+    const zone = event.target.closest("[data-doc-drop-zone]");
+    if (!zone) return;
+    if (zone.contains(event.relatedTarget)) return;
+    zone.classList.remove("border-blue-300", "bg-blue-50");
+  });
+
+  document.addEventListener("drop", function (event) {
+    const zone = event.target.closest("[data-doc-drop-zone]");
+    if (!zone) return;
+    event.preventDefault();
+    zone.classList.remove("border-blue-300", "bg-blue-50");
+    addDocFiles(zone.dataset.docDropZone, event.dataTransfer?.files);
+  });
+
   document.addEventListener("submit", function (event) {
+    const docUploadForm = event.target.closest("[data-doc-upload-form]");
+    if (docUploadForm) {
+      const totalFiles = docStore.rfp.files.length + docStore.meeting.files.length;
+      if (totalFiles === 0) {
+        window.alert("업로드할 파일을 선택하세요.");
+        event.preventDefault();
+      }
+      return;
+    }
+
+    const docActionButton = event.submitter?.closest?.("[data-docs-action]");
+    if (docActionButton && !handleDocAction(docActionButton)) {
+      event.preventDefault();
+      return;
+    }
+
     const form = event.target.closest("[data-project-create-form]");
     if (!form) return;
 
@@ -301,5 +538,11 @@
     openProjectUserSearch(projectPageState.dataset.openProjectUserSearchRole || "manager");
   }
 
+  const userPageState = document.getElementById("user-page-state");
+  if (userPageState?.dataset.openUserCreateModal === "true") {
+    showModal(document.getElementById("user-create-modal"));
+  }
+
   syncAllProjectRoles();
+  prepareDocUploadUI();
 })();
