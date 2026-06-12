@@ -223,6 +223,32 @@ class CommonToolsTest(unittest.TestCase):
             [{"requirement_id": "SFR-001"}],
         )
 
+    def test_rfp_rule_parser_extracts_docx_table_requirements(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "rfp.docx"
+            document = Document()
+            table = document.add_table(rows=4, cols=2)
+            table.cell(0, 0).text = "요구사항 고유번호"
+            table.cell(0, 1).text = "SFR-001"
+            table.cell(1, 0).text = "요구사항명"
+            table.cell(1, 1).text = "로그인 기능"
+            table.cell(2, 0).text = "요구사항 상세설명"
+            table.cell(2, 1).text = "사용자는 아이디와 비밀번호로 로그인할 수 있어야 한다."
+            table.cell(3, 0).text = "검증기준"
+            table.cell(3, 1).text = "정상 로그인 여부를 확인한다."
+            document.save(path)
+
+            result = parse_rfp_requirements(str(path))
+
+            self.assertTrue(result["success"])
+            item = result["data"]["requirements"][0]
+            self.assertEqual(item["requirement_id"], "SFR-001")
+            self.assertEqual(item["req_id"], "SFR-001")
+            self.assertEqual(item["requirement_name"], "로그인 기능")
+            self.assertEqual(item["requirement_type"], "기능")
+            self.assertIn("로그인", item["detail_text"])
+            self.assertEqual(item["validation_criteria"], ["정상 로그인 여부를 확인한다."])
+
     def test_pdf_parser(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "sample.pdf"
