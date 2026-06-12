@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field
 
 from schemas.common.common_schema import DocsCode, UpdateYn
 from schemas.common.file_schema import FileSn
@@ -11,7 +11,7 @@ class GenerationRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    project_sn: PositiveInt
+    project_sn: int
     docs_cd: DocsCode
     udt_yn: UpdateYn
     file_list: list[FileSn] = Field(default_factory=list)

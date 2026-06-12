@@ -1,6 +1,11 @@
+boto3
 fastapi
 langgraph
+PyMuPDF
 PyMySQL
+python-docx
 python-dotenv
+pydantic-settings
+requests
 SQLAlchemy
 uvicorn[standard]

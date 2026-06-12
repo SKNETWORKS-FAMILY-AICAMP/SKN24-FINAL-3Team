@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, PositiveInt
+from pydantic import BaseModel, ConfigDict
 
 from schemas.common.common_schema import DocsCode, WorkflowStatus
 
@@ -10,7 +10,7 @@ class GenerationResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    project_sn: PositiveInt
+    project_sn: int
     docs_cd: DocsCode
     status: WorkflowStatus
     message: str | None = None
