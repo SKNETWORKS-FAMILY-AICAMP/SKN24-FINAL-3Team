@@ -92,10 +92,29 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
     )
 
     types = {str(item.get("requirement_type", "")).lower() for item in items if isinstance(item, dict)}
+    functional = [
+        item for item in items
+        if isinstance(item, dict)
+        and str(item.get("requirement_type", "")).lower() in {"기능", "functional", "function"}
+    ]
     has_non_functional = any(
         value and value not in {"기능", "functional", "function"} for value in types
-    )
-    checks.append(
+    ) or any(item.get("constraints") for item in items if isinstance(item, dict))
+    work_unit_invalid = [
+        str(item.get("req_id") or index)
+        for index, item in enumerate(functional)
+        if is_empty(item.get("validation_criteria"))
+    ]
+    checks.extend(
+        [
+        make_check(
+            "SRS_FUNCTION_001",
+            "기능 요구사항 존재 검증",
+            bool(functional),
+            failure_type="SRS_WORK_UNIT_INVALID",
+            message="업무 단위로 분해된 기능 요구사항이 없습니다.",
+            target_agent=TARGET,
+        ),
         make_check(
             "SRS_NFR_001",
             "비기능 요구사항 반영 검증",
@@ -105,6 +124,33 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
             target_agent=TARGET,
             severity="MEDIUM",
             warning=True,
-        )
+        ),
+        make_check(
+            "SRS_WORK_UNIT_001",
+            "업무 단위 검증 기준 존재 여부",
+            not work_unit_invalid,
+            failure_type="SRS_WORK_UNIT_INVALID",
+            message="일부 기능 요구사항에 validation_criteria가 없습니다.",
+            target_agent=TARGET,
+            target_scope=work_unit_invalid,
+            severity="MEDIUM",
+            warning=True,
+        ),
+        _meeting_check(state, items),
+        ]
     )
     return checks
+
+
+def _meeting_check(state: WorkflowState, items: list[dict[str, Any]]) -> dict[str, Any]:
+    changes = state.get("agent_outputs", {}).get("document_merge_agent", {}).get("meeting_change_items")
+    required = state.get("udt_yn") == "Y" and bool(changes)
+    reflected = any(item.get("meeting_change_ids") or item.get("meeting_ref") for item in items)
+    return make_check(
+        "SRS_MEETING_001",
+        "회의록 변경사항 반영 검증",
+        not required or reflected,
+        failure_type="SRS_MEETING_CHANGE_MISSING",
+        message="회의록 변경사항 반영 근거를 확인할 수 없습니다.",
+        target_agent="document_merge_agent",
+    )

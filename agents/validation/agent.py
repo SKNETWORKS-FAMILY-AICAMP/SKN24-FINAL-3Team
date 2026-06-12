@@ -25,11 +25,13 @@ class ValidationAgent:
         else:
             checks = validator(state)
         validation_result = build_validation_result(docs_cd, checks)
-        return {
-            "status": "SUCCESS",
+        output = {
+            "status": validation_result["validation_status"],
             "validation_result": validation_result,
             "warnings": [
                 check for check in checks if check["status"] == "WARN"
             ],
             "errors": [],
         }
+        state.setdefault("agent_outputs", {})["validation_agent"] = output
+        return output
