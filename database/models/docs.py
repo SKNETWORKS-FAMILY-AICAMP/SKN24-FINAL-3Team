@@ -10,3 +10,4 @@ class Docs(Base):
     __tablename__ = "tbl_docs"
 
     docs_cd: Mapped[str] = mapped_column(String(20), primary_key=True)
+    docs_nm: Mapped[str | None] = mapped_column(String(255), nullable=True)

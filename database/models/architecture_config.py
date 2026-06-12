@@ -1,4 +1,4 @@
-from sqlalchemy import Integer
+from sqlalchemy import JSON, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database.base import Base
@@ -10,3 +10,5 @@ class ArchitectureConfig(Base):
     __tablename__ = "tbl_architecture_config"
 
     architecture_config_sn: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_sn: Mapped[int] = mapped_column(Integer, nullable=False)
+    config_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

@@ -9,11 +9,18 @@ class FileRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def get_by_file_sn(self, file_sn: FileSn) -> Any | None:
+    def find_file_by_sn(self, file_sn: FileSn) -> Any | None:
         raise NotImplementedError
 
-    def get_by_file_sn_list(self, file_sn_list: list[FileSn]) -> list[Any]:
+    def find_files_by_sn_list(self, file_sn_list: list[FileSn]) -> list[Any]:
         raise NotImplementedError
 
-    def create(self, values: dict[str, Any]) -> Any:
+    def insert_file(
+        self,
+        *,
+        file_nm: str,
+        file_path: str,
+        file_size: int,
+        file_extn: str,
+    ) -> Any:
         raise NotImplementedError

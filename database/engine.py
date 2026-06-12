@@ -1,19 +1,12 @@
-import os
-
-from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
-
-load_dotenv()
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL 환경변수가 설정되지 않았습니다.")
+from config.settings import get_settings
 
 
-def create_database_engine(database_url: str = DATABASE_URL) -> Engine:
-    return create_engine(database_url, pool_pre_ping=True)
+def create_database_engine(database_url: str | None = None) -> Engine:
+    url = database_url or get_settings().database_url
+    return create_engine(url, pool_pre_ping=True)
 
 
 engine = create_database_engine()

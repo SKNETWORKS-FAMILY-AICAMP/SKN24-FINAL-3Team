@@ -9,20 +9,40 @@ class DocsDetailRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def get_active(self, project_sn: int, docs_cd: DocsCode) -> Any | None:
+    def find_active_srs(self, project_sn: int) -> Any | None:
         raise NotImplementedError
 
-    def update_progress_status(
+    def find_active_doc(self, project_sn: int, docs_cd: DocsCode) -> Any | None:
+        raise NotImplementedError
+
+    def update_docs_status_generating(
         self,
         project_sn: int,
         docs_cd: DocsCode,
-        status: str,
-        fail_reason: str | None = None,
     ) -> None:
         raise NotImplementedError
 
-    def deactivate_active(self, project_sn: int, docs_cd: DocsCode) -> None:
+    def update_docs_status_done(self, project_sn: int, docs_cd: DocsCode) -> None:
         raise NotImplementedError
 
-    def create(self, values: dict[str, Any]) -> Any:
+    def update_docs_status_failed(
+        self,
+        project_sn: int,
+        docs_cd: DocsCode,
+        error_message: str,
+    ) -> None:
+        raise NotImplementedError
+
+    def deactivate_active_doc(self, project_sn: int, docs_cd: DocsCode) -> None:
+        raise NotImplementedError
+
+    def insert_docs_detail(
+        self,
+        *,
+        project_sn: int,
+        docs_cd: DocsCode,
+        file_sn: int,
+        use_yn: str = "Y",
+        status: str = "DONE",
+    ) -> Any:
         raise NotImplementedError

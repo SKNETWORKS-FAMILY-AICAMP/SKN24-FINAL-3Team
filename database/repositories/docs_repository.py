@@ -9,8 +9,8 @@ class DocsRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
-    def get_by_docs_cd(self, docs_cd: DocsCode) -> Any | None:
+    def find_docs_by_code(self, docs_cd: DocsCode) -> Any | None:
         raise NotImplementedError
 
-    def list_all(self) -> list[Any]:
+    def find_all_docs(self) -> list[Any]:
         raise NotImplementedError
