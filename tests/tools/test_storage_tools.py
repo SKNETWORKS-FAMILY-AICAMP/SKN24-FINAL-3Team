@@ -98,6 +98,61 @@ class StorageToolsTest(unittest.TestCase):
             self.assertFalse(mermaid_dir.exists())
             self.assertTrue(export_file.exists())
 
+    def test_cleanup_workflow_resources_cleans_reference_paths_and_protects_formats(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            storage = Path(root)
+            input_dir = storage / "input"
+            temp_dir = storage / "temp"
+            extracted_dir = storage / "extracted_images"
+            mermaid_dir = storage / "mermaid"
+            output_dir = storage / "output"
+            for directory in [input_dir, temp_dir, extracted_dir, mermaid_dir, output_dir]:
+                directory.mkdir()
+
+            base_rfp = input_dir / "rfp.pdf"
+            requirement = input_dir / "srs.json"
+            erd = input_dir / "erd.docx"
+            interface = input_dir / "interface.docx"
+            existing = input_dir / "existing.docx"
+            docx = output_dir / "result.docx"
+            pdf = output_dir / "result.pdf"
+            hwp = output_dir / "result.hwp"
+            for path in [base_rfp, requirement, erd, interface, existing, docx, pdf, hwp]:
+                path.write_text("data", encoding="utf-8")
+
+            settings = Settings(
+                _env_file=None,
+                local_storage_root=storage,
+                input_dir=input_dir,
+                output_dir=output_dir,
+                temp_dir=temp_dir,
+                extract_image_dir=extracted_dir,
+                mermaid_dir=mermaid_dir,
+            )
+            result = cleanup_workflow_resources(
+                {
+                    "base_rfp_path": str(base_rfp),
+                    "base_requirement_json_path": str(requirement),
+                    "erd_file_path": str(erd),
+                    "interface_file_path": str(interface),
+                    "existing_output_path": str(existing),
+                    "export_result": {
+                        "docx_path": str(docx),
+                        "pdf_path": str(pdf),
+                        "hwp_path": str(hwp),
+                    },
+                },
+                settings=settings,
+            )
+
+            self.assertTrue(result["success"])
+            for path in [base_rfp, requirement, erd, interface, existing]:
+                self.assertFalse(path.exists())
+            for path in [docx, pdf, hwp]:
+                self.assertTrue(path.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

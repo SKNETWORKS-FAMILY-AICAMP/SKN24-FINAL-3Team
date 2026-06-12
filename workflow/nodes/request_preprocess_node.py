@@ -128,6 +128,7 @@ def _initialize_state(state: WorkflowState) -> WorkflowState:
         "validation_result": None,
         "final_document_json": None,
         "export_result": None,
+        "cleanup_result": None,
         "warnings": [],
         "errors": [],
     }

@@ -15,6 +15,7 @@ class ValidationAgentTest(unittest.TestCase):
             "requirement_type": "기능",
             "detail_text": "사용자가 로그인한다.",
             "source_req_ids": ["RFP-001"],
+            "validation_criteria": ["로그인 성공 여부를 확인한다."],
         }
         non_functional = {
             **functional,
@@ -151,11 +152,99 @@ class ValidationAgentTest(unittest.TestCase):
         self.assertEqual(_failure(db, "DB_SCHEMA_ERROR")["target_agent"], "data_structure_design_agent")
         self.assertEqual(_failure(arch, "ARCH_SCHEMA_ERROR")["target_agent"], "architecture_analysis_agent")
 
-    def test_validation_does_not_modify_state(self) -> None:
+    def test_validation_only_stores_its_own_output_in_state(self) -> None:
         state = {"docs_cd": "SRS", "agent_outputs": {}}
         original = copy.deepcopy(state)
-        self.agent.execute(state)
-        self.assertEqual(state, original)
+        result = self.agent.execute(state)
+        self.assertEqual(state["agent_outputs"]["validation_agent"], result)
+        self.assertNotIn("validation_result", state)
+        self.assertEqual(original["docs_cd"], state["docs_cd"])
+
+    def test_top_level_status_matches_validation_status(self) -> None:
+        result = self.agent.execute({"docs_cd": "SRS", "agent_outputs": {}})
+        self.assertEqual(result["status"], result["validation_result"]["validation_status"])
+
+    def test_ts_quality_traceability_failures_return_replan_targets(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "TS",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "integrated_requirement_json_list": [
+                            {"req_id": "REQ-1", "requirement_type": "기능"}
+                        ],
+                        "reference_interface_json_list": [{"screen_id": "SCR-1"}],
+                    },
+                    "test_scenario_generation_agent": {
+                        "integrated_test_scenario_json": {
+                            "scenario_json_list": [{"scenario_id": "SC-1", "source_requirement_ids": []}],
+                            "test_case_json_list": [{"test_case_id": "TC-1", "case_type": "NORMAL"}],
+                            "step_json_list": [
+                                {
+                                    "step_id": "STEP-1",
+                                    "test_case_id": "TC-1",
+                                    "step_no": 1,
+                                    "처리내용": "실행",
+                                    "시험항목": "시험",
+                                    "사전조건": "조건",
+                                    "입력값": "입력",
+                                    "예상결과": "결과",
+                                    "화면ID": "SCR-X",
+                                }
+                            ],
+                        }
+                    },
+                },
+            }
+        )
+        self.assertEqual(_failure(result, "TS_REQUIREMENT_COVERAGE_MISSING")["target_agent"], "test_scenario_generation_agent")
+        self.assertEqual(_failure(result, "TS_INTERFACE_MAPPING_MISSING")["target_agent"], "test_scenario_generation_agent")
+        self.assertEqual(_failure(result, "TS_EXCEPTION_CASE_MISSING")["target_agent"], "test_scenario_generation_agent")
+
+    def test_erd_db_arch_detailed_rules_are_present(self) -> None:
+        erd = self.agent.execute(
+            {
+                "docs_cd": "ERD",
+                "agent_outputs": {
+                    "data_structure_design_agent": {
+                        "erd_entity_json": {
+                            "tables": [
+                                {
+                                    "table_id": "T1",
+                                    "logical_name": "사용자",
+                                    "physical_name": "Bad Name",
+                                    "columns": [{"column_id": "C1", "logical_name": "ID", "physical_name": "Bad ID", "data_type": "INT", "nullable": False, "constraints": ["PK"]}],
+                                }
+                            ],
+                            "relationships": [{"relationship_id": "R1", "parent_table": "missing", "child_table": "Bad Name"}],
+                        },
+                        "erd_mermaid_json": {"entities": [{"name": "Bad Name"}]},
+                    },
+                    "mermaid_generation_agent": {"mermaid_code": "erDiagram", "mermaid_image_path": "erd.png"},
+                },
+            }
+        )
+        arch = self.agent.execute(
+            {
+                "docs_cd": "ARCH",
+                "agent_outputs": {
+                    "architecture_analysis_agent": {
+                        "architecture_structure_json": {
+                            "overview": "개요",
+                            "components": [{"component_id": "A"}, {"component_id": "B"}],
+                            "relations": [{"source": "A", "target": "A"}],
+                            "layers": ["app"],
+                            "deployment_environment": "cloud",
+                        },
+                        "architecture_document_json": {"overview": "개요"},
+                    },
+                    "mermaid_generation_agent": {"mermaid_code": "flowchart TD", "mermaid_image_path": "arch.png"},
+                },
+            }
+        )
+        self.assertEqual(_failure(erd, "ERD_FK_INVALID")["target_agent"], "data_structure_design_agent")
+        self.assertEqual(_failure(erd, "ERD_STANDARD_NAMING_ERROR")["target_agent"], "data_structure_design_agent")
+        self.assertEqual(_failure(arch, "ARCH_COMPONENT_ISOLATED")["target_agent"], "architecture_analysis_agent")
 
 
 def _failure(result, failure_type):

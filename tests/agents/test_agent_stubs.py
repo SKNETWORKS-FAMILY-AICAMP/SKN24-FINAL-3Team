@@ -26,8 +26,6 @@ class AgentStubsTest(unittest.TestCase):
     def test_agent_output_keys_are_empty_stubs(self) -> None:
         cases = [
             (ArchitectureAnalysisAgent(), "architecture_document_json", {}),
-            (DataStructureDesignAgent(), "db_design_json", {}),
-            (MermaidGenerationAgent(), "mermaid_image_path", ""),
         ]
 
         for agent, output_key, expected in cases:
@@ -37,6 +35,18 @@ class AgentStubsTest(unittest.TestCase):
                 self.assertEqual(result[output_key], expected)
                 self.assertEqual(result["warnings"], [])
                 self.assertEqual(result["errors"], [])
+
+    def test_mermaid_generation_agent_is_no_longer_an_empty_stub(self) -> None:
+        result = MermaidGenerationAgent().execute({"docs_cd": "DB"})
+
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["failure_type"], "MERMAID_INVALID_DOCS_CD")
+
+    def test_data_structure_design_agent_is_no_longer_an_empty_stub(self) -> None:
+        result = DataStructureDesignAgent().execute({"docs_cd": "SRS", "udt_yn": "N"})
+
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["failure_type"], "DATA_STRUCTURE_INVALID_MODE")
 
     def test_test_scenario_agent_is_no_longer_an_empty_stub(self) -> None:
         result = TestScenarioGenerationAgent().execute({"docs_cd": "SRS", "udt_yn": "N"})
@@ -59,7 +69,7 @@ class AgentStubsTest(unittest.TestCase):
     def test_validation_agent_is_no_longer_an_empty_stub(self) -> None:
         result = ValidationAgent().execute({"docs_cd": "SRS", "agent_outputs": {}})
 
-        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(result["status"], "FAIL")
         self.assertEqual(result["validation_result"]["validation_status"], "FAIL")
         self.assertEqual(
             result["validation_result"]["checks"][0]["failure_type"],

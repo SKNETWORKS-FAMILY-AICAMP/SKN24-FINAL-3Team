@@ -24,6 +24,7 @@ class CommonToolsTest(unittest.TestCase):
     def test_search_router_normalizes_rag_web_both_and_none(self) -> None:
         class FakeQdrant:
             def query_points(self, **kwargs):
+                self.kwargs = kwargs
                 return type(
                     "Response",
                     (),
@@ -53,13 +54,66 @@ class CommonToolsTest(unittest.TestCase):
         none = search("query", search_targets="NONE")
 
         self.assertEqual(rag["data"]["normalized_results"][0]["source"], "RAG")
+        self.assertEqual(rag["data"]["normalized_results"][0]["source_kind"], "RAG")
+        self.assertEqual(rag["data"]["search_type"], "RAG")
+        self.assertEqual(rag["data"]["results"][0]["metadata"]["title"], "RAG")
         self.assertEqual(web["data"]["normalized_results"][0]["source"], "WEB")
+        self.assertEqual(web["data"]["normalized_results"][0]["citation"], "")
+        self.assertEqual(web["data"]["search_type"], "WEB")
+        self.assertEqual(web["data"]["results"][0]["title"], "WEB")
         self.assertEqual(len(both["data"]["normalized_results"]), 2)
+        self.assertEqual(both["data"]["search_type"], "BOTH")
         self.assertEqual(none["data"]["normalized_results"], [])
+        self.assertEqual(none["data"]["search_type"], "NONE")
 
     def test_search_request_validates_contract(self) -> None:
-        request = SearchRequest(query=" requirements ", search_targets="BOTH", top_k=10)
+        request = SearchRequest(
+            project_sn=1,
+            docs_cd="SRS",
+            agent_name="requirement_generation_agent",
+            search_intent="비기능 요구사항 검색",
+            query=" requirements ",
+            search_targets="BOTH",
+            filters={"requirement_type": ["보안 요구사항"]},
+            top_k=10,
+        )
         self.assertEqual(request.query, "requirements")
+        self.assertEqual(request.project_sn, 1)
+
+    def test_search_router_accepts_request_dict_contract(self) -> None:
+        def web_provider(query, top_k, filters):
+            self.assertEqual(filters["source_type"], ["POLICY"])
+            return [
+                {
+                    "title": "표준",
+                    "url": "https://example.test/standard",
+                    "snippet": "standard content",
+                    "source": "example",
+                    "published_at": "2026-01-01",
+                }
+            ]
+
+        result = search(
+            {
+                "project_sn": 1,
+                "docs_cd": "SRS",
+                "agent_name": "requirement_generation_agent",
+                "search_intent": "비기능 요구사항 검색",
+                "query": "로그인 보안 정책",
+                "search_targets": "WEB",
+                "filters": {"source_type": ["POLICY"]},
+                "top_k": 5,
+            },
+            web_provider=web_provider,
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["request"]["agent_name"], "requirement_generation_agent")
+        self.assertEqual(result["data"]["normalized_results"][0]["source_kind"], "WEB")
+        self.assertEqual(
+            result["data"]["normalized_results"][0]["citation"],
+            "https://example.test/standard",
+        )
 
     def test_llm_client_uses_injected_transport(self) -> None:
         captured = {}

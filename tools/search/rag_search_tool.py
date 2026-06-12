@@ -1,7 +1,7 @@
 from typing import Any, Protocol
 
 from config.settings import Settings, get_settings
-from tools.result import ToolResult, error_result
+from tools.result import ToolResult, error_result, success_result
 from tools.search.result_normalizer import normalize_results
 
 
@@ -39,8 +39,18 @@ def rag_search(
             limit=top_k,
             with_payload=True,
         )
-        points = getattr(response, "points", response)
-        return normalize_results("RAG", query, list(points))
+        points = list(getattr(response, "points", response))
+        normalized = normalize_results("RAG", query, points)
+        if not normalized["success"]:
+            return normalized
+        return success_result(
+            {
+                "search_type": "RAG",
+                "query": query,
+                "results": [_to_rag_result(point) for point in points],
+                "normalized_results": normalized["data"]["normalized_results"],
+            }
+        )
     except ImportError as exc:
         return error_result("RAG_CLIENT_UNAVAILABLE", str(exc))
     except Exception as exc:
@@ -55,3 +65,13 @@ def _create_qdrant_client(url: str) -> QdrantSearchClient:
     from qdrant_client import QdrantClient
 
     return QdrantClient(url=url)
+
+
+def _to_rag_result(point: Any) -> dict[str, Any]:
+    item = point if isinstance(point, dict) else vars(point)
+    payload = item.get("payload") or item.get("metadata") or {}
+    return {
+        "content": item.get("content") or item.get("text") or payload.get("content") or payload.get("text") or "",
+        "score": item.get("score"),
+        "metadata": payload,
+    }

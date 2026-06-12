@@ -48,6 +48,9 @@ class WorkflowState(TypedDict, total=False):
     # 9. Export
     export_result: dict[str, Any] | None
 
-    # 10. Error
+    # 10. Cleanup
+    cleanup_result: dict[str, Any] | None
+
+    # 11. Error
     warnings: list[dict[str, Any]]
     errors: list[dict[str, Any]]

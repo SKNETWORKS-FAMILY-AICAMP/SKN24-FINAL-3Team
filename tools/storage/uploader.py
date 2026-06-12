@@ -37,7 +37,8 @@ def upload_file(
 
         destination = Path(storage_path or config.output_dir / source.name).resolve()
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, destination)
+        if source != destination:
+            shutil.copy2(source, destination)
         return success_result({"storage_file_path": str(destination)})
     except Exception as exc:
         return error_result("UPLOAD_FAILED", str(exc))

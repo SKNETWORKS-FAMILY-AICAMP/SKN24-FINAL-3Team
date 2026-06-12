@@ -14,7 +14,12 @@ def check_agent_result(
 ) -> dict[str, Any]:
     if output is None:
         return _failure(f"{agent_name.upper()}_OUTPUT_MISSING", "Agent output이 없습니다.")
-    if output.get("status") != "SUCCESS":
+    allowed_statuses = (
+        {"SUCCESS", "PASS", "FAIL", "PARTIAL_PASS"}
+        if agent_name == "validation_agent"
+        else {"SUCCESS"}
+    )
+    if output.get("status") not in allowed_statuses:
         return _failure(
             str(output.get("failure_type") or f"{agent_name.upper()}_STATUS_FAILED"),
             "Agent status가 SUCCESS가 아닙니다.",
