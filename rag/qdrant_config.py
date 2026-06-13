@@ -10,6 +10,7 @@ load_dotenv()
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "arkive")
 EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "BAAI/bge-m3")
+
 REQUIREMENT_REFERENCE_COLLECTION = os.getenv(
     "REQUIREMENT_REFERENCE_COLLECTION",
     "requirement_reference",
@@ -21,6 +22,14 @@ REQUIREMENT_SOURCES_COLLECTION = os.getenv(
 REQUIREMENT_EXAMPLES_COLLECTION = os.getenv(
     "REQUIREMENT_EXAMPLES_COLLECTION",
     "requirement_examples",
+)
+ARCHITECTURE_REFERENCE_COLLECTION = os.getenv(
+    "ARCHITECTURE_REFERENCE_COLLECTION",
+    "architecture_reference",
+)
+DB_ERD_REFERENCE_COLLECTION = os.getenv(
+    "DB_ERD_REFERENCE_COLLECTION",
+    "db_erd_reference",
 )
 REQUIREMENT_RAG_TOP_K = int(os.getenv("REQUIREMENT_RAG_TOP_K", "3"))
 
