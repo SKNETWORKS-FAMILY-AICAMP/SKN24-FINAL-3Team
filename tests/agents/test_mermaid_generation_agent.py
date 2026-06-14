@@ -47,6 +47,53 @@ class MermaidGenerationAgentTest(unittest.TestCase):
         self.assertTrue(result["mermaid_code"].startswith("flowchart TD"))
         self.assertIn("WEB --> API", result["mermaid_code"])
 
+    def test_arch_uses_component_ids_layers_and_sanitizes_labels(self) -> None:
+        state = _arch_state()
+        state["agent_outputs"]["architecture_analysis_agent"]["architecture_structure_json"]["layers"] = [
+            {"name": "AI/LLM Layer", "component_ids": ["WEB", "API"]}
+        ]
+        state["agent_outputs"]["architecture_analysis_agent"]["architecture_structure_json"]["relations"] = [
+            {"source": "WEB", "target": "API", "description": "API 호출(HTTPS)"}
+        ]
+        result = MermaidGenerationAgent(
+            renderer=lambda code, **kwargs: success_result(
+                {"mermaid_file_path": "arch.mmd", "mermaid_image_path": "arch.png"}
+            )
+        ).execute(state)
+
+        self.assertIn("subgraph AI_LLM_Layer[AI/LLM Layer]", result["mermaid_code"])
+        self.assertIn("WEB[Web Client]", result["mermaid_code"])
+        self.assertIn("WEB -->|API 호출HTTPS| API", result["mermaid_code"])
+
+    def test_erd_sanitizes_table_column_and_relation_identifiers(self) -> None:
+        state = _erd_state()
+        state["agent_outputs"]["data_structure_design_agent"]["erd_mermaid_json"] = {
+            "entities": [
+                {
+                    "name": "tbl user",
+                    "columns": [
+                        {
+                            "physical_name": "user id",
+                            "data_type": "VARCHAR(100)",
+                            "constraints": ["PK"],
+                        }
+                    ],
+                },
+                {"name": "2docs", "columns": [{"physical_name": "docs sn"}]},
+            ],
+            "relationships": [{"parent_table": "tbl user", "child_table": "2docs", "description": "creates()"}],
+        }
+        result = MermaidGenerationAgent(
+            renderer=lambda code, **kwargs: success_result(
+                {"mermaid_file_path": "erd.mmd", "mermaid_image_path": "erd.png"}
+            )
+        ).execute(state)
+
+        self.assertIn("tbl_user {", result["mermaid_code"])
+        self.assertIn("VARCHAR_100 user_id PK", result["mermaid_code"])
+        self.assertIn("t_2docs {", result["mermaid_code"])
+        self.assertIn("tbl_user ||--o{ t_2docs : creates", result["mermaid_code"])
+
     def test_renderer_failure_uses_rule_then_llm_repair(self) -> None:
         calls = []
         llm = FakeRepairLLM()

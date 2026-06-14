@@ -135,6 +135,19 @@ class RequestPreprocessNodeTest(unittest.TestCase):
         self.assertEqual(result["base_requirement_json_path"], "/tmp/srs.json")
         self.assertEqual(result["interface_file_path"], "/tmp/interface.docx")
 
+    def test_active_doc_can_use_docs_path_without_file_sn(self) -> None:
+        dependencies, _ = self.dependencies(
+            {},
+            active_srs={"docs_path": "C:/exports/srs.json"},
+        )
+
+        result = request_preprocess_node(
+            {"project_sn": 10, "docs_cd": "INTERFACE", "udt_yn": "N"},
+            dependencies,
+        )
+
+        self.assertEqual(result["base_requirement_json_path"], "/tmp/srs.json")
+
     def test_update_sets_existing_output_and_meeting_paths(self) -> None:
         dependencies, _ = self.dependencies(
             {
@@ -180,6 +193,36 @@ class RequestPreprocessNodeTest(unittest.TestCase):
 
         self.assertEqual(result["errors"][0]["code"], "INVALID_DOCS_CD")
         self.assertEqual(route_after_preprocess(result), "cleanup_node")
+
+    def test_normalizes_docs_cd_and_udt_yn_before_validation(self) -> None:
+        dependencies, docs_repository = self.dependencies(
+            {1: {"file_sn": 1, "s3_key": "rfp/request.pdf", "file_nm": "request.pdf"}}
+        )
+
+        result = request_preprocess_node(
+            {"project_sn": 10, "docs_cd": "srs", "udt_yn": "n", "file_list": [1]},  # type: ignore[typeddict-item]
+            dependencies,
+        )
+
+        self.assertEqual(result["docs_cd"], "SRS")
+        self.assertEqual(result["udt_yn"], "N")
+        self.assertEqual(result["status"], "READY")
+        self.assertEqual(docs_repository.generating_calls, [(10, "SRS")])
+
+    def test_interface_create_without_images_records_warning_but_continues(self) -> None:
+        dependencies, docs_repository = self.dependencies(
+            {10: {"file_sn": 10, "s3_key": "docs/srs.json", "file_nm": "srs.json"}},
+            active_srs={"file_sn": 10},
+        )
+
+        result = request_preprocess_node(
+            {"project_sn": 10, "docs_cd": "INTERFACE", "udt_yn": "N"},
+            dependencies,
+        )
+
+        self.assertEqual(result["status"], "READY")
+        self.assertEqual(result["warnings"][0]["code"], "INTERFACE_IMAGE_LIST_EMPTY")
+        self.assertEqual(docs_repository.generating_calls, [(10, "INTERFACE")])
 
 
 if __name__ == "__main__":

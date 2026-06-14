@@ -96,11 +96,30 @@ class MermaidGenerationAgent:
 
 
 def _valid_erd_structure(structure: Any) -> bool:
-    return isinstance(structure, dict) and bool(structure.get("entities") or structure.get("tables"))
+    if not isinstance(structure, dict):
+        return False
+    entities = structure.get("entities") or structure.get("tables")
+    if not isinstance(entities, list) or not entities:
+        return False
+    return any(
+        isinstance(entity, dict)
+        and (entity.get("name") or entity.get("physical_name") or entity.get("table_name"))
+        and isinstance(entity.get("columns"), list)
+        for entity in entities
+    )
 
 
 def _valid_arch_structure(structure: Any) -> bool:
-    return isinstance(structure, dict) and bool(structure.get("components"))
+    if not isinstance(structure, dict):
+        return False
+    components = structure.get("components")
+    if not isinstance(components, list) or not components:
+        return False
+    return any(
+        isinstance(component, dict)
+        and (component.get("component_id") or component.get("id") or component.get("name"))
+        for component in components
+    )
 
 
 def _last_path(attempts: list[dict[str, Any]]) -> str:

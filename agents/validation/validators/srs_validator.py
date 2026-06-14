@@ -44,10 +44,10 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
-        req_id = str(item.get("req_id") or index)
-        if missing_fields(item, ["req_id", "req_name", "requirement_type", "detail_text"]):
+        req_id = _requirement_id(item, index)
+        if _missing_requirement_fields(item):
             missing.append(req_id)
-        if is_empty(item.get("source_req_ids")) and is_empty(item.get("source_refs")):
+        if is_empty(item.get("source_req_ids")) and is_empty(item.get("source_refs")) and is_empty(item.get("source")):
             source_missing.append(req_id)
     checks.extend(
         [
@@ -63,7 +63,7 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
             make_check(
                 "SRS_DUPLICATE_001",
                 "요구사항 ID 중복 검증",
-                not (duplicates := duplicate_values(items, "req_id")),
+                not (duplicates := duplicate_values(items, "req_id", "requirement_id")),
                 failure_type="SRS_DUPLICATE_REQ_ID",
                 message="중복된 req_id가 있습니다.",
                 target_agent=TARGET,
@@ -72,7 +72,7 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
             make_check(
                 "SRS_DUPLICATE_002",
                 "요구사항명 중복 검증",
-                not (names := duplicate_values(items, "req_name")),
+                not (names := duplicate_values(items, "req_name", "requirement_name")),
                 failure_type="SRS_DUPLICATE_REQUIREMENT",
                 message="중복된 요구사항명이 있습니다.",
                 target_agent=TARGET,
@@ -154,3 +154,17 @@ def _meeting_check(state: WorkflowState, items: list[dict[str, Any]]) -> dict[st
         message="회의록 변경사항 반영 근거를 확인할 수 없습니다.",
         target_agent="document_merge_agent",
     )
+
+
+def _requirement_id(item: dict[str, Any], index: int) -> str:
+    return str(item.get("req_id") or item.get("requirement_id") or item.get("id") or index)
+
+
+def _missing_requirement_fields(item: dict[str, Any]) -> bool:
+    required_groups = [
+        ("req_id", "requirement_id"),
+        ("req_name", "requirement_name"),
+        ("requirement_type", "type"),
+        ("detail_text", "description"),
+    ]
+    return any(all(is_empty(item.get(key)) for key in group) for group in required_groups)

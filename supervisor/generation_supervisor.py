@@ -37,6 +37,9 @@ class GenerationSupervisor:
                 str(failure["failure_type"]),
                 current_round=state["current_round"],
                 max_round=state["max_round"],
+                target_agent=failure.get("target_agent"),
+                target_scope=failure.get("target_scope"),
+                failed_checks=failure.get("failed_checks"),
             )
 
     def _execute_plan(self, state: WorkflowState) -> dict[str, Any] | None:

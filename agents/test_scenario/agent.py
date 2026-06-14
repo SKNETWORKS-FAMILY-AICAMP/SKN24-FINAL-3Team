@@ -6,6 +6,7 @@ from agents.test_scenario.processors import (
     filter_function_requirements,
     generate_scenarios,
     generate_steps,
+    generate_steps_with_llm,
     generate_test_cases,
     refine_scenarios,
     refine_steps,
@@ -45,8 +46,10 @@ class TestScenarioGenerationAgent:
             return self._failed("TS_FUNCTION_REQUIREMENT_MISSING", "기능 요구사항이 없습니다.")
 
         scenarios, warnings = generate_scenarios(functional, llm_client=self.llm_client)
-        cases = generate_test_cases(scenarios)
-        steps = generate_steps(cases, interfaces)
+        cases, case_warnings = generate_test_cases(scenarios, llm_client=self.llm_client)
+        steps, step_warnings = generate_steps_with_llm(cases, interfaces, llm_client=self.llm_client)
+        warnings.extend(case_warnings)
+        warnings.extend(step_warnings)
         return self._success(state, scenarios, cases, steps, warnings, {"functional_requirements": functional})
 
     def _update(self, document_merge: dict[str, Any], state: WorkflowState) -> dict[str, Any]:
@@ -60,8 +63,16 @@ class TestScenarioGenerationAgent:
         if not scenarios:
             scenarios = [item for item in artifacts if isinstance(item, dict)]
         scenarios, warnings = refine_scenarios(scenarios, llm_client=self.llm_client)
-        cases = refine_test_cases(cases) if cases else generate_test_cases(scenarios)
-        steps = refine_steps(steps) if steps else generate_steps(cases, [])
+        if cases:
+            cases, case_warnings = refine_test_cases(cases, llm_client=self.llm_client)
+        else:
+            cases, case_warnings = generate_test_cases(scenarios, llm_client=self.llm_client)
+        if steps:
+            steps, step_warnings = refine_steps(steps, llm_client=self.llm_client)
+        else:
+            steps, step_warnings = generate_steps(cases, [])
+        warnings.extend(case_warnings)
+        warnings.extend(step_warnings)
         return self._success(state, scenarios, cases, steps, warnings, {"source_artifacts": artifacts})
 
     @staticmethod

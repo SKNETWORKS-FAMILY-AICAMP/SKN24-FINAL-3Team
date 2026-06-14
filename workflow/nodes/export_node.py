@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from config.constants import DOCS_CODES
+from config.constants import DOCS_CODE_DB_MAP, DOCS_CODES
 from config.settings import Settings, get_settings
 from database.repositories.docs_detail_repository import DocsDetailRepository
 from database.repositories.file_repository import FileRepository
@@ -21,7 +21,15 @@ from workflow.state import WorkflowState
 
 class FileRepositoryProtocol(Protocol):
     def insert_file(
-        self, *, file_nm: str, file_path: str, file_size: int, file_extn: str
+        self,
+        *,
+        project_sn: int,
+        file_cd: str,
+        file_nm: str,
+        file_path: str,
+        file_size: int,
+        file_ext: str | None = None,
+        file_extn: str | None = None,
     ) -> Any: ...
 
 
@@ -33,7 +41,8 @@ class DocsDetailRepositoryProtocol(Protocol):
         *,
         project_sn: int,
         docs_cd: DocsCode,
-        file_sn: int,
+        docs_path: str,
+        file_sn: int | None = None,
         use_yn: str = "Y",
         status: str = "DONE",
     ) -> Any: ...
@@ -91,21 +100,26 @@ def export_node(
             template_path=template_path,
         )
         generated_data = _unwrap_tool_result(generated, "DOCX_EXPORT_FAILED")
+        generated_local_file_path = str(generated_data.get("local_file_path") or local_file_path)
+        generated_file_name = str(generated_data.get("file_name") or Path(generated_local_file_path).name)
+        generated_file_size = int(generated_data["file_size"])
 
         upload_kwargs: dict[str, Any] = {"settings": settings}
         if settings.s3_bucket:
-            upload_kwargs["s3_key"] = f"project/{project_sn}/{docs_cd}/{file_name}"
+            upload_kwargs["s3_key"] = f"project/{project_sn}/{docs_cd}/{generated_file_name}"
         else:
-            upload_kwargs["storage_path"] = local_file_path
-        uploaded = dependencies.uploader(local_file_path, **upload_kwargs)
+            upload_kwargs["storage_path"] = generated_local_file_path
+        uploaded = dependencies.uploader(generated_local_file_path, **upload_kwargs)
         uploaded_data = _unwrap_tool_result(uploaded, "UPLOAD_FAILED")
         storage_file_path = str(uploaded_data["storage_file_path"])
 
         file_record = dependencies.file_repository.insert_file(
-            file_nm=file_name,
+            project_sn=project_sn,
+            file_cd=DOCS_CODE_DB_MAP[docs_cd],
+            file_nm=generated_file_name,
             file_path=storage_file_path,
-            file_size=int(generated_data["file_size"]),
-            file_extn="docx",
+            file_size=generated_file_size,
+            file_ext="docx",
         )
         file_sn = _read_file_sn(file_record)
         if state.get("udt_yn") == "Y":
@@ -113,6 +127,7 @@ def export_node(
         dependencies.docs_detail_repository.insert_docs_detail(
             project_sn=project_sn,
             docs_cd=docs_cd,
+            docs_path=storage_file_path,
             file_sn=file_sn,
             use_yn="Y",
             status="DONE",
@@ -128,10 +143,10 @@ def export_node(
             "project_sn": project_sn,
             "docs_cd": docs_cd,
             "file_sn": file_sn,
-            "local_file_path": local_file_path,
+            "local_file_path": generated_local_file_path,
             "storage_file_path": storage_file_path,
-            "file_name": file_name,
-            "file_size": int(generated_data["file_size"]),
+            "file_name": generated_file_name,
+            "file_size": generated_file_size,
             "warnings": [],
             "errors": [],
         }

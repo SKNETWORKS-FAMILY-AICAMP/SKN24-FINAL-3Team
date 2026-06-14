@@ -48,6 +48,15 @@ def exporter_stub(payload: dict[str, Any], output_path: str, **_: Any):
     )
 
 
+def exporter_different_path_stub(payload: dict[str, Any], output_path: str, **_: Any):
+    target = Path(output_path).with_name("custom_export.docx")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"custom")
+    return success_result(
+        {"local_file_path": str(target), "file_name": target.name, "file_size": 6}
+    )
+
+
 def uploader_stub(local_file_path: str, **_: Any):
     return success_result({"storage_file_path": f"s3://bucket/{Path(local_file_path).name}"})
 
@@ -89,9 +98,39 @@ class ExportNodeTest(unittest.TestCase):
 
             self.assertEqual(result["status"], "DONE")
             self.assertEqual(result["export_result"]["file_sn"], 123)
-            self.assertEqual(files.calls[0]["file_extn"], "docx")
+            self.assertEqual(files.calls[0]["file_ext"], "docx")
+            self.assertEqual(files.calls[0]["project_sn"], 10)
+            self.assertEqual(files.calls[0]["file_cd"], "DOC_SRS")
             self.assertEqual(docs.done, [(10, "SRS")])
             self.assertFalse(docs.deactivated)
+
+    def test_exports_all_document_types_with_required_final_json_shapes(self) -> None:
+        cases = {
+            "SRS": {"docs_cd": "SRS", "requirement_json_list": []},
+            "INTERFACE": {"docs_cd": "INTERFACE", "interface_json_list": []},
+            "TS": {"docs_cd": "TS", "integrated_test_scenario_json": {}},
+            "ERD": {"docs_cd": "ERD", "erd_entity_json": {}, "mermaid_image_path": ""},
+            "DB": {"docs_cd": "DB", "db_design_json": {}},
+            "ARCH": {"docs_cd": "ARCH", "architecture_document_json": {}, "mermaid_image_path": ""},
+        }
+        for docs_cd, final_document_json in cases.items():
+            with self.subTest(docs_cd=docs_cd), tempfile.TemporaryDirectory() as root:
+                dependencies, files, docs = self.dependencies(root)
+                result = export_node(
+                    {
+                        "project_sn": 10,
+                        "docs_cd": docs_cd,
+                        "udt_yn": "N",
+                        "final_document_json": final_document_json,
+                    },
+                    dependencies,
+                )
+
+                self.assertEqual(result["status"], "DONE")
+                self.assertEqual(result["export_result"]["docs_cd"], docs_cd)
+                self.assertEqual(files.calls[0]["file_ext"], "docx")
+                self.assertEqual(docs.inserted[0]["docs_cd"], docs_cd)
+                self.assertTrue(docs.inserted[0]["docs_path"].startswith("s3://bucket/"))
 
     def test_update_deactivates_active_version_before_insert(self) -> None:
         with tempfile.TemporaryDirectory() as root:
@@ -109,6 +148,36 @@ class ExportNodeTest(unittest.TestCase):
             self.assertEqual(result["status"], "DONE")
             self.assertEqual(docs.deactivated, [(10, "DB")])
             self.assertEqual(docs.inserted[0]["status"], "DONE")
+
+    def test_uses_actual_exported_file_path_for_upload_and_db_record(self) -> None:
+        uploaded_paths = []
+
+        def uploader(local_file_path: str, **_: Any):
+            uploaded_paths.append(local_file_path)
+            return success_result({"storage_file_path": f"s3://bucket/{Path(local_file_path).name}"})
+
+        with tempfile.TemporaryDirectory() as root:
+            dependencies, files, _ = self.dependencies(root, uploader=uploader)
+            dependencies = ExportDependencies(
+                file_repository=dependencies.file_repository,
+                docs_detail_repository=dependencies.docs_detail_repository,
+                docx_exporter=exporter_different_path_stub,
+                uploader=uploader,
+                settings=dependencies.settings,
+            )
+            result = export_node(
+                {
+                    "project_sn": 10,
+                    "docs_cd": "SRS",
+                    "udt_yn": "N",
+                    "final_document_json": {"docs_cd": "SRS", "requirement_json_list": []},
+                },
+                dependencies,
+            )
+
+            self.assertEqual(Path(uploaded_paths[0]).name, "custom_export.docx")
+            self.assertEqual(result["export_result"]["file_name"], "custom_export.docx")
+            self.assertEqual(files.calls[0]["file_nm"], "custom_export.docx")
 
     def test_failure_marks_export_and_docs_failed(self) -> None:
         def failed_uploader(local_file_path: str, **_: Any):

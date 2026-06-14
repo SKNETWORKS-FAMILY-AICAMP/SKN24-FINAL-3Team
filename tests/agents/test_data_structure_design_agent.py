@@ -14,6 +14,81 @@ class FakeDataLLM:
         return success_result({"analysis": "ok"})
 
 
+class FakeStructuredDataLLM:
+    def chat(self, messages, **kwargs):
+        system_prompt = messages[0]["content"]
+        if "요구사항 그룹 분석" in system_prompt:
+            return success_result(
+                {
+                    "domain_group": {
+                        "domain_name": "사용자 관리",
+                        "source_requirement_ids": ["REQ-001"],
+                        "description": "사용자 관리 도메인",
+                    }
+                }
+            )
+        if "엔티티 후보" in system_prompt:
+            return success_result(
+                {
+                    "entity": {
+                        "logical_name": "사용자",
+                        "description": "사용자 엔티티",
+                        "source_requirement_ids": ["REQ-001"],
+                    }
+                }
+            )
+        if "테이블 후보" in system_prompt:
+            return success_result(
+                {
+                    "table": {
+                        "logical_name": "사용자",
+                        "physical_name": "tbl_user",
+                        "columns": [
+                            {
+                                "logical_name": "사용자 번호",
+                                "physical_name": "user_sn",
+                                "data_type": "BIGINT",
+                                "nullable": False,
+                                "constraints": ["PK"],
+                            }
+                        ],
+                    }
+                }
+            )
+        if "컬럼 후보" in system_prompt:
+            return success_result(
+                {
+                    "table": {
+                        "logical_name": "사용자",
+                        "physical_name": "tbl_user",
+                        "columns": [
+                            {
+                                "logical_name": "사용자 번호",
+                                "physical_name": "user_sn",
+                                "data_type": "BIGINT",
+                                "nullable": False,
+                                "constraints": ["PK"],
+                            },
+                            {
+                                "logical_name": "사용자 아이디",
+                                "physical_name": "user_id",
+                                "data_type": "VARCHAR(100)",
+                                "nullable": False,
+                                "constraints": [],
+                            },
+                        ],
+                    }
+                }
+            )
+        if "PK/FK 관계" in system_prompt:
+            return success_result({"relationship_list": []})
+        if "ERD JSON" in system_prompt:
+            return success_result({})
+        if "Mermaid용 ERD" in system_prompt:
+            return success_result({"entities": [{"name": "tbl_user", "columns": []}], "relationships": []})
+        return success_result({})
+
+
 class DataStructureDesignAgentTest(unittest.TestCase):
     def test_erd_create_builds_tables_relationships_mermaid_and_uses_rag(self) -> None:
         calls = []
@@ -85,6 +160,34 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         names = {table["physical_name"] for table in result["erd_entity_json"]["tables"]}
 
         self.assertEqual(names, {"tbl_user", "tbl_docs"})
+
+    def test_erd_create_uses_parallel_llm_domain_entity_table_and_column_stages(self) -> None:
+        state = {
+            "project_sn": 1,
+            "docs_cd": "ERD",
+            "udt_yn": "N",
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "integrated_requirement_json_list": [
+                        {
+                            "req_id": "REQ-001",
+                            "req_name": "사용자 관리",
+                            "requirement_type": "기능",
+                            "detail_text": "사용자를 관리한다.",
+                        }
+                    ]
+                }
+            },
+        }
+        result = DataStructureDesignAgent(
+            llm_client=FakeStructuredDataLLM(),
+            search_tool=lambda query, **kwargs: success_result({"normalized_results": [{"content": "user_id", "score": 0.9}]}),
+        ).execute(state)
+
+        table = result["erd_entity_json"]["tables"][0]
+        self.assertEqual(table["physical_name"], "tbl_user")
+        self.assertIn("user_id", {column["physical_name"] for column in table["columns"]})
+        self.assertEqual(result["erd_mermaid_json"]["entities"][0]["name"], "tbl_user")
 
     def test_db_create_converts_reference_erd_and_passes_db_validator(self) -> None:
         state = {
@@ -175,8 +278,8 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         }
         result = DataStructureDesignAgent(llm_client=llm).execute(state)
 
-        self.assertEqual(llm.calls, 1)
-        self.assertEqual(result["debug"]["llm_analysis"], [{"analysis": "ok"}])
+        self.assertGreaterEqual(llm.calls, 3)
+        self.assertEqual(result["debug"]["llm_analysis"], {"analysis": "ok"})
 
 
 if __name__ == "__main__":

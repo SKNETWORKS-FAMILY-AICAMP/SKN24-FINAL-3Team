@@ -106,8 +106,8 @@ def request_preprocess_node(
 def _initialize_state(state: WorkflowState) -> WorkflowState:
     return {
         "project_sn": state.get("project_sn"),  # type: ignore[typeddict-item]
-        "docs_cd": state.get("docs_cd"),  # type: ignore[typeddict-item]
-        "udt_yn": state.get("udt_yn"),  # type: ignore[typeddict-item]
+        "docs_cd": str(state.get("docs_cd")).upper() if state.get("docs_cd") is not None else None,  # type: ignore[typeddict-item]
+        "udt_yn": str(state.get("udt_yn")).upper() if state.get("udt_yn") is not None else None,  # type: ignore[typeddict-item]
         "status": "READY",
         "next_action": "SUPERVISOR",
         "file_list": list(state.get("file_list", [])),
@@ -193,6 +193,13 @@ def _resolve_required_documents(
             project_sn, cast(DocsCode, "INTERFACE")
         )
         state["interface_file_path"] = _download_active_doc(active_interface, dependencies)
+    elif docs_cd == "INTERFACE" and not state["input_image_paths"]:
+        state["warnings"].append(
+            {
+                "code": "INTERFACE_IMAGE_LIST_EMPTY",
+                "message": "INTERFACE 신규 생성 요청에 image_list가 없습니다. 후속 이미지 분석 단계에서 실패 또는 보완 요청이 발생할 수 있습니다.",
+            }
+        )
 
 
 def _download_file_sn_list(
@@ -216,9 +223,19 @@ def _download_active_doc(
 ) -> str:
     if docs_detail is None:
         raise PreprocessError("ACTIVE_DOC_NOT_FOUND", "필수 활성 산출물을 찾을 수 없습니다.")
+    docs_path = _read_value(docs_detail, "docs_path") or _read_value(docs_detail, "file_path")
+    if docs_path:
+        return _download_record(
+            {
+                "file_path": docs_path,
+                "file_nm": _read_value(docs_detail, "file_nm")
+                or str(docs_path).replace("\\", "/").split("/")[-1],
+            },
+            dependencies,
+        )
     file_sn = _read_value(docs_detail, "file_sn")
     if file_sn is None:
-        raise PreprocessError("ACTIVE_DOC_FILE_MISSING", "활성 산출물에 file_sn이 없습니다.")
+        raise PreprocessError("ACTIVE_DOC_FILE_MISSING", "활성 산출물에 docs_path 또는 file_sn이 없습니다.")
     file_record = dependencies.file_repository.find_file_by_sn(file_sn)
     if file_record is None:
         raise PreprocessError("FILE_NOT_FOUND", f"파일 정보를 찾을 수 없습니다: {file_sn}")

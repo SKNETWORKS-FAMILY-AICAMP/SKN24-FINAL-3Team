@@ -1,6 +1,7 @@
 # ERD 및 DB 데이터 구조 설계 Agent의 실행 진입점입니다.
 
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 from typing import Any
 
@@ -28,9 +29,11 @@ class DataStructureDesignAgent:
         *,
         llm_client: LLMClient | None = None,
         search_tool: Callable[..., ToolResult] = search,
+        max_parallel_workers: int = 4,
     ) -> None:
         self.llm_client = llm_client
         self.search_tool = search_tool
+        self.max_parallel_workers = max(1, max_parallel_workers)
 
     def execute(self, state: WorkflowState) -> dict[str, Any]:
         docs_cd = str(state.get("docs_cd", "")).upper()
@@ -55,13 +58,27 @@ class DataStructureDesignAgent:
         selected = filter_data_requirements(requirements)
         if not selected:
             return self._failed("ERD_DATA_REQUIREMENT_MISSING", "데이터 구조 설계 대상 요구사항이 없습니다.")
-        groups = build_domain_groups(selected)
-        entities = build_entity_candidates(groups)
-        tables = build_erd_tables(entities)
+        groups, group_warnings = self._build_domain_groups(selected)
+        entities, entity_warnings = self._build_entity_candidates(groups)
+        tables, table_warnings = self._build_table_candidates(entities)
         warnings, rag_results = self._standard_search(tables, state)
-        llm_analysis, llm_warnings = self._parallel_llm_analysis(groups, "도메인별 엔티티 후보와 데이터 구조 영향을 분석하세요.")
-        warnings.extend(llm_warnings)
-        return self._erd_success(state, tables, build_relationships(tables), warnings, {"domain_group_list": groups, "entity_candidate_list": entities, "rag_results": rag_results, "llm_analysis": llm_analysis})
+        tables, column_warnings = self._build_column_candidates(tables, rag_results)
+        relationships, relationship_warnings = self._build_relationships(tables)
+        erd_entity_json, erd_warnings = self._build_final_erd_json(tables, relationships)
+        erd_mermaid_json, mermaid_warnings = self._build_erd_mermaid_json(erd_entity_json)
+        warnings.extend([*group_warnings, *entity_warnings, *table_warnings, *column_warnings, *relationship_warnings, *erd_warnings, *mermaid_warnings])
+        return self._erd_success(
+            state,
+            erd_entity_json,
+            erd_mermaid_json,
+            warnings,
+            {
+                "domain_group_list": groups,
+                "entity_candidate_list": entities,
+                "table_candidate_list": tables,
+                "rag_results": rag_results,
+            },
+        )
 
     def _update_erd(self, document_merge: dict[str, Any], state: WorkflowState) -> dict[str, Any]:
         existing = document_merge.get("existing_output_raw_json")
@@ -70,30 +87,263 @@ class DataStructureDesignAgent:
             return self._failed("ERD_EXISTING_OUTPUT_MISSING", "existing_output_raw_json이 필요합니다.")
         if not isinstance(changes, list):
             return self._failed("ERD_MEETING_CHANGE_MISSING", "meeting_change_items가 필요합니다.")
-        tables = normalize_erd_tables(_extract_tables(existing))
+        existing_analysis = self._llm_dict("기존 ERD 구조를 분석하세요.", {"existing_output_raw_json": existing}, "ERD_EXISTING_ANALYSIS_LLM_FAILED")
+        tables = normalize_erd_tables(_extract_tables(existing_analysis or existing))
         llm_analysis, warnings = self._parallel_llm_analysis(changes, "회의록 변경사항의 ERD 엔티티, 컬럼, 관계 영향을 분석하세요.")
         tables = _apply_table_changes(tables, changes)
-        return self._erd_success(state, tables, build_relationships(tables), warnings, {"meeting_change_items": changes, "llm_analysis": llm_analysis})
+        redesign = self._llm_dict(
+            "기존 ERD와 회의록 변경사항을 기반으로 ERD를 재설계하고 JSON으로 반환하세요.",
+            {"tables": tables, "meeting_change_items": changes, "llm_analysis": llm_analysis},
+            "ERD_REDESIGN_LLM_FAILED",
+        )
+        tables = normalize_erd_tables(_extract_tables(redesign) or tables)
+        relationships, relationship_warnings = self._build_relationships(tables)
+        erd_entity_json, erd_warnings = self._build_final_erd_json(tables, relationships)
+        erd_mermaid_json, mermaid_warnings = self._build_erd_mermaid_json(erd_entity_json)
+        warnings.extend([*relationship_warnings, *erd_warnings, *mermaid_warnings])
+        return self._erd_success(
+            state,
+            erd_entity_json,
+            erd_mermaid_json,
+            warnings,
+            {"meeting_change_items": changes, "llm_analysis": llm_analysis},
+        )
 
     def _create_db(self, document_merge: dict[str, Any], state: WorkflowState) -> dict[str, Any]:
         reference = document_merge.get("reference_erd_json_list")
         if not isinstance(reference, list) or not reference:
             return self._failed("DB_REFERENCE_ERD_MISSING", "reference_erd_json_list가 필요합니다.")
         tables = normalize_erd_tables(reference)
-        llm_analysis, warnings = self._parallel_llm_analysis(tables, "ERD 테이블별 DB 명세, 데이터 타입, 제약조건, 인덱스를 분석하세요.")
-        return self._db_success(state, build_db_design(tables), warnings, {"reference_erd_json_list": reference, "llm_analysis": llm_analysis})
+        erd_analysis = self._llm_dict("ERD 구조를 분석하세요. 테이블, 컬럼, PK, FK, 관계를 JSON으로 반환하세요.", {"tables": tables}, "DB_ERD_ANALYSIS_LLM_FAILED")
+        design, warnings = self._build_db_specifications(tables)
+        final_design, final_warnings = self._finalize_db_design(design)
+        warnings.extend(final_warnings)
+        return self._db_success(state, final_design, warnings, {"reference_erd_json_list": reference, "llm_analysis": erd_analysis})
 
     def _update_db(self, document_merge: dict[str, Any], state: WorkflowState) -> dict[str, Any]:
         artifacts = document_merge.get("integrated_artifact_json_list")
         if not isinstance(artifacts, list) or not artifacts:
             return self._failed("DB_ARTIFACT_MISSING", "integrated_artifact_json_list가 필요합니다.")
+        existing_analysis = self._llm_dict("기존 DB 설계서 구조를 분석하세요.", {"integrated_artifact_json_list": artifacts}, "DB_EXISTING_ANALYSIS_LLM_FAILED")
         llm_analysis, warnings = self._parallel_llm_analysis(artifacts, "기존 DB 설계서의 컬럼, 제약조건, 인덱스 변경사항을 검토하세요.")
+        analyzed_tables = _extract_tables(existing_analysis) if existing_analysis else []
+        design = normalize_db_design(analyzed_tables or _flatten_tables(artifacts))
+        final_design, final_warnings = self._finalize_db_design(design)
+        warnings.extend(final_warnings)
         return self._db_success(
             state,
-            normalize_db_design(_flatten_tables(artifacts)),
+            final_design,
             warnings,
             {"source_artifacts": artifacts, "llm_analysis": llm_analysis},
         )
+
+    def _build_domain_groups(
+        self,
+        requirements: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        fallback = build_domain_groups(requirements)
+        generated, warnings = self._parallel_llm_list(
+            requirements,
+            "요구사항 그룹 분석을 수행하고 JSON으로 domain_group 또는 domain_group_list를 반환하세요.",
+            "domain_group",
+            "domain_group_list",
+            "ERD_DOMAIN_GROUP_LLM_FAILED",
+        )
+        return _normalize_domain_groups(generated or fallback), warnings
+
+    def _build_entity_candidates(
+        self,
+        groups: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        fallback = build_entity_candidates(groups)
+        generated, warnings = self._parallel_llm_list(
+            groups,
+            "도메인별 엔티티 후보를 추출하고 JSON으로 entity 또는 entity_candidate_list를 반환하세요.",
+            "entity",
+            "entity_candidate_list",
+            "ERD_ENTITY_LLM_FAILED",
+        )
+        return _normalize_entities(generated or fallback), warnings
+
+    def _build_table_candidates(
+        self,
+        entities: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        fallback = build_erd_tables(entities)
+        generated, warnings = self._parallel_llm_list(
+            entities,
+            "엔티티별 테이블 후보를 설계하고 JSON으로 table 또는 table_candidate_list를 반환하세요.",
+            "table",
+            "table_candidate_list",
+            "ERD_TABLE_LLM_FAILED",
+        )
+        return normalize_erd_tables(generated or fallback), warnings
+
+    def _build_column_candidates(
+        self,
+        tables: list[dict[str, Any]],
+        rag_results: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        rag_by_table = {item["table_id"]: item.get("normalized_results", []) for item in rag_results}
+        generated, warnings = self._parallel_llm_list(
+            [
+                {
+                    "table": table,
+                    "rag_results": rag_by_table.get(table["table_id"], []),
+                    "instruction": "공공데이터 표준, 컬럼 표준명, 용어사전을 반영해 컬럼 후보를 설계하세요.",
+                }
+                for table in tables
+            ],
+            "테이블별 컬럼 후보를 설계하고 JSON으로 table 또는 column_candidate_list를 반환하세요.",
+            "table",
+            "table_candidate_list",
+            "ERD_COLUMN_LLM_FAILED",
+        )
+        if not generated:
+            return tables, warnings
+        by_physical = {table["physical_name"]: table for table in tables}
+        updated = []
+        for item in generated:
+            if not isinstance(item, dict):
+                continue
+            table = item.get("table") if isinstance(item.get("table"), dict) else item
+            physical_name = str(table.get("physical_name") or table.get("table_name") or "")
+            base = dict(by_physical.get(physical_name) or {})
+            if item.get("column_candidate_list") and not table.get("columns"):
+                table = {**table, "columns": item["column_candidate_list"]}
+            base.update(table)
+            updated.append(base)
+        return normalize_erd_tables(updated or tables), warnings
+
+    def _build_relationships(
+        self,
+        tables: list[dict[str, Any]],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        fallback = build_relationships(tables)
+        value = self._llm_dict(
+            "PK/FK 관계를 설계하고 JSON으로 relationship_list 또는 relationships를 반환하세요.",
+            {"tables": tables, "fallback_relationships": fallback},
+            "ERD_RELATION_LLM_FAILED",
+        )
+        relationships = value.get("relationship_list") or value.get("relationships") if isinstance(value, dict) else None
+        return relationships if isinstance(relationships, list) and relationships else fallback, []
+
+    def _build_final_erd_json(
+        self,
+        tables: list[dict[str, Any]],
+        relationships: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        fallback = {"tables": tables, "relationships": relationships}
+        value = self._llm_dict("전체 데이터 구조를 병합하여 ERD JSON을 생성하세요.", fallback, "ERD_FINAL_JSON_LLM_FAILED")
+        if isinstance(value, dict):
+            tables_value = _extract_tables(value)
+            relationships_value = value.get("relationships") or value.get("relationship_list")
+            if tables_value:
+                return {
+                    "tables": normalize_erd_tables(tables_value),
+                    "relationships": relationships_value if isinstance(relationships_value, list) else relationships,
+                }, []
+        return fallback, []
+
+    def _build_erd_mermaid_json(
+        self,
+        erd_entity_json: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        fallback = {
+            "entities": [
+                {"name": table["physical_name"], "columns": table["columns"]}
+                for table in erd_entity_json.get("tables", [])
+            ],
+            "relationships": erd_entity_json.get("relationships", []),
+        }
+        value = self._llm_dict("Mermaid용 ERD 구조 JSON을 생성하세요.", erd_entity_json, "ERD_MERMAID_JSON_LLM_FAILED")
+        if isinstance(value, dict) and (value.get("entities") or value.get("tables")):
+            return {
+                "entities": value.get("entities") or [
+                    {"name": table["physical_name"], "columns": table["columns"]}
+                    for table in normalize_erd_tables(value.get("tables") or [])
+                ],
+                "relationships": value.get("relationships") or fallback["relationships"],
+            }, []
+        return fallback, []
+
+    def _build_db_specifications(
+        self,
+        tables: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        fallback = build_db_design(tables)
+        generated, warnings = self._parallel_llm_list(
+            tables,
+            "테이블별 DB 명세를 생성하세요. 테이블 설명, 컬럼 설명, 데이터 타입, 제약조건, Default, 인덱스를 JSON으로 반환하세요.",
+            "table_specification",
+            "table_specification_json",
+            "DB_TABLE_SPEC_LLM_FAILED",
+        )
+        if not generated:
+            return fallback, warnings
+        return {"tables": [_normalize_db_table(item, index) for index, item in enumerate(generated)]}, warnings
+
+    def _finalize_db_design(
+        self,
+        design: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        value = self._llm_dict("DB 설계서를 재정리하고 JSON으로 db_design_json을 반환하세요.", design, "DB_FINAL_JSON_LLM_FAILED")
+        if isinstance(value, dict):
+            candidate = value.get("db_design_json") or value
+            if isinstance(candidate, dict) and isinstance(candidate.get("tables"), list):
+                return {"tables": [_normalize_db_table(item, index) for index, item in enumerate(candidate["tables"])]}, []
+        return design, []
+
+    def _parallel_llm_list(
+        self,
+        items: list[Any],
+        instruction: str,
+        item_key: str,
+        list_key: str,
+        warning_code: str,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        if self.llm_client is None or not items:
+            return [], []
+        result = send_parallel(
+            [
+                {"messages": [{"role": "system", "content": instruction}, {"role": "user", "content": str(item)}]}
+                for item in items
+            ],
+            client=self.llm_client,
+            max_workers=self.max_parallel_workers,
+        )
+        if not result["success"]:
+            return [], [{"code": warning_code, "message": result["error"]["message"]}]
+        output: list[dict[str, Any]] = []
+        warnings = []
+        for index, response in enumerate(result["data"]):
+            parsed = parse_json_response(response["data"]) if response and response["success"] else None
+            value = parsed["data"] if parsed and parsed["success"] else None
+            extracted = _extract_llm_items(value, item_key, list_key)
+            if extracted:
+                output.extend(extracted)
+            else:
+                warnings.append({"code": warning_code, "message": f"LLM 항목 {index + 1} 결과를 기본값으로 대체합니다."})
+        return output, warnings
+
+    def _llm_dict(
+        self,
+        instruction: str,
+        payload: Any,
+        warning_code: str,
+    ) -> dict[str, Any]:
+        if self.llm_client is None:
+            return {}
+        result = self.llm_client.chat(
+            [
+                {"role": "system", "content": instruction},
+                {"role": "user", "content": str(payload)},
+            ]
+        )
+        if not result["success"]:
+            return {}
+        parsed = parse_json_response(result["data"])
+        return parsed["data"] if parsed["success"] and isinstance(parsed["data"], dict) else {}
 
     def _parallel_llm_analysis(
         self,
@@ -113,6 +363,7 @@ class DataStructureDesignAgent:
                 for item in items
             ],
             client=self.llm_client,
+            max_workers=self.max_parallel_workers,
         )
         if not result["success"]:
             return [], [{"code": "DATA_STRUCTURE_LLM_FAILED", "message": result["error"]["message"]}]
@@ -133,24 +384,35 @@ class DataStructureDesignAgent:
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         warnings = []
         results = []
-        for table in tables:
-            result = self.search_tool(
-                f"{table['logical_name']} 공공데이터 컬럼 표준명 용어사전",
-                search_targets="RAG",
-                filters={"project_sn": state.get("project_sn"), "category": "data_standard"},
-            )
-            if result["success"]:
-                results.append({"table_id": table["table_id"], "normalized_results": result["data"]["normalized_results"]})
-            else:
-                warnings.append({"code": "DATA_STANDARD_RAG_FAILED", "message": result["error"]["message"], "table_id": table["table_id"]})
+        with ThreadPoolExecutor(max_workers=self.max_parallel_workers) as executor:
+            future_map = {
+                executor.submit(
+                    self.search_tool,
+                    f"{table['logical_name']} 공공데이터 컬럼 표준명 용어사전",
+                    search_targets="RAG",
+                    filters={"project_sn": state.get("project_sn"), "category": "data_standard"},
+                ): table
+                for table in tables
+            }
+            for future in as_completed(future_map):
+                table = future_map[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    warnings.append({"code": "DATA_STANDARD_RAG_FAILED", "message": str(exc), "table_id": table["table_id"]})
+                    continue
+                if result["success"]:
+                    results.append({"table_id": table["table_id"], "normalized_results": _dedupe_results(result["data"]["normalized_results"])})
+                else:
+                    warnings.append({"code": "DATA_STANDARD_RAG_FAILED", "message": result["error"]["message"], "table_id": table["table_id"]})
         return warnings, results
 
     @staticmethod
-    def _erd_success(state, tables, relationships, warnings, debug):
+    def _erd_success(state, erd_entity_json, erd_mermaid_json, warnings, debug):
         output = {
             "status": "SUCCESS",
-            "erd_entity_json": {"tables": tables, "relationships": relationships},
-            "erd_mermaid_json": {"entities": [{"name": table["physical_name"], "columns": table["columns"]} for table in tables], "relationships": relationships},
+            "erd_entity_json": erd_entity_json,
+            "erd_mermaid_json": erd_mermaid_json,
             "warnings": warnings,
             "errors": [],
         }
@@ -199,3 +461,122 @@ def _apply_table_changes(tables: list[dict[str, Any]], changes: list[dict[str, A
         if operation == "ADD" and isinstance(item, dict):
             updated.extend(normalize_erd_tables([item]))
     return normalize_erd_tables(updated)
+
+
+def _extract_llm_items(value: Any, item_key: str, list_key: str) -> list[dict[str, Any]]:
+    if isinstance(value, dict):
+        if isinstance(value.get(list_key), list):
+            return [item for item in value[list_key] if isinstance(item, dict)]
+        if isinstance(value.get(item_key), dict):
+            return [value[item_key]]
+        if isinstance(value.get("items"), list):
+            return [item for item in value["items"] if isinstance(item, dict)]
+        return [value]
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    return []
+
+
+def _normalize_domain_groups(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    groups = []
+    seen: set[str] = set()
+    for index, item in enumerate(items):
+        name = str(item.get("domain_name") or item.get("name") or item.get("group_name") or f"도메인 {index + 1}")
+        if name in seen:
+            continue
+        seen.add(name)
+        source_ids = item.get("source_requirement_ids") or item.get("source_req_ids") or []
+        groups.append(
+            {
+                **item,
+                "domain_id": str(item.get("domain_id") or f"DOMAIN-{len(groups) + 1:03d}"),
+                "domain_name": name,
+                "source_requirement_ids": [str(value) for value in source_ids] if isinstance(source_ids, list) else [str(source_ids)],
+                "description": str(item.get("description") or item.get("detail_text") or name),
+            }
+        )
+    return groups
+
+
+def _normalize_entities(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    entities = []
+    seen: set[str] = set()
+    for index, item in enumerate(items):
+        name = str(item.get("logical_name") or item.get("entity_name") or item.get("name") or f"엔티티 {index + 1}")
+        if name in seen:
+            continue
+        seen.add(name)
+        source_ids = item.get("source_requirement_ids") or item.get("source_req_ids") or []
+        entities.append(
+            {
+                **item,
+                "entity_id": str(item.get("entity_id") or f"ENTITY-{len(entities) + 1:03d}"),
+                "logical_name": name,
+                "description": str(item.get("description") or name),
+                "source_requirement_ids": [str(value) for value in source_ids] if isinstance(source_ids, list) else [str(source_ids)],
+            }
+        )
+    return entities
+
+
+def _normalize_db_table(item: dict[str, Any], index: int) -> dict[str, Any]:
+    table_name = str(item.get("table_name") or item.get("physical_name") or f"table_{index + 1}")
+    columns = item.get("columns") if isinstance(item.get("columns"), list) else []
+    normalized_columns = []
+    for column_index, column in enumerate(columns):
+        if not isinstance(column, dict):
+            continue
+        normalized_columns.append(
+            {
+                **column,
+                "column_name": str(column.get("column_name") or column.get("physical_name") or f"column_{column_index + 1}"),
+                "data_type": str(column.get("data_type") or "VARCHAR(255)"),
+                "nullable": column.get("nullable", True),
+                "default": column.get("default"),
+                "description": str(column.get("description") or column.get("logical_name") or ""),
+            }
+        )
+    if not normalized_columns:
+        normalized_columns = [
+            {
+                "column_name": f"{table_name.removeprefix('tbl_')}_sn",
+                "data_type": "BIGINT",
+                "nullable": False,
+                "default": None,
+                "description": "기본키",
+            }
+        ]
+    return {
+        **item,
+        "table_name": table_name,
+        "table_description": str(item.get("table_description") or item.get("description") or item.get("logical_name") or table_name),
+        "columns": normalized_columns,
+        "constraints": item.get("constraints") if isinstance(item.get("constraints"), list) else _db_constraints(normalized_columns),
+        "indexes": item.get("indexes") if isinstance(item.get("indexes"), list) else [],
+    }
+
+
+def _db_constraints(columns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    pk_columns = [
+        column["column_name"]
+        for column in columns
+        if "PK" in column.get("constraints", []) or column["column_name"].endswith("_sn")
+    ]
+    return [{"type": "PK", "columns": [pk_columns[0]]}] if pk_columns else []
+
+
+def _dedupe_results(results: list[Any]) -> list[dict[str, Any]]:
+    deduped = []
+    seen: set[str] = set()
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        score = float(result.get("score") or 0.0)
+        if score and score < 0.2:
+            continue
+        key = str(result.get("citation") or result.get("content") or result)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(result)
+    return deduped

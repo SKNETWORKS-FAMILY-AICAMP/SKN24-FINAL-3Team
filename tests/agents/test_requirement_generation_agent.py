@@ -10,6 +10,23 @@ class FakeSLLM:
 
     def chat(self, messages, **kwargs):
         self.calls.append(messages)
+        system = messages[0]["content"]
+        if "RAG query" in system:
+            return success_result({"query": "로그인 보안 정책 비밀번호 실패 계정 잠금"})
+        if "최종 요구사항 JSON" in system:
+            return success_result(
+                {
+                    "requirement_id": "LOGIN-001",
+                    "requirement_name": "사용자 로그인",
+                    "requirement_type": "기능",
+                    "description": "사용자는 계정으로 로그인할 수 있어야 한다.",
+                    "source": ["SFR-001"],
+                    "constraints": ["로그인 실패 5회 시 계정을 잠가야 한다."],
+                    "priority": "미지정",
+                    "validation_criteria": ["로그인 실패 5회 시 계정 잠금 여부를 확인한다."],
+                    "note": "RAG 검색 결과를 반영함",
+                }
+            )
         return success_result(
             {
                 "split_function_requirement_list": [
@@ -47,17 +64,36 @@ class RequirementGenerationAgentTest(unittest.TestCase):
         ).execute(state)
 
         self.assertEqual(result["status"], "SUCCESS")
-        self.assertEqual(len(llm.calls), 1)
+        self.assertEqual(len(llm.calls), 3)
         self.assertIn("SFR-001", llm.calls[0][1]["content"])
         self.assertNotIn("NFR-001", llm.calls[0][1]["content"])
         self.assertEqual(search_calls[0][1]["search_targets"], "RAG")
         self.assertEqual(search_calls[0][1]["filters"]["project_sn"], 1)
+        self.assertEqual(search_calls[0][0], "로그인 보안 정책 비밀번호 실패 계정 잠금")
         item = result["final_requirement_json_list"][0]
         self.assertEqual(item["constraints"][0], "로그인 실패 5회 시 계정을 잠가야 한다.")
-        self.assertEqual(len(item["validation_criteria"]), 2)
+        self.assertEqual(item["validation_criteria"], ["로그인 실패 5회 시 계정 잠금 여부를 확인한다."])
         self.assertEqual(item["req_id"], item["requirement_id"])
         self.assertIs(state["agent_outputs"]["requirement_generation_agent"], result)
         self.assertNotIn("debug", result)
+
+    def test_parallel_rag_reduces_duplicates_and_low_scores(self) -> None:
+        def search_tool(query, **kwargs):
+            return success_result(
+                {
+                    "normalized_results": [
+                        {"content": "중복 정책", "score": 0.9},
+                        {"content": "중복 정책", "score": 0.8},
+                        {"content": "낮은 관련도", "score": 0.1},
+                    ]
+                }
+            )
+
+        result = RequirementGenerationAgent(search_tool=search_tool).execute(_state(debug=True))
+
+        rag_results = result["debug"]["rag_searches"][0]["normalized_results"]
+        self.assertEqual([item["content"] for item in rag_results], ["중복 정책"])
+        self.assertEqual(result["final_requirement_json_list"][0]["constraints"], ["중복 정책"])
 
     def test_debug_intermediates_are_only_saved_when_enabled(self) -> None:
         result = RequirementGenerationAgent(
