@@ -455,6 +455,10 @@ class ImageAnalysisAgentTest(unittest.TestCase):
 
             screen = result["interface_image_analysis_json_list"][0]
             self.assertTrue(Path(screen["annotated_image_path"]).exists())
+            from PIL import Image
+
+            with Image.open(screen["annotated_image_path"]) as annotated:
+                self.assertGreaterEqual(annotated.width, 1800)
             self.assertEqual(screen["process_contents"][0]["no"], screen["button_markers"][0]["no"])
             self.assertIn("x_ratio", screen["button_markers"][0])
             self.assertEqual(len(screen["button_markers"]), 3)

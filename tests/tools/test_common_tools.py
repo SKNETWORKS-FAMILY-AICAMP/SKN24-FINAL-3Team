@@ -20,6 +20,7 @@ from tools.storage.cleanup_manager import cleanup_paths
 from tools.storage.downloader import download_file
 from tools.storage.uploader import upload_file
 from tools.docx.docx_exporter import export_docx
+import tools.mermaid.mermaid_renderer as mermaid_renderer
 
 
 class CommonToolsTest(unittest.TestCase):
@@ -185,6 +186,34 @@ class CommonToolsTest(unittest.TestCase):
             self.assertNotIn("relates", document.tables[1].cell(1, 0).text)
             self.assertEqual(document.tables[2].cell(0, 7).text.strip(), "USER_ACCOUNT")
             self.assertEqual(document.tables[2].cell(3, 0).text.strip(), "USER_ACCOUNT_SN")
+
+    def test_mermaid_renderer_uses_high_resolution_portrait_options(self) -> None:
+        captured = {}
+
+        def fake_run(args, **kwargs):
+            captured["args"] = args
+            image_path = Path(args[args.index("-o") + 1])
+            image_path.parent.mkdir(parents=True, exist_ok=True)
+            from PIL import Image
+
+            Image.new("RGB", (10, 10), "white").save(image_path)
+            return type("Completed", (), {"returncode": 0, "stderr": ""})()
+
+        original_run = mermaid_renderer.subprocess.run
+        try:
+            mermaid_renderer.subprocess.run = fake_run
+            with tempfile.TemporaryDirectory() as root:
+                result = mermaid_renderer.render_mermaid(
+                    "flowchart TD\nA --> B",
+                    output_dir=root,
+                )
+        finally:
+            mermaid_renderer.subprocess.run = original_run
+
+        self.assertTrue(result["success"])
+        self.assertEqual(captured["args"][captured["args"].index("-w") + 1], "1400")
+        self.assertEqual(captured["args"][captured["args"].index("-H") + 1], "2200")
+        self.assertEqual(captured["args"][captured["args"].index("-s") + 1], "2")
 
     def test_llm_client_uses_injected_transport(self) -> None:
         captured = {}
