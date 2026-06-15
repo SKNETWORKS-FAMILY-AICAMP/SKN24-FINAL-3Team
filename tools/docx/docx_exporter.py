@@ -56,7 +56,11 @@ def _fill_template_document(document: Any, payload: dict[str, Any]) -> None:
     if docs_cd == "SRS":
         _fill_srs_template(document, _list_content(payload, "requirement_json_list"))
     elif docs_cd == "INTERFACE":
-        _fill_interface_template(document, _list_content(payload, "interface_json_list"))
+        _fill_interface_template(
+            document,
+            _list_content(payload, "interface_json_list"),
+            _list_content(payload, "ui_structure"),
+        )
     elif docs_cd == "ERD":
         _fill_erd_template(
             document,
@@ -116,13 +120,17 @@ def _fill_srs_template(document: Any, requirements: list[dict[str, Any]]) -> Non
             _set_cell(cell, value)
 
 
-def _fill_interface_template(document: Any, screens: list[dict[str, Any]]) -> None:
+def _fill_interface_template(
+    document: Any,
+    screens: list[dict[str, Any]],
+    ui_structure: list[dict[str, Any]] | None = None,
+) -> None:
     if len(document.tables) < 5:
         _fill_generic_document(document, {"title": "인터페이스 설계서", "content": {"interface_json_list": screens}})
         return
 
     _fill_interface_header(document.tables[0])
-    _fill_interface_structure_table(document.tables[1], screens)
+    _fill_interface_structure_table(document.tables[1], screens, ui_structure or [])
     _fill_repeating_table(
         document.tables[2],
         [[_pick(screen, "screen_id"), _pick(screen, "screen_name", "name")] for screen in screens],
@@ -174,9 +182,8 @@ def _fill_erd_template(document: Any, erd: dict[str, Any], image_path: str | Non
     erd_table = document.tables[1]
     _set_cell_safe(erd_table, 0, 1, erd.get("erd_id", "ERD-SYSTEM-ALL"))
     _set_cell_safe(erd_table, 0, 3, erd.get("erd_name", "통합 ERD"))
-    relation_text = "\n".join(_relationship_text(item) for item in relationships)
-    _set_cell_safe(erd_table, 1, 0, relation_text)
-    _insert_image_in_cell_safe(erd_table.cell(1, 0), image_path, width=6.5, trailing_text=relation_text)
+    _set_cell_safe(erd_table, 1, 0, "")
+    _insert_image_in_cell_safe(erd_table.cell(1, 0), image_path, width=6.5)
 
     template_table = document.tables[2]
     if not entities:
@@ -278,8 +285,24 @@ def _fill_interface_header(table: Table) -> None:
     _set_cell_safe(table, 2, 5, "v1.0")
 
 
-def _fill_interface_structure_table(table: Table, screens: list[dict[str, Any]]) -> None:
+def _fill_interface_structure_table(
+    table: Table,
+    screens: list[dict[str, Any]],
+    ui_structure: list[dict[str, Any]] | None = None,
+) -> None:
     rows = []
+    for item in ui_structure or []:
+        rows.append(
+            [
+                _pick(item, "level1"),
+                _pick(item, "level2"),
+                _pick(item, "level3"),
+                _pick(item, "level4"),
+            ]
+        )
+    if rows:
+        _fill_repeating_table(table, rows)
+        return
     for screen in screens:
         menu_path = str(_pick(screen, "menu_path", default=""))
         levels = [part.strip() for part in menu_path.split(">") if part.strip()]
@@ -523,8 +546,8 @@ def _erd_entities(erd: dict[str, Any]) -> list[dict[str, Any]]:
         entities.append(
             {
                 "entity_id": _pick(table, "entity_id", "table_id", default=f"ENT-{index:03d}"),
-                "entity_name": _pick(table, "entity_name", "logical_name", "physical_name", "table_name"),
-                "entity_description": _pick(table, "entity_description", "description", "table_comment"),
+                "entity_name": _entity_display_name(table),
+                "entity_description": _short_text(_pick(table, "entity_description", "description", "table_comment"), 80),
                 "columns": _entity_columns(table),
             }
         )
@@ -552,8 +575,8 @@ def _entity_columns(item: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _erd_column_to_row(column: dict[str, Any]) -> list[Any]:
     return [
-        _pick(column, "name", "logical_name", "column_name", "physical_name"),
-        _pick(column, "synonym", "description", "comment"),
+        _column_display_name(column),
+        _short_text(_pick(column, "synonym", "logical_name", "description", "comment"), 30),
         _pick(column, "type", "data_type"),
         _pick(column, "length", default=""),
         _yes_no(not bool(column.get("nullable", True))) or _pick(column, "not_null"),
@@ -561,8 +584,30 @@ def _erd_column_to_row(column: dict[str, Any]) -> list[Any]:
         _yes_no(column.get("is_fk")) or _pick(column, "fk"),
         _yes_no(column.get("is_pk") or column.get("is_fk")) or _pick(column, "inx"),
         _pick(column, "default", default=""),
-        _pick(column, "constraint", "constraints", "description", "comment"),
+        _short_text(_pick(column, "constraint", "constraints", "description", "comment"), 60),
     ]
+
+
+def _entity_display_name(table: dict[str, Any]) -> str:
+    explicit = _pick(table, "entity_name")
+    if explicit:
+        return _short_text(explicit, 40).upper()
+    physical = _pick(table, "physical_name", "table_name")
+    if physical:
+        return str(physical).removeprefix("tbl_").upper()
+    return _short_text(_pick(table, "logical_name"), 40).upper()
+
+
+def _column_display_name(column: dict[str, Any]) -> str:
+    physical = _pick(column, "physical_name", "column_name", "name")
+    if physical:
+        return str(physical).upper()
+    return _short_text(_pick(column, "logical_name"), 40).upper()
+
+
+def _short_text(value: Any, max_length: int) -> str:
+    text = _to_plain_text(value).replace("\n", " ").strip()
+    return text if len(text) <= max_length else text[: max_length - 1].rstrip() + "…"
 
 
 def _db_tables(design: dict[str, Any]) -> list[dict[str, Any]]:

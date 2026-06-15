@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote_plus
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     # Qdrant
     qdrant_url: str = "http://localhost:6333"
     qdrant_collection: str = "arkive"
+    embed_model_name: str = Field(
+        default="BAAI/bge-m3",
+        validation_alias=AliasChoices("EMBED_MODEL_NAME", "EMBEDDING_MODEL"),
+    )
 
     # LLM
     llm_base_url: str = "http://localhost:8000/v1"
@@ -57,6 +61,7 @@ class Settings(BaseSettings):
     temp_dir: Path = Path("./storage/temp")
     extract_image_dir: Path = Path("./storage/extracted_images")
     mermaid_dir: Path = Path("./storage/mermaid")
+    mermaid_cli_path: str = "mmdc"
 
     # Log
     log_level: str = "INFO"

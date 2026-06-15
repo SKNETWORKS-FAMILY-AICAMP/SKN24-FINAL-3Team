@@ -21,6 +21,7 @@ from tools.llm.send_api import send_parallel
 from tools.result import ToolResult
 from tools.search.search_router import search
 from workflow.state import WorkflowState
+from agents.data_structure_design.processors.column_standardizer import table_name
 
 
 class DataStructureDesignAgent:
@@ -239,11 +240,18 @@ class DataStructureDesignAgent:
             tables_value = _extract_tables(value)
             relationships_value = value.get("relationships") or value.get("relationship_list")
             if tables_value:
+                normalized_tables = normalize_erd_tables(tables_value)
                 return {
-                    "tables": normalize_erd_tables(tables_value),
-                    "relationships": relationships_value if isinstance(relationships_value, list) else relationships,
+                    "tables": normalized_tables,
+                    "relationships": _normalize_relationship_names(
+                        relationships_value if isinstance(relationships_value, list) else relationships,
+                        normalized_tables,
+                    ),
                 }, []
-        return fallback, []
+        return {
+            "tables": normalize_erd_tables(fallback["tables"]),
+            "relationships": _normalize_relationship_names(fallback["relationships"], normalize_erd_tables(fallback["tables"])),
+        }, []
 
     def _build_erd_mermaid_json(
         self,
@@ -390,7 +398,10 @@ class DataStructureDesignAgent:
                     self.search_tool,
                     f"{table['logical_name']} 공공데이터 컬럼 표준명 용어사전",
                     search_targets="RAG",
-                    filters={"project_sn": state.get("project_sn"), "category": "data_standard"},
+                    filters={
+                        "domain": "public_data",
+                        "doc_type": ["standard_term", "standard_word", "standard_domain", "db_standard_manual"],
+                    },
                 ): table
                 for table in tables
             }
@@ -580,3 +591,54 @@ def _dedupe_results(results: list[Any]) -> list[dict[str, Any]]:
         seen.add(key)
         deduped.append(result)
     return deduped
+
+
+def _normalize_relationship_names(
+    relationships: list[Any],
+    tables: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if not relationships:
+        return []
+    table_names = {table["physical_name"] for table in tables}
+    table_by_logical = {str(table.get("logical_name")): table["physical_name"] for table in tables}
+
+    normalized: list[dict[str, Any]] = []
+    for index, relationship in enumerate(relationships):
+        if not isinstance(relationship, dict):
+            continue
+        parent = _normalize_relation_table_name(
+            str(relationship.get("parent_table") or relationship.get("source") or ""),
+            table_names,
+            table_by_logical,
+        )
+        child = _normalize_relation_table_name(
+            str(relationship.get("child_table") or relationship.get("target") or ""),
+            table_names,
+            table_by_logical,
+        )
+        if parent not in table_names or child not in table_names:
+            continue
+        normalized.append(
+            {
+                **relationship,
+                "relationship_id": str(relationship.get("relationship_id") or f"REL-{index + 1:03d}"),
+                "parent_table": parent,
+                "child_table": child,
+            }
+        )
+    return normalized
+
+
+def _normalize_relation_table_name(
+    value: str,
+    table_names: set[str],
+    table_by_logical: dict[str, str],
+) -> str:
+    if value in table_names:
+        return value
+    if value in table_by_logical:
+        return table_by_logical[value]
+    candidate = table_name(value)
+    if candidate in table_names:
+        return candidate
+    return value
