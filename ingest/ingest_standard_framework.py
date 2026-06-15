@@ -90,8 +90,14 @@ def extract_payloads() -> list[dict]:
 
 
 def extract_section_title(chunk: str) -> str:
-    """청크 시작 부분에서 '□ 섹션명' 형태를 추출."""
-    match = re.match(r"□\s*(.{2,40}?)(?:\n|$)", chunk)
+    """청크 시작 부분에서 '□ 섹션명' 형태를 추출.
+
+    normalize_text()로 줄바꿈이 제거된 텍스트에서는 '□ 제목' 뒤에 \\n이나
+    문자열 끝이 거의 나오지 않으므로, 다음 항목 마커 '○' 앞까지도 종료
+    조건으로 인정한다 (예: '□ ...오픈소스SW 활용내역 (2.7기준) ○ 실행환경...'
+    -> '...활용내역 (2.7기준)').
+    """
+    match = re.match(r"□\s*(.{2,40}?)(?:\s*○|\n|$)", chunk)
     return match.group(1).strip() if match else ""
 
 

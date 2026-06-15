@@ -15,16 +15,26 @@ def make_chunk_id(prefix: str, *parts: str) -> str:
     return f"{prefix}_{uuid.uuid5(uuid.NAMESPACE_DNS, base)}"
 
 
-def merge_pages_with_offsets(pages: Iterable[tuple[int, str]]) -> tuple[str, list[tuple[int, int]]]:
+def merge_pages_with_offsets(
+    pages: Iterable[tuple[int, str]],
+    *,
+    normalize: bool = True,
+) -> tuple[str, list[tuple[int, int]]]:
     """
     (페이지번호, 텍스트) 이터러블을 받아 전체 텍스트와 페이지 offset 목록을 반환.
+
+    normalize=True(기본값)면 각 페이지 텍스트에 normalize_text()를 적용해
+    줄바꿈을 공백으로 치환한다 (기존 동작과 동일).
+    normalize=False면 원본 줄바꿈을 보존한다 (페이지 내부 줄바꿈에 의존하는
+    패턴 매칭/타이틀 추출이 필요한 경우 사용. 이 경우 split_oversized_chunk
+    이후 저장 직전에 normalize_text()를 별도로 적용해야 함).
 
     page_offsets: [(offset, page_num), ...] - offset은 full_text 내 시작 위치
     """
     full_text = ""
     page_offsets = []
     for page_num, page_text in pages:
-        text = normalize_text(page_text)
+        text = normalize_text(page_text) if normalize else page_text
         page_offsets.append((len(full_text), page_num))
         full_text += text + "\n"
     return full_text, page_offsets

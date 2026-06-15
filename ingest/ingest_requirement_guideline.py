@@ -20,6 +20,7 @@ from rag.ingest_base import (
     locate_chunk_page,
     make_chunk_id,
     merge_pages_with_offsets,
+    normalize_text,
     upsert_payloads,
 )
 from rag.pdf_reader import read_pdf_pages
@@ -51,8 +52,14 @@ def extract_payloads() -> list[dict]:
         print(f"[SKIP] file not found: {SOURCE_PATH}")
         return []
 
+    # min_line_chars=1: 챕터 번호("01" 등 2자리 숫자 단독 줄)가 페이지번호/머리글
+    #   노이즈로 오인되어 제거되지 않도록 함 (기본값 3에서는 제거됨).
+    # normalize=False: CHUNK_PATTERN(r"\d+\s*\nCHAPTER")과 extract_chapter_info()의
+    #   title 추출이 페이지 내부 줄바꿈에 의존하므로 보존. 서브 청크 저장 시점에
+    #   normalize_text()를 별도로 적용함.
     full_text, page_offsets = merge_pages_with_offsets(
-        read_pdf_pages(SOURCE_PATH, page_filter=PAGE_FILTER)
+        read_pdf_pages(SOURCE_PATH, page_filter=PAGE_FILTER, min_line_chars=1),
+        normalize=False,
     )
 
     # 1. Chapter 단위로 1차 분할
@@ -77,7 +84,7 @@ def extract_payloads() -> list[dict]:
             chunk_id = make_chunk_id("requirement_guideline", SOURCE_PATH.name, str(chunk_index))
             payloads.append(
                 build_base_payload(
-                    text=sub_chunk,
+                    text=normalize_text(sub_chunk),
                     chunk_id=chunk_id,
                     doc_type=DOC_TYPE,
                     domain=DOMAIN,
