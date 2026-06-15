@@ -1,4 +1,4 @@
-"""RFP DOCX 표에서 요구사항 항목을 추출하는 Rule Parser입니다."""
+"""RFP 문서에서 사용자 요구사항 정의서 입력 JSON을 추출하는 Rule Parser입니다."""
 
 import json
 import re
@@ -50,7 +50,8 @@ FIELD_ALIASES = {
         "업무명",
     },
     "type": {"요구사항분류", "요구사항 구분", "구분", "분류", "유형"},
-    "description": {"요구사항 상세설명", "상세설명", "상세 설명", "세부내용", "세부 내용", "정의"},
+    "definition": {"요구사항 정의", "요구사항정의", "정의"},
+    "detail": {"요구사항 상세설명", "상세설명", "상세 설명", "세부내용", "세부 내용"},
     "constraint": {"제약사항", "특이사항", "조건", "비고"},
     "validation": {"검증기준", "시험기준", "평가기준", "검수기준", "검토기준"},
     "priority": {"우선순위", "중요도"},
@@ -87,13 +88,30 @@ def parse_rfp_requirements(
     file_path: str,
     *,
     parser: RuleParser | None = None,
+    document_id: str = "DOC-001",
 ) -> ToolResult:
-    """RFP 파일에서 요구사항 목록을 추출해 공통 ToolResult로 반환합니다."""
+    """RFP 파일에서 문서 메타데이터와 기능 요구사항 목록을 추출합니다."""
 
     selected_parser = parser or extract_requirements_from_rfp
     try:
         requirements = selected_parser(file_path)
-        return success_result({"file_path": file_path, "requirements": requirements})
+        if isinstance(requirements, dict):
+            requirements = requirements.get("functional_requirements", [])
+        if not isinstance(requirements, list):
+            raise ValueError("파서 결과는 요구사항 목록이어야 합니다.")
+        functional_requirements = [
+            requirement
+            for requirement in requirements
+            if isinstance(requirement, dict)
+            and requirement.get("requirement_type") == "기능"
+        ]
+        return success_result(
+            {
+                "document_id": document_id,
+                "document_name": Path(file_path).name,
+                "functional_requirements": functional_requirements,
+            }
+        )
     except Exception as exc:
         return error_result("RFP_RULE_PARSE_FAILED", str(exc), {"file_path": file_path})
 
@@ -126,9 +144,7 @@ def extract_requirements_from_rfp_docx(file_path: str) -> list[dict[str, Any]]:
                     requirement_id,
                     _new_requirement(requirement_id, path.name, table_index, row_index),
                 )
-                current["desc_parts"].extend(
-                    cell for cell in cells if _normalize_id(cell) != requirement_id
-                )
+                _apply_id_row_values(current, cells, requirement_id)
                 continue
 
             if not last_id:
@@ -136,16 +152,21 @@ def extract_requirements_from_rfp_docx(file_path: str) -> list[dict[str, Any]]:
 
             current = requirements_map[last_id]
             if len(cells) >= 2:
-                field = _detect_field(cells[0])
-                value = " ".join(cells[1:]).strip()
+                field_value = _split_docx_field(cells)
+                field, value = field_value if field_value else (None, "")
                 if field == "name":
                     current["name"] = value
                     continue
                 if field == "type":
                     current["type"] = value
                     continue
-                if field == "description":
-                    current["desc_parts"].append(value)
+                if field == "definition":
+                    current["definition_parts"].append(value)
+                    _update_source_location(current, table_index, row_index)
+                    continue
+                if field == "detail":
+                    current["detail_parts"].append(value)
+                    _update_source_location(current, table_index, row_index)
                     continue
                 if field == "constraint":
                     current["constraints"].append(value)
@@ -162,7 +183,7 @@ def extract_requirements_from_rfp_docx(file_path: str) -> list[dict[str, Any]]:
                 if "산출정보" in cells[0]:
                     continue
 
-            current["desc_parts"].extend(cell for cell in cells if cell not in BLACKLIST)
+            current["detail_parts"].extend(cell for cell in cells if cell not in BLACKLIST)
 
     return [_build_requirement(data) for data in requirements_map.values() if _is_valid_requirement(data)]
 
@@ -189,11 +210,17 @@ def extract_requirements_from_rfp_pdf(file_path: str) -> list[dict[str, Any]]:
                 current_id = requirement_id
                 current = requirements_map.setdefault(
                     requirement_id,
-                    _new_requirement(requirement_id, path.name, page_number, line_index),
+                    _new_requirement(
+                        requirement_id,
+                        path.name,
+                        page_number,
+                        line_index,
+                        source_type="detailed_requirement_text",
+                    ),
                 )
                 rest = _remove_requirement_id_label(line, requirement_id)
                 if rest:
-                    current["desc_parts"].append(rest)
+                    current["detail_parts"].append(rest)
                 line_index += 1
                 continue
 
@@ -222,7 +249,7 @@ def extract_requirements_from_rfp_pdf(file_path: str) -> list[dict[str, Any]]:
             if _looks_like_section_boundary(line):
                 line_index += 1
                 continue
-            current["desc_parts"].append(line)
+            current["detail_parts"].append(line)
             line_index += 1
 
     return [_build_requirement(data) for data in requirements_map.values() if _is_valid_requirement(data)]
@@ -233,6 +260,8 @@ def _new_requirement(
     file_name: str,
     table_index: int,
     row_index: int,
+    *,
+    source_type: str = "detailed_requirement_table",
 ) -> dict[str, Any]:
     return {
         "id": requirement_id,
@@ -242,48 +271,39 @@ def _new_requirement(
         "constraints": [],
         "validation_criteria": [],
         "source_refs": [],
-        "desc_parts": [],
+        "definition_parts": [],
+        "detail_parts": [],
         "source": file_name,
         "table_index": table_index,
         "row_index": row_index,
+        "source_type": source_type,
     }
 
 
 def _build_requirement(data: dict[str, Any]) -> dict[str, Any]:
     req_id = data["id"]
-    unique_parts = _clean_parts(data["desc_parts"])
-    name = data["name"] or _infer_requirement_name(unique_parts)
-    description = _clean_description("\n".join(unique_parts))
+    definition_parts = _clean_parts(data["definition_parts"])
+    detail_parts = _clean_parts(data["detail_parts"])
+    name = data["name"] or _infer_requirement_name([*definition_parts, *detail_parts])
+    definition = _clean_field_text("\n".join(definition_parts))
+    detail = _clean_field_text("\n".join(detail_parts))
     req_type = _normalize_requirement_type(
         req_id,
         data.get("type"),
         name,
-        description,
+        detail,
     )
-    source_refs = list(dict.fromkeys([*data["source_refs"], req_id]))
-    validation_criteria = list(dict.fromkeys(data["validation_criteria"])) or ["검토 필요"]
-    constraints = list(dict.fromkeys(data["constraints"]))
 
     return {
         "requirement_id": req_id,
         "requirement_name": name[:100],
         "requirement_type": req_type,
-        "description": description,
-        "source": [data["source"]],
-        "constraints": constraints,
-        "priority": data["priority"] or "미지정",
-        "validation_criteria": validation_criteria,
-        "note": None,
-        "source_refs": source_refs,
-        "metadata": {
-            "source_file": data["source"],
+        "requirement_definition": definition,
+        "requirement_detail": detail,
+        "source_location": {
             "table_index": data["table_index"],
-            "row_index": data["row_index"],
+            "source_type": data["source_type"],
         },
-        "req_id": req_id,
-        "req_name": name[:100],
-        "detail_text": description,
-        "source_req_ids": source_refs,
     }
 
 
@@ -291,12 +311,57 @@ def _unique_cells(cells: Any) -> list[str]:
     seen: set[str] = set()
     result: list[str] = []
     for cell in cells:
-        text = normalize_text(cell.text)
+        text = normalize_multiline_text(cell.text)
         if not text or text in seen:
             continue
         seen.add(text)
         result.append(text)
     return result
+
+
+def _apply_id_row_values(
+    current: dict[str, Any],
+    cells: list[str],
+    requirement_id: str,
+) -> None:
+    """요구사항 목록형 표의 ID 행에서 유형과 명칭만 보강합니다."""
+
+    values = [
+        cell
+        for cell in cells
+        if _normalize_id(cell) != requirement_id
+        and cell not in BLACKLIST
+        and cell not in {"ID", "요구사항 번호"}
+    ]
+    if len(values) >= 2:
+        current["type"] = current.get("type") or values[0]
+        current["name"] = current.get("name") or values[-1]
+
+
+def _split_docx_field(cells: list[str]) -> tuple[str, str] | None:
+    """병합 셀이 포함된 DOCX 행에서 실제 필드와 값을 분리합니다."""
+
+    for index in range(len(cells) - 2, -1, -1):
+        cell = cells[index]
+        field = _detect_field(cell)
+        if field in {"definition", "detail"}:
+            value = " ".join(cells[index + 1 :]).strip()
+            if value:
+                return field, value
+
+    field = _detect_field(cells[0])
+    value = " ".join(cells[1:]).strip()
+    return (field, value) if field and value else None
+
+
+def _update_source_location(
+    current: dict[str, Any],
+    table_index: int,
+    row_index: int,
+) -> None:
+    current["table_index"] = table_index
+    current["row_index"] = row_index
+    current["source_type"] = "detailed_requirement_table"
 
 
 def _find_requirement_id(cells: list[str]) -> str | None:
@@ -321,6 +386,11 @@ def normalize_text(text: str) -> str:
     text = text.replace("\n", " ")
     text = re.sub(r"\s+", " ", text)
     return text.strip()
+
+
+def normalize_multiline_text(text: str) -> str:
+    lines = [normalize_text(line) for line in text.splitlines()]
+    return "\n".join(line for line in lines if line).strip()
 
 
 def _detect_field(text: str) -> str | None:
@@ -395,7 +465,7 @@ def _collect_pdf_field_value(
             break
         if field == "name" and len(values) >= 4:
             break
-        if field == "description" and len(values) >= 20:
+        if field == "detail" and len(values) >= 20:
             break
     return _clean_pdf_field_value(field, values), index
 
@@ -418,8 +488,10 @@ def _apply_pdf_field(current: dict[str, Any], field: str, value: str) -> None:
         current["name"] = value
     elif field == "type":
         current["type"] = value
-    elif field == "description":
-        current["desc_parts"].append(value)
+    elif field == "definition":
+        current["definition_parts"].append(value)
+    elif field == "detail":
+        current["detail_parts"].append(value)
     elif field == "constraint":
         current["constraints"].append(value)
     elif field == "validation":
@@ -441,7 +513,7 @@ def _clean_parts(parts: list[str]) -> list[str]:
     unique_parts: list[str] = []
     seen: set[str] = set()
     for part in parts:
-        text = normalize_text(part)
+        text = normalize_multiline_text(part)
         if not text or text in BLACKLIST or len(text) <= 2 or text in seen:
             continue
         seen.add(text)
@@ -449,21 +521,30 @@ def _clean_parts(parts: list[str]) -> list[str]:
     return unique_parts
 
 
-def _clean_description(description: str) -> str:
-    description = re.sub(
-        r"(요구사항\s*고유번호|요구사항\s*상세설명|세부내용|정의)",
-        "",
-        description,
-    )
-    description = re.sub(r"\n{2,}", "\n", description)
-    return description.strip()
+def _clean_field_text(text: str) -> str:
+    cleaned_lines = []
+    for line in text.splitlines():
+        cleaned = re.sub(
+            r"^(요구사항\s*고유번호|요구사항\s*상세설명|세부\s*내용|정의)\s*[:：]?\s*",
+            "",
+            line,
+        ).strip()
+        if cleaned:
+            cleaned_lines.append(cleaned)
+    return "\n".join(cleaned_lines).strip()
 
 
 def _is_valid_requirement(data: dict[str, Any]) -> bool:
     req_id = data["id"]
     if req_id.endswith("-000") or req_id.endswith("-00"):
         return False
-    return len(_clean_description("\n".join(_clean_parts(data["desc_parts"])))) > 20
+    content = "\n".join(
+        [
+            *_clean_parts(data["definition_parts"]),
+            *_clean_parts(data["detail_parts"]),
+        ]
+    )
+    return len(_clean_field_text(content)) > 20
 
 
 def _infer_requirement_name(parts: list[str]) -> str:
@@ -541,7 +622,20 @@ def _normalize_requirement_type(
     return default if prefix in DEFAULT_PREFIX_MAP else value
 
 
-def dump_requirements_json(requirements: list[dict[str, Any]]) -> str:
+def dump_requirements_json(
+    requirements: list[dict[str, Any]],
+    *,
+    document_id: str = "DOC-001",
+    document_name: str = "",
+) -> str:
     """수동 검증과 CLI 출력에 쓰는 JSON 직렬화 helper입니다."""
 
-    return json.dumps({"requirements": requirements}, ensure_ascii=False, indent=2)
+    return json.dumps(
+        {
+            "document_id": document_id,
+            "document_name": document_name,
+            "functional_requirements": requirements,
+        },
+        ensure_ascii=False,
+        indent=2,
+    )

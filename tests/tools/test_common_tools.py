@@ -214,40 +214,53 @@ class CommonToolsTest(unittest.TestCase):
     def test_rfp_rule_parser_supports_injected_parser(self) -> None:
         result = parse_rfp_requirements(
             "sample.docx",
-            parser=lambda file_path: [{"requirement_id": "SFR-001"}],
+            parser=lambda file_path: [
+                {"requirement_id": "SFR-001", "requirement_type": "기능"}
+            ],
         )
 
         self.assertTrue(result["success"])
         self.assertEqual(
-            result["data"]["requirements"],
-            [{"requirement_id": "SFR-001"}],
+            result["data"]["functional_requirements"],
+            [{"requirement_id": "SFR-001", "requirement_type": "기능"}],
         )
+        self.assertEqual(result["data"]["document_id"], "DOC-001")
+        self.assertEqual(result["data"]["document_name"], "sample.docx")
 
     def test_rfp_rule_parser_extracts_docx_table_requirements(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "rfp.docx"
             document = Document()
-            table = document.add_table(rows=4, cols=2)
+            table = document.add_table(rows=5, cols=2)
             table.cell(0, 0).text = "요구사항 고유번호"
             table.cell(0, 1).text = "SFR-001"
             table.cell(1, 0).text = "요구사항명"
             table.cell(1, 1).text = "로그인 기능"
-            table.cell(2, 0).text = "요구사항 상세설명"
-            table.cell(2, 1).text = "사용자는 아이디와 비밀번호로 로그인할 수 있어야 한다."
-            table.cell(3, 0).text = "검증기준"
-            table.cell(3, 1).text = "정상 로그인 여부를 확인한다."
+            table.cell(2, 0).text = "요구사항 정의"
+            table.cell(2, 1).text = "사용자 인증 기능"
+            table.cell(3, 0).text = "요구사항 상세설명"
+            table.cell(3, 1).text = "사용자는 아이디와 비밀번호로 로그인할 수 있어야 한다."
+            table.cell(4, 0).text = "검증기준"
+            table.cell(4, 1).text = "정상 로그인 여부를 확인한다."
             document.save(path)
 
             result = parse_rfp_requirements(str(path))
 
             self.assertTrue(result["success"])
-            item = result["data"]["requirements"][0]
+            item = result["data"]["functional_requirements"][0]
             self.assertEqual(item["requirement_id"], "SFR-001")
-            self.assertEqual(item["req_id"], "SFR-001")
             self.assertEqual(item["requirement_name"], "로그인 기능")
             self.assertEqual(item["requirement_type"], "기능")
-            self.assertIn("로그인", item["detail_text"])
-            self.assertEqual(item["validation_criteria"], ["정상 로그인 여부를 확인한다."])
+            self.assertEqual(item["requirement_definition"], "사용자 인증 기능")
+            self.assertIn("로그인", item["requirement_detail"])
+            self.assertNotIn("사용자 인증 기능", item["requirement_detail"])
+            self.assertEqual(
+                item["source_location"],
+                {
+                    "table_index": 0,
+                    "source_type": "detailed_requirement_table",
+                },
+            )
 
     def test_rfp_rule_parser_extracts_pdf_text_requirements(self) -> None:
         with tempfile.TemporaryDirectory() as root:
@@ -270,10 +283,11 @@ class CommonToolsTest(unittest.TestCase):
             result = parse_rfp_requirements(str(path))
 
             self.assertTrue(result["success"])
-            item = result["data"]["requirements"][0]
+            item = result["data"]["functional_requirements"][0]
             self.assertEqual(item["requirement_id"], "SFR-001")
             self.assertIn("Login feature", item["requirement_name"])
-            self.assertIn("credentials", item["detail_text"])
+            self.assertEqual(item["requirement_definition"], "")
+            self.assertIn("credentials", item["requirement_detail"])
 
     def test_pdf_parser(self) -> None:
         with tempfile.TemporaryDirectory() as root:

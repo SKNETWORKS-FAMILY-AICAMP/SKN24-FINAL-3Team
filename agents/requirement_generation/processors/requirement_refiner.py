@@ -30,7 +30,12 @@ def build_final_requirement(
     item = deepcopy(split_item)
     requirement_id = str(item.get("requirement_id") or item.get("req_id"))
     requirement_name = str(item.get("requirement_name") or item.get("req_name"))
-    description = str(item.get("description") or item.get("detail_text") or "")
+    description = str(
+        item.get("requirement_detail")
+        or item.get("description")
+        or item.get("detail_text")
+        or ""
+    )
     source = item.get("source") or item.get("source_req_ids") or []
     if not isinstance(source, list):
         source = [source]

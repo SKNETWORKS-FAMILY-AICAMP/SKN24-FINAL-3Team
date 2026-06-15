@@ -79,4 +79,10 @@ def _name(item: dict[str, Any]) -> str:
 
 
 def _description(item: dict[str, Any]) -> str:
-    return str(item.get("detail_text") or item.get("description") or item.get("content") or json.dumps(item, ensure_ascii=False))
+    return str(
+        item.get("requirement_detail")
+        or item.get("detail_text")
+        or item.get("description")
+        or item.get("content")
+        or json.dumps(item, ensure_ascii=False)
+    )
