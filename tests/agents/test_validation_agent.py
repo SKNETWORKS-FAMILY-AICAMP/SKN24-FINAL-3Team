@@ -78,6 +78,30 @@ class ValidationAgentTest(unittest.TestCase):
 
         self.assertEqual(result["validation_result"]["validation_status"], "PASS")
 
+    def test_srs_function_type_prefix_and_constraints_satisfy_nfr_check(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "SRS",
+                "agent_outputs": {
+                    "requirement_generation_agent": {
+                        "final_requirement_json_list": [
+                            {
+                                "requirement_id": "REQ-001",
+                                "requirement_name": "로그인",
+                                "requirement_type": "기능 요구사항",
+                                "description": "사용자가 로그인한다.",
+                                "source": ["RFP-001"],
+                                "constraints": ["3초 이내 응답한다."],
+                                "validation_criteria": ["3초 이내 응답 여부 확인"],
+                            }
+                        ]
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["validation_result"]["validation_status"], "PASS")
+
     def test_srs_update_validates_document_merge_output(self) -> None:
         result = self.agent.execute(
             {

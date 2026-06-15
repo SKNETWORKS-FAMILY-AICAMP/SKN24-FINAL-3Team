@@ -2,6 +2,8 @@
 
 import copy
 import json
+import re
+import tempfile
 import zipfile
 from datetime import date
 from pathlib import Path
@@ -28,13 +30,14 @@ def export_docx(
         target = Path(output_path).resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
         template = Path(template_path).resolve() if template_path else None
+        safe_template = _docx_safe_template_path(template) if template else None
         document = (
-            Document(str(template))
-            if template and template.is_file() and zipfile.is_zipfile(template)
+            Document(str(safe_template))
+            if safe_template and safe_template.is_file() and zipfile.is_zipfile(safe_template)
             else Document()
         )
 
-        if template and template.is_file() and zipfile.is_zipfile(template):
+        if safe_template and safe_template.is_file() and zipfile.is_zipfile(safe_template):
             _fill_template_document(document, export_payload)
         else:
             _fill_generic_document(document, export_payload)
@@ -88,7 +91,7 @@ def _fill_generic_document(document: Any, export_payload: dict[str, Any]) -> Non
     for image_path in export_payload.get("image_paths", []):
         image = Path(str(image_path))
         if image.is_file():
-            document.add_picture(str(image), width=Inches(6.0))
+            document.add_picture(str(_docx_safe_image_path(image)), width=Inches(6.0))
 
 
 def _fill_srs_template(document: Any, requirements: list[dict[str, Any]]) -> None:
@@ -183,7 +186,7 @@ def _fill_erd_template(document: Any, erd: dict[str, Any], image_path: str | Non
     _set_cell_safe(erd_table, 0, 1, erd.get("erd_id", "ERD-SYSTEM-ALL"))
     _set_cell_safe(erd_table, 0, 3, erd.get("erd_name", "통합 ERD"))
     _set_cell_safe(erd_table, 1, 0, "")
-    _insert_image_in_cell_safe(erd_table.cell(1, 0), image_path, width=6.5)
+    _insert_image_in_cell_safe(erd_table.cell(1, 0), image_path, width=9.5)
 
     template_table = document.tables[2]
     if not entities:
@@ -446,9 +449,51 @@ def _insert_image_in_cell_safe(
     cell.text = ""
     paragraph = cell.paragraphs[0]
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    paragraph.add_run().add_picture(str(image), width=Inches(width))
+    paragraph.add_run().add_picture(str(_docx_safe_image_path(image)), width=Inches(width))
     if trailing_text.strip():
         cell.add_paragraph(trailing_text)
+
+
+def _docx_safe_image_path(image_path: Path) -> Path:
+    """python-docx가 파싱하지 못하는 PNG 메타데이터를 제거한 삽입용 이미지를 반환합니다."""
+
+    try:
+        from PIL import Image
+
+        with Image.open(image_path) as image:
+            image.load()
+            mode = "RGBA" if image.mode in {"RGBA", "LA", "P"} else "RGB"
+            safe_image = image.convert(mode)
+            safe_dir = Path(tempfile.gettempdir()) / "alpled_docx_images"
+            safe_dir.mkdir(parents=True, exist_ok=True)
+            safe_path = safe_dir / f"{image_path.stem}_docx_safe.png"
+            safe_image.save(safe_path, format="PNG", optimize=True)
+            return safe_path
+    except Exception:
+        return image_path
+
+
+def _docx_safe_template_path(template_path: Path) -> Path:
+    """python-docx가 읽지 못하는 소수 twips 값을 정수로 바꾼 임시 템플릿을 반환합니다."""
+
+    if not template_path.is_file() or not zipfile.is_zipfile(template_path):
+        return template_path
+    safe_dir = Path(tempfile.gettempdir()) / "alpled_docx_templates"
+    safe_dir.mkdir(parents=True, exist_ok=True)
+    safe_path = safe_dir / f"{template_path.stem}_docx_safe.docx"
+    with zipfile.ZipFile(template_path, "r") as source, zipfile.ZipFile(safe_path, "w", zipfile.ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename.endswith(".xml"):
+                text = data.decode("utf-8", errors="ignore")
+                text = re.sub(
+                    r'(w:w=")([0-9]+\.[0-9]+)(")',
+                    lambda match: f'{match.group(1)}{int(round(float(match.group(2))))}{match.group(3)}',
+                    text,
+                )
+                data = text.encode("utf-8")
+            target.writestr(item, data)
+    return safe_path
 
 
 def _clone_table_after(block: Any, table: Table) -> Table:
@@ -574,17 +619,18 @@ def _entity_columns(item: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _erd_column_to_row(column: dict[str, Any]) -> list[Any]:
+    constraints = column.get("constraints")
     return [
         _column_display_name(column),
         _short_text(_pick(column, "synonym", "logical_name", "description", "comment"), 30),
         _pick(column, "type", "data_type"),
         _pick(column, "length", default=""),
         _yes_no(not bool(column.get("nullable", True))) or _pick(column, "not_null"),
-        _yes_no(column.get("is_pk")) or _pick(column, "pk"),
-        _yes_no(column.get("is_fk")) or _pick(column, "fk"),
-        _yes_no(column.get("is_pk") or column.get("is_fk")) or _pick(column, "inx"),
+        _yes_no(column.get("is_pk")) or _pick(column, "pk") or _contains_constraint(constraints, "PK"),
+        _yes_no(column.get("is_fk")) or _pick(column, "fk") or _contains_constraint(constraints, "FK"),
+        _yes_no(column.get("is_pk") or column.get("is_fk")) or _pick(column, "inx") or _contains_constraint(constraints, "PK", "FK"),
         _pick(column, "default", default=""),
-        _short_text(_pick(column, "constraint", "constraints", "description", "comment"), 60),
+        _short_text(_column_constraint_text(column), 60),
     ]
 
 
@@ -607,7 +653,7 @@ def _column_display_name(column: dict[str, Any]) -> str:
 
 def _short_text(value: Any, max_length: int) -> str:
     text = _to_plain_text(value).replace("\n", " ").strip()
-    return text if len(text) <= max_length else text[: max_length - 1].rstrip() + "…"
+    return text if len(text) <= max_length else text[:max_length].rstrip()
 
 
 def _db_tables(design: dict[str, Any]) -> list[dict[str, Any]]:
@@ -639,10 +685,24 @@ def _yes_no(value: Any) -> str:
     return "Y" if bool(value) else ""
 
 
-def _contains_constraint(value: Any, needle: str) -> str:
+def _contains_constraint(value: Any, *needles: str) -> str:
+    if not needles:
+        return ""
     if isinstance(value, list):
-        return "Y" if any(needle.upper() in str(item).upper() for item in value) else ""
-    return "Y" if needle.upper() in str(value).upper() else ""
+        return "Y" if any(any(needle.upper() in str(item).upper() for needle in needles) for item in value) else ""
+    return "Y" if any(needle.upper() in str(value).upper() for needle in needles) else ""
+
+
+def _column_constraint_text(column: dict[str, Any]) -> str:
+    explicit = _pick(column, "constraint")
+    if explicit:
+        return explicit
+    constraints = column.get("constraints")
+    if isinstance(constraints, list):
+        filtered = [str(item) for item in constraints if str(item).upper() not in {"PK", "FK", "INDEX", "IDX", "NOT NULL"}]
+        if filtered:
+            return ", ".join(filtered)
+    return _pick(column, "comment", "description")
 
 
 def _arch_requirement_items(arch_doc: dict[str, Any]) -> list[dict[str, Any]]:

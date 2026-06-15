@@ -252,6 +252,62 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         self.assertEqual(table["columns"][0]["physical_name"], "ai_sn")
         self.assertEqual(validation["validation_result"]["validation_status"], "PASS")
 
+    def test_erd_descriptions_are_shortened_for_document_output(self) -> None:
+        long_description = "설명" * 100
+        state = {
+            "project_sn": 1,
+            "docs_cd": "ERD",
+            "udt_yn": "N",
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "integrated_requirement_json_list": [
+                        {
+                            "req_id": "REQ-001",
+                            "req_name": "사용자 관리",
+                            "requirement_type": "기능",
+                            "detail_text": "사용자를 관리한다.",
+                        }
+                    ]
+                }
+            },
+        }
+
+        class LongDescriptionLLM(FakeStructuredDataLLM):
+            def chat(self, messages, **kwargs):
+                content = messages[0]["content"]
+                if "엔티티별 테이블 후보" in content:
+                    return success_result(
+                        {
+                            "table_candidate_list": [
+                                {
+                                    "logical_name": "사용자",
+                                    "physical_name": "tbl_user",
+                                    "description": long_description,
+                                    "columns": [
+                                        {
+                                            "logical_name": "사용자 번호",
+                                            "physical_name": "user_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                            "description": long_description,
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    )
+                return super().chat(messages, **kwargs)
+
+        result = DataStructureDesignAgent(
+            llm_client=LongDescriptionLLM(),
+            search_tool=lambda query, **kwargs: success_result({"normalized_results": []}),
+        ).execute(state)
+        table = result["erd_entity_json"]["tables"][0]
+
+        self.assertLessEqual(len(table["description"]), 120)
+        self.assertLessEqual(len(table["columns"][0]["description"]), 80)
+
     def test_db_create_converts_reference_erd_and_passes_db_validator(self) -> None:
         state = {
             "docs_cd": "DB",

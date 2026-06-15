@@ -31,7 +31,7 @@ def rag_search(
     selected_collection = collection or settings.qdrant_collection
 
     try:
-        qdrant = client or _create_qdrant_client(settings.qdrant_url)
+        qdrant = client or _create_qdrant_client(settings)
         response = qdrant.query_points(
             collection_name=selected_collection,
             query=query_vector,
@@ -61,10 +61,13 @@ def rag_search(
         )
 
 
-def _create_qdrant_client(url: str) -> QdrantSearchClient:
+def _create_qdrant_client(settings: Settings) -> QdrantSearchClient:
     from qdrant_client import QdrantClient
 
-    return QdrantClient(url=url)
+    kwargs = {"url": settings.resolved_qdrant_url}
+    if settings.qdrant_api_key:
+        kwargs["api_key"] = settings.qdrant_api_key
+    return QdrantClient(**kwargs)
 
 
 def _to_qdrant_filter(filters: dict[str, Any] | None) -> Any:

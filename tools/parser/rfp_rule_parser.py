@@ -96,20 +96,33 @@ def parse_rfp_requirements(
     try:
         requirements = selected_parser(file_path)
         if isinstance(requirements, dict):
-            requirements = requirements.get("functional_requirements", [])
+            requirements = (
+                requirements.get("requirements")
+                or requirements.get("requirement_json_list")
+                or requirements.get("functional_requirements")
+                or []
+            )
         if not isinstance(requirements, list):
             raise ValueError("파서 결과는 요구사항 목록이어야 합니다.")
         functional_requirements = [
             requirement
             for requirement in requirements
             if isinstance(requirement, dict)
-            and requirement.get("requirement_type") == "기능"
+            and _is_functional_type(requirement.get("requirement_type"))
+        ]
+        non_functional_requirements = [
+            requirement
+            for requirement in requirements
+            if isinstance(requirement, dict)
+            and not _is_functional_type(requirement.get("requirement_type"))
         ]
         return success_result(
             {
                 "document_id": document_id,
                 "document_name": Path(file_path).name,
+                "requirements": [requirement for requirement in requirements if isinstance(requirement, dict)],
                 "functional_requirements": functional_requirements,
+                "non_functional_requirements": non_functional_requirements,
             }
         )
     except Exception as exc:
@@ -121,6 +134,11 @@ def extract_requirements_from_rfp(file_path: str) -> list[dict[str, Any]]:
     if path.suffix.lower() == ".pdf":
         return extract_requirements_from_rfp_pdf(file_path)
     return extract_requirements_from_rfp_docx(file_path)
+
+
+def _is_functional_type(value: Any) -> bool:
+    requirement_type = str(value or "").strip().lower()
+    return requirement_type.startswith("기능") or requirement_type.startswith("functional") or requirement_type == "function"
 
 
 def extract_requirements_from_rfp_docx(file_path: str) -> list[dict[str, Any]]:

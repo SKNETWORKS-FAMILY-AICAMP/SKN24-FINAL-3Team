@@ -8,17 +8,18 @@ from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
 
 
-FUNCTION_TYPES = {"기능", "기능 요구사항", "functional", "function"}
-
-
 def filter_function_requirements(items: list[Any]) -> list[dict[str, Any]]:
     return [
         deepcopy(item)
         for item in items
         if isinstance(item, dict)
-        and str(item.get("requirement_type") or item.get("type") or "").lower()
-        in FUNCTION_TYPES
+        and _is_functional_type(item.get("requirement_type") or item.get("type"))
     ]
+
+
+def _is_functional_type(value: Any) -> bool:
+    requirement_type = str(value or "").strip().lower()
+    return requirement_type.startswith("기능") or requirement_type.startswith("functional") or requirement_type == "function"
 
 
 def generate_scenarios(

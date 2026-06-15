@@ -62,6 +62,7 @@ class MermaidGenerationAgentTest(unittest.TestCase):
         ).execute(state)
 
         self.assertIn("subgraph AI_LLM_Layer[AI/LLM Layer]", result["mermaid_code"])
+        self.assertIn("direction TB", result["mermaid_code"])
         self.assertIn("WEB[Web Client]", result["mermaid_code"])
         self.assertIn("WEB -->|API 호출HTTPS| API", result["mermaid_code"])
 

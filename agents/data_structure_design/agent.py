@@ -145,7 +145,12 @@ class DataStructureDesignAgent:
         fallback = build_domain_groups(requirements)
         generated, warnings = self._parallel_llm_list(
             requirements,
-            "요구사항 그룹 분석을 수행하고 JSON으로 domain_group 또는 domain_group_list를 반환하세요.",
+            (
+                "너는 SI 프로젝트 데이터 모델러입니다. 요구사항을 시스템 전체 관점의 업무 도메인으로 묶으세요. "
+                "기능 하나마다 도메인을 만들지 말고 사용자/권한, 문서/파일, AI 모델, 상담/대화, 통계/로그, "
+                "연계/배치, 공통코드처럼 공유 데이터가 생기는 단위로 통합하세요. "
+                "JSON으로 domain_group 또는 domain_group_list만 반환하세요."
+            ),
             "domain_group",
             "domain_group_list",
             "ERD_DOMAIN_GROUP_LLM_FAILED",
@@ -159,7 +164,12 @@ class DataStructureDesignAgent:
         fallback = build_entity_candidates(groups)
         generated, warnings = self._parallel_llm_list(
             groups,
-            "도메인별 엔티티 후보를 추출하고 JSON으로 entity 또는 entity_candidate_list를 반환하세요.",
+            (
+                "너는 통합 ERD 설계자입니다. 도메인별로 저장/관리 대상이 되는 핵심 엔티티 후보를 추출하세요. "
+                "화면명이나 기능명을 그대로 엔티티로 만들지 말고, 중복/유사 개념은 하나로 병합하세요. "
+                "각 엔티티는 entity_id(ENT-001 형식), logical_name, description(80자 이내 요약), "
+                "source_requirement_ids를 포함하세요. JSON으로 entity 또는 entity_candidate_list만 반환하세요."
+            ),
             "entity",
             "entity_candidate_list",
             "ERD_ENTITY_LLM_FAILED",
@@ -173,7 +183,14 @@ class DataStructureDesignAgent:
         fallback = build_erd_tables(entities)
         generated, warnings = self._parallel_llm_list(
             entities,
-            "엔티티별 테이블 후보를 설계하고 JSON으로 table 또는 table_candidate_list를 반환하세요.",
+            (
+                "너는 공공 SI 프로젝트 DB 모델러입니다. 엔티티별 테이블 후보를 설계하세요. "
+                "물리 테이블명은 소문자 snake_case이며 tbl_ 접두사를 사용하세요. "
+                "entity_id는 ENT-001 형식으로 유지하고 description은 문서에 들어갈 1문장 요약으로 80자 이내로 작성하세요. "
+                "각 테이블은 최소 6개 이상의 업무 컬럼을 가져야 하며, PK, 명칭/내용, 상태코드, 사용여부, 등록/수정일시 같은 "
+                "공통 컬럼과 요구사항에서 도출한 핵심 업무 컬럼을 포함하세요. "
+                "JSON으로 table 또는 table_candidate_list만 반환하세요."
+            ),
             "table",
             "table_candidate_list",
             "ERD_TABLE_LLM_FAILED",
@@ -191,11 +208,19 @@ class DataStructureDesignAgent:
                 {
                     "table": table,
                     "rag_results": rag_by_table.get(table["table_id"], []),
-                    "instruction": "공공데이터 표준, 컬럼 표준명, 용어사전을 반영해 컬럼 후보를 설계하세요.",
+                    "instruction": (
+                        "공공데이터 표준, 컬럼 표준명, 용어사전을 반영해 컬럼 후보를 설계하세요. "
+                        "컬럼은 6~20개 수준으로 설계하고, 한글 논리명/영문 물리명/데이터 타입/길이/PK/FK/NULL/설명을 포함하세요. "
+                        "PK/FK 여부는 constraints 배열에는 PK/FK로 표시해도 되지만, description에는 업무 의미만 쓰세요."
+                    ),
                 }
                 for table in tables
             ],
-            "테이블별 컬럼 후보를 설계하고 JSON으로 table 또는 column_candidate_list를 반환하세요.",
+            (
+                "테이블별 컬럼 후보를 설계하세요. 기능 요구사항의 입력값, 상태값, 이력, 파일, 권한, 검색 조건, "
+                "연계 식별자를 컬럼으로 반영하고 2개짜리 축약 테이블을 만들지 마세요. "
+                "JSON으로 table 또는 table_candidate_list를 반환하세요."
+            ),
             "table",
             "table_candidate_list",
             "ERD_COLUMN_LLM_FAILED",
@@ -222,7 +247,11 @@ class DataStructureDesignAgent:
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         fallback = build_relationships(tables)
         value = self._llm_dict(
-            "PK/FK 관계를 설계하고 JSON으로 relationship_list 또는 relationships를 반환하세요.",
+            (
+                "테이블 목록을 기준으로 PK/FK 관계를 설계하세요. 단순히 첫 번째 테이블을 모든 테이블의 부모로 만들지 말고 "
+                "사용자-로그, 문서-파일, AI모델-세션, 코드-상태처럼 업무적으로 설명 가능한 관계만 생성하세요. "
+                "JSON으로 relationship_list 또는 relationships를 반환하세요."
+            ),
             {"tables": tables, "fallback_relationships": fallback},
             "ERD_RELATION_LLM_FAILED",
         )
@@ -235,7 +264,16 @@ class DataStructureDesignAgent:
         relationships: list[dict[str, Any]],
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         fallback = {"tables": tables, "relationships": relationships}
-        value = self._llm_dict("전체 데이터 구조를 병합하여 ERD JSON을 생성하세요.", fallback, "ERD_FINAL_JSON_LLM_FAILED")
+        value = self._llm_dict(
+            (
+                "전체 데이터 구조를 병합하여 ERD JSON을 생성하세요. "
+                "테이블/컬럼 물리명은 소문자 snake_case, entity_id는 ENT-001 형식, table_id는 TABLE-001 형식을 유지하세요. "
+                "description/table_description은 DOCX 엔티티 설명 칸에 들어갈 80자 이내 요약문이어야 합니다. "
+                "엔티티당 컬럼은 최소 6개 이상을 유지하고, 중복 테이블은 병합하세요. JSON 객체만 반환하세요."
+            ),
+            fallback,
+            "ERD_FINAL_JSON_LLM_FAILED",
+        )
         if isinstance(value, dict):
             tables_value = _extract_tables(value)
             relationships_value = value.get("relationships") or value.get("relationship_list")
@@ -503,7 +541,7 @@ def _normalize_domain_groups(items: list[dict[str, Any]]) -> list[dict[str, Any]
                 "domain_id": str(item.get("domain_id") or f"DOMAIN-{len(groups) + 1:03d}"),
                 "domain_name": name,
                 "source_requirement_ids": [str(value) for value in source_ids] if isinstance(source_ids, list) else [str(source_ids)],
-                "description": str(item.get("description") or item.get("detail_text") or name),
+                "description": _short_text(item.get("description") or item.get("detail_text") or name, 120),
             }
         )
     return groups
@@ -521,9 +559,9 @@ def _normalize_entities(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         entities.append(
             {
                 **item,
-                "entity_id": str(item.get("entity_id") or f"ENTITY-{len(entities) + 1:03d}"),
+                "entity_id": str(item.get("entity_id") or f"ENT-{len(entities) + 1:03d}"),
                 "logical_name": name,
-                "description": str(item.get("description") or name),
+                "description": _short_text(item.get("description") or name, 120),
                 "source_requirement_ids": [str(value) for value in source_ids] if isinstance(source_ids, list) else [str(source_ids)],
             }
         )
@@ -591,6 +629,11 @@ def _dedupe_results(results: list[Any]) -> list[dict[str, Any]]:
         seen.add(key)
         deduped.append(result)
     return deduped
+
+
+def _short_text(value: Any, max_length: int) -> str:
+    text = str(value or "").replace("\n", " ").strip()
+    return text if len(text) <= max_length else text[:max_length].rstrip()
 
 
 def _normalize_relationship_names(

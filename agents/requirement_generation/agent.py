@@ -43,6 +43,7 @@ class RequirementGenerationAgent:
         functional = filter_function_requirements(integrated)
         if not functional:
             return self._store(state, self._failed("FUNCTION_REQUIREMENT_MISSING", "기능 요구사항이 없습니다."))
+        non_functional_context = _non_functional_context(integrated)
 
         integrated_text = build_integrated_text(functional)
         split_items, warnings = split_function_requirements(
@@ -60,6 +61,7 @@ class RequirementGenerationAgent:
             split_items,
             queries,
             state,
+            non_functional_context,
         )
         warnings.extend(rag_warnings)
         final_items, refine_warnings = refine_requirements_parallel(
@@ -79,6 +81,7 @@ class RequirementGenerationAgent:
         if bool(state.get("etc", {}).get("debug")):
             output["debug"] = {
                 "functional_requirement_list": functional,
+                "non_functional_context": non_functional_context,
                 "integrated_function_text": integrated_text,
                 "split_function_requirement_list": split_items,
                 "rag_searches": search_debug,
@@ -90,6 +93,7 @@ class RequirementGenerationAgent:
         split_items: list[dict[str, Any]],
         queries: list[str],
         state: WorkflowState,
+        non_functional_context: list[dict[str, Any]],
     ) -> tuple[list[list[dict[str, Any]]], list[dict[str, Any]], list[dict[str, Any]]]:
         warnings: list[dict[str, Any]] = []
         results: list[list[dict[str, Any]]] = [[] for _ in split_items]
@@ -121,6 +125,8 @@ class RequirementGenerationAgent:
                     else []
                 )
                 normalized_results = _dedupe_relevant_results(normalized_results)
+                if not normalized_results:
+                    normalized_results = _non_functional_fallback_results(non_functional_context)
                 results[index] = normalized_results
                 debug[index] = {
                     "query": query,
@@ -165,3 +171,59 @@ def _dedupe_relevant_results(results: list[dict[str, Any]]) -> list[dict[str, An
         seen.add(key)
         deduped.append(result)
     return deduped
+
+
+def _non_functional_context(items: list[Any]) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in items
+        if isinstance(item, dict)
+        and not _is_functional_type(item.get("requirement_type") or item.get("type"))
+    ]
+
+
+def _non_functional_fallback_results(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    results = []
+    for item in items:
+        content = _constraint_text(item)
+        if not content:
+            continue
+        results.append(
+            {
+                "source_kind": "RAG",
+                "source": "RAG",
+                "title": str(item.get("req_name") or item.get("requirement_name") or ""),
+                "content": content,
+                "score": 0.5,
+                "metadata": {
+                    "requirement_id": item.get("req_id") or item.get("requirement_id"),
+                    "requirement_type": item.get("requirement_type") or item.get("type"),
+                    "source": "document_merge_agent",
+                },
+                "citation": str(item.get("req_id") or item.get("requirement_id") or ""),
+            }
+        )
+    return _dedupe_relevant_results(results)
+
+
+def _constraint_text(item: dict[str, Any]) -> str:
+    parts = [
+        str(item.get("req_name") or item.get("requirement_name") or "").strip(),
+        str(item.get("detail_text") or item.get("description") or item.get("content") or "").strip(),
+        _join_values(item.get("constraints")),
+        _join_values(item.get("validation_criteria")),
+    ]
+    return " - ".join(part for part in parts if part)
+
+
+def _join_values(value: Any) -> str:
+    if isinstance(value, list):
+        return " ".join(str(item) for item in value if str(item).strip())
+    if isinstance(value, dict):
+        return " ".join(str(item) for item in value.values() if str(item).strip())
+    return str(value or "").strip()
+
+
+def _is_functional_type(value: Any) -> bool:
+    requirement_type = str(value or "").strip().lower()
+    return requirement_type.startswith("기능") or requirement_type.startswith("functional") or requirement_type == "function"

@@ -39,7 +39,10 @@ class Settings(BaseSettings):
     s3_region: str = "ap-northeast-2"
 
     # Qdrant
-    qdrant_url: str = "http://localhost:6333"
+    qdrant_url: str | None = None
+    qdrant_host: str = "localhost"
+    qdrant_port: int = 6333
+    qdrant_api_key: str | None = None
     qdrant_collection: str = "arkive"
     embed_model_name: str = Field(
         default="BAAI/bge-m3",
@@ -80,6 +83,12 @@ class Settings(BaseSettings):
                 f"@{self.db_host}:{self.db_port}/{self.db_name}"
             )
         return "sqlite:///./alpled.db"
+
+    @property
+    def resolved_qdrant_url(self) -> str:
+        if self.qdrant_url:
+            return self.qdrant_url
+        return f"http://{self.qdrant_host}:{self.qdrant_port}"
 
 
 @lru_cache

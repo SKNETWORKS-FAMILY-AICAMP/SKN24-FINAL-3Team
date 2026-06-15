@@ -5,6 +5,11 @@ from config.settings import Settings, get_settings
 from tools.result import ToolResult, error_result, success_result
 
 
+PORTRAIT_WIDTH = 1400
+PORTRAIT_HEIGHT = 2200
+RENDER_SCALE = 2
+
+
 def render_mermaid(
     mermaid_code: str,
     *,
@@ -21,7 +26,21 @@ def render_mermaid(
     cli_path = settings.mermaid_cli_path
     try:
         completed = subprocess.run(
-            [cli_path, "-i", str(mermaid_path), "-o", str(image_path)],
+            [
+                cli_path,
+                "-i",
+                str(mermaid_path),
+                "-o",
+                str(image_path),
+                "-w",
+                str(PORTRAIT_WIDTH),
+                "-H",
+                str(PORTRAIT_HEIGHT),
+                "-s",
+                str(RENDER_SCALE),
+                "-b",
+                "white",
+            ],
             capture_output=True,
             text=True,
             timeout=120,
@@ -37,6 +56,11 @@ def render_mermaid(
             {
                 "mermaid_file_path": str(mermaid_path),
                 "mermaid_image_path": str(image_path),
+                "render_options": {
+                    "width": PORTRAIT_WIDTH,
+                    "height": PORTRAIT_HEIGHT,
+                    "scale": RENDER_SCALE,
+                },
             }
         )
     except Exception as exc:

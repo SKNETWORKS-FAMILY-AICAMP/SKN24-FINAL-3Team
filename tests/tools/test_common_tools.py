@@ -19,7 +19,9 @@ from tools.search.search_schema import SearchRequest
 from tools.storage.cleanup_manager import cleanup_paths
 from tools.storage.downloader import download_file
 from tools.storage.uploader import upload_file
+from tools.vector.embedding_writer import write_non_functional_requirements
 from tools.docx.docx_exporter import export_docx
+from tools.docx import docx_exporter
 import tools.mermaid.mermaid_renderer as mermaid_renderer
 
 
@@ -86,6 +88,48 @@ class CommonToolsTest(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(captured["query"], [0.1, 0.2, 0.3])
         self.assertEqual(result["data"]["search_type"], "RAG")
+
+    def test_embedding_writer_upserts_non_functional_requirements_only(self) -> None:
+        class FakeQdrant:
+            def __init__(self):
+                self.created = []
+                self.upserts = []
+
+            def collection_exists(self, **kwargs):
+                return False
+
+            def create_collection(self, **kwargs):
+                self.created.append(kwargs)
+
+            def upsert(self, **kwargs):
+                self.upserts.append(kwargs)
+
+        class FakeEmbedder:
+            def encode(self, text, normalize_embeddings=True):
+                return [0.1, 0.2, 0.3]
+
+        qdrant = FakeQdrant()
+        result = write_non_functional_requirements(
+            [
+                {"req_id": "F-001", "requirement_type": "기능 요구사항", "req_name": "로그인", "detail_text": "로그인한다."},
+                {"req_id": "S-001", "requirement_type": "보안 요구사항", "req_name": "계정 잠금", "detail_text": "로그인 실패 시 계정을 잠근다."},
+                {"req_id": "D-001", "requirement_type": "데이터 보관", "req_name": "이력 보관", "detail_text": "처리 이력을 보관한다."},
+            ],
+            project_sn=1,
+            source_path="rfp.docx",
+            qdrant_client=qdrant,
+            embedder=FakeEmbedder(),
+            collection="test_collection",
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["stored_count"], 2)
+        self.assertEqual(qdrant.created[0]["collection_name"], "test_collection")
+        points = qdrant.upserts[0]["points"]
+        payloads = [point.payload for point in points]
+        self.assertEqual({payload["requirement_id"] for payload in payloads}, {"S-001", "D-001"})
+        self.assertTrue(all(payload["project_sn"] == 1 for payload in payloads))
+        self.assertTrue(all("requirement_source_id" in payload for payload in payloads))
 
     def test_search_request_validates_contract(self) -> None:
         request = SearchRequest(
@@ -187,7 +231,45 @@ class CommonToolsTest(unittest.TestCase):
             self.assertEqual(document.tables[2].cell(0, 7).text.strip(), "USER_ACCOUNT")
             self.assertEqual(document.tables[2].cell(3, 0).text.strip(), "USER_ACCOUNT_SN")
 
-    def test_mermaid_renderer_uses_high_resolution_portrait_options(self) -> None:
+    def test_docx_export_strips_problematic_png_dpi_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            image_path = root_path / "bad_dpi.png"
+            output_path = root_path / "erd.docx"
+            from PIL import Image
+
+            Image.new("RGB", (300, 80), "white").save(image_path, dpi=(35.47, 35.47))
+
+            result = export_docx(
+                {
+                    "docs_cd": "ERD",
+                    "content": {
+                        "erd_entity_json": {
+                            "erd_id": "ERD-001",
+                            "erd_name": "테스트 ERD",
+                            "tables": [],
+                            "relationships": [],
+                        }
+                    },
+                    "image_paths": [str(image_path)],
+                },
+                str(output_path),
+                template_path="templates/erd_template.docx",
+            )
+
+            self.assertTrue(result["success"], result.get("error"))
+            self.assertTrue(output_path.exists())
+
+    def test_docx_export_sanitizes_decimal_template_widths(self) -> None:
+        safe_template = docx_exporter._docx_safe_template_path(Path("templates/erd_template.docx"))
+        from zipfile import ZipFile
+
+        with ZipFile(safe_template) as archive:
+            document_xml = archive.read("word/document.xml").decode("utf-8")
+
+        self.assertNotIn('w:w="1396.5"', document_xml)
+
+    def test_mermaid_renderer_uses_high_resolution_options_without_rewriting_dpi(self) -> None:
         captured = {}
 
         def fake_run(args, **kwargs):
@@ -214,6 +296,7 @@ class CommonToolsTest(unittest.TestCase):
         self.assertEqual(captured["args"][captured["args"].index("-w") + 1], "1400")
         self.assertEqual(captured["args"][captured["args"].index("-H") + 1], "2200")
         self.assertEqual(captured["args"][captured["args"].index("-s") + 1], "2")
+        self.assertNotIn("dpi", result["data"]["render_options"])
 
     def test_llm_client_uses_injected_transport(self) -> None:
         captured = {}

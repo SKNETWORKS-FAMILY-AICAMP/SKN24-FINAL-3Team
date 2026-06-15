@@ -115,8 +115,17 @@ class RequirementGenerationAgentTest(unittest.TestCase):
         result = RequirementGenerationAgent(search_tool=failed_search).execute(_state())
 
         self.assertEqual(result["status"], "SUCCESS")
-        self.assertEqual(result["final_requirement_json_list"][0]["constraints"], [])
+        self.assertEqual(result["final_requirement_json_list"][0]["constraints"], ["응답시간 - 3초 이내 응답한다."])
         self.assertEqual(result["warnings"][0]["code"], "REQUIREMENT_RAG_SEARCH_FAILED")
+
+    def test_empty_rag_uses_non_functional_source_requirements_as_constraints(self) -> None:
+        result = RequirementGenerationAgent(
+            search_tool=lambda query, **kwargs: success_result({"normalized_results": []})
+        ).execute(_state())
+
+        item = result["final_requirement_json_list"][0]
+        self.assertIn("응답시간 - 3초 이내 응답한다.", item["constraints"])
+        self.assertIn("응답시간 - 3초 이내 응답한다 준수 여부를 확인한다.", item["validation_criteria"])
 
     def test_invalid_mode_and_missing_input_fail(self) -> None:
         invalid = RequirementGenerationAgent().execute({"docs_cd": "DB", "udt_yn": "N"})

@@ -15,7 +15,6 @@ FALLBACK_POSITIONS = [
     (0.82, 0.78),
 ]
 TARGET_DOC_IMAGE_WIDTH_PX = 1800
-OUTPUT_DPI = (220, 220)
 
 
 def enrich_interface_screens(
@@ -106,7 +105,7 @@ def create_numbered_prototype_image(image_path: Path, screen_spec: dict[str, Any
             _draw_number_marker(draw, x, y, radius, int(marker["no"]), font)
 
         output_path = out_dir / f"{image_path.stem}_numbered.png"
-        Image.alpha_composite(image, overlay).convert("RGB").save(output_path, dpi=OUTPUT_DPI, optimize=True)
+        Image.alpha_composite(image, overlay).convert("RGB").save(output_path, optimize=True)
         return output_path
 
 

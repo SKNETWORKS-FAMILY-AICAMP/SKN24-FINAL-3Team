@@ -12,10 +12,10 @@ Content-Type: application/json
 
 {
   "project_sn": {{projectSn}},
-  "docs_cd": "INTERFACE",
+  "docs_cd": "SRS",
   "udt_yn": "N",
-  "file_list": [],
-  "image_list": [24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+  "file_list": [3],
+  "image_list": [],
   "etc": {
     "debug": true
   }

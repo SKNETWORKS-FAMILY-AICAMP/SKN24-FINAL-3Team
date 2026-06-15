@@ -16,12 +16,14 @@ def build_erd_tables(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
         logical_name = str(entity["logical_name"])
         physical_name = table_name(logical_name)
         pk_name = primary_key_name(logical_name)
+        base_name = physical_name.removeprefix("tbl_")
         tables.append(
             {
                 "table_id": f"TABLE-{index + 1:03d}",
+                "entity_id": str(entity.get("entity_id") or f"ENT-{index + 1:03d}"),
                 "logical_name": logical_name,
                 "physical_name": physical_name,
-                "description": entity.get("description", ""),
+                "description": _summary_text(entity.get("description") or f"{logical_name} 정보를 관리하는 엔티티입니다.", 80),
                 "source_requirement_ids": entity.get("source_requirement_ids", []),
                 "columns": [
                     {
@@ -31,14 +33,61 @@ def build_erd_tables(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         "data_type": "BIGINT",
                         "nullable": False,
                         "constraints": ["PK"],
+                        "description": f"{logical_name} 고유 식별자",
                     },
                     {
                         "column_id": f"COL-{index + 1:03d}-002",
                         "logical_name": f"{logical_name} 명",
-                        "physical_name": f"{physical_name.removeprefix('tbl_')}_nm",
+                        "physical_name": f"{base_name}_nm",
                         "data_type": "VARCHAR(200)",
                         "nullable": False,
                         "constraints": [],
+                        "description": f"{logical_name} 명칭",
+                    },
+                    {
+                        "column_id": f"COL-{index + 1:03d}-003",
+                        "logical_name": f"{logical_name} 내용",
+                        "physical_name": f"{base_name}_cn",
+                        "data_type": "TEXT",
+                        "nullable": True,
+                        "constraints": [],
+                        "description": f"{logical_name} 상세 내용",
+                    },
+                    {
+                        "column_id": f"COL-{index + 1:03d}-004",
+                        "logical_name": f"{logical_name} 상태 코드",
+                        "physical_name": f"{base_name}_stts_cd",
+                        "data_type": "VARCHAR(20)",
+                        "nullable": True,
+                        "constraints": [],
+                        "description": f"{logical_name} 처리 상태 코드",
+                    },
+                    {
+                        "column_id": f"COL-{index + 1:03d}-005",
+                        "logical_name": "사용 여부",
+                        "physical_name": "use_yn",
+                        "data_type": "CHAR(1)",
+                        "nullable": False,
+                        "constraints": [],
+                        "description": "사용 여부",
+                    },
+                    {
+                        "column_id": f"COL-{index + 1:03d}-006",
+                        "logical_name": "등록 일시",
+                        "physical_name": "reg_dt",
+                        "data_type": "DATETIME",
+                        "nullable": False,
+                        "constraints": [],
+                        "description": "데이터 등록 일시",
+                    },
+                    {
+                        "column_id": f"COL-{index + 1:03d}-007",
+                        "logical_name": "수정 일시",
+                        "physical_name": "mdfcn_dt",
+                        "data_type": "DATETIME",
+                        "nullable": True,
+                        "constraints": [],
+                        "description": "데이터 수정 일시",
                     },
                 ],
             }
@@ -61,12 +110,20 @@ def normalize_erd_tables(items: list[Any]) -> list[dict[str, Any]]:
             {
                 **item,
                 "table_id": str(item.get("table_id") or f"TABLE-{index + 1:03d}"),
+                "entity_id": str(item.get("entity_id") or f"ENT-{index + 1:03d}"),
                 "logical_name": logical_name,
                 "physical_name": physical_name,
-                "columns": [_normalize_erd_column(column, index, col_index, logical_name) for col_index, column in enumerate(columns)],
+                "description": _summary_text(item.get("description") or item.get("table_description") or logical_name, 80),
+                "table_description": _summary_text(item.get("table_description") or item.get("description") or logical_name, 80),
+                "columns": _ensure_minimum_columns(
+                    [_normalize_erd_column(column, index, col_index, logical_name) for col_index, column in enumerate(columns)],
+                    index,
+                    logical_name,
+                    physical_name,
+                ),
             }
         )
-    return _dedupe_table_and_column_names(raw_tables)
+    return _dedupe_table_and_column_names(_merge_duplicate_tables(raw_tables))
 
 
 def build_db_design(tables: list[dict[str, Any]]) -> dict[str, Any]:
@@ -111,6 +168,7 @@ def _normalize_erd_column(column: Any, table_index: int, column_index: int, logi
         "data_type": str(source.get("data_type") or "BIGINT"),
         "nullable": source.get("nullable", not is_first),
         "constraints": source.get("constraints") if isinstance(source.get("constraints"), list) else (["PK"] if is_first else []),
+        "description": _summary_text(source.get("description") or logical_column_name, 60),
     }
 
 
@@ -133,26 +191,94 @@ def _standard_column_name(
     else:
         candidate = raw_name or logical_column_name
     standardized = standardize_name(candidate, fallback="column")
-    if standardized in {"column", "tbl_column"} and is_pk:
+    if is_pk and not standardized.endswith(("_sn", "_id")):
         return primary_key_name(table_logical_name)
     return standardized.removeprefix("tbl_")
 
 
 def _dedupe_table_and_column_names(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    table_counts: dict[str, int] = {}
-    for table in tables:
-        base = table["physical_name"]
-        table_counts[base] = table_counts.get(base, 0) + 1
-        if table_counts[base] > 1:
-            table["physical_name"] = f"{base}_{table_counts[base]}"
-
+    for table_index, table in enumerate(tables):
+        table["table_id"] = str(table.get("table_id") or f"TABLE-{table_index + 1:03d}")
+        table["entity_id"] = str(table.get("entity_id") or f"ENT-{table_index + 1:03d}")
         column_counts: dict[str, int] = {}
+        unique_columns = []
         for column in table.get("columns", []):
             base_column = column["physical_name"]
             column_counts[base_column] = column_counts.get(base_column, 0) + 1
-            if column_counts[base_column] > 1:
-                column["physical_name"] = f"{base_column}_{column_counts[base_column]}"
+            if column_counts[base_column] == 1:
+                unique_columns.append(column)
+        table["columns"] = unique_columns
     return tables
+
+
+def _short_text(value: Any, max_length: int) -> str:
+    text = str(value or "").replace("\n", " ").strip()
+    return text if len(text) <= max_length else text[:max_length].rstrip()
+
+
+def _summary_text(value: Any, max_length: int) -> str:
+    text = str(value or "").replace("\n", " ").strip()
+    for marker in ("다.", ".", "요.", "임."):
+        if marker in text:
+            candidate = text.split(marker, 1)[0].strip() + marker
+            return _short_text(candidate, max_length)
+    return _short_text(text, max_length)
+
+
+def _merge_duplicate_tables(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    merged: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for table in tables:
+        key = table["physical_name"]
+        if key not in merged:
+            merged[key] = table
+            order.append(key)
+            continue
+        target = merged[key]
+        target["source_requirement_ids"] = list(
+            dict.fromkeys([*target.get("source_requirement_ids", []), *table.get("source_requirement_ids", [])])
+        )
+        target["columns"] = [*target.get("columns", []), *table.get("columns", [])]
+        if len(str(table.get("description") or "")) > len(str(target.get("description") or "")):
+            target["description"] = _summary_text(table.get("description"), 80)
+            target["table_description"] = target["description"]
+    return [merged[key] for key in order]
+
+
+def _ensure_minimum_columns(
+    columns: list[dict[str, Any]],
+    table_index: int,
+    logical_name: str,
+    physical_name: str,
+) -> list[dict[str, Any]]:
+    base_name = physical_name.removeprefix("tbl_")
+    existing = {column["physical_name"] for column in columns}
+    required = [
+        (f"{base_name}_nm", f"{logical_name} 명", "VARCHAR(200)", False, f"{logical_name} 명칭"),
+        (f"{base_name}_cn", f"{logical_name} 내용", "TEXT", True, f"{logical_name} 상세 내용"),
+        (f"{base_name}_stts_cd", f"{logical_name} 상태 코드", "VARCHAR(20)", True, f"{logical_name} 처리 상태 코드"),
+        ("use_yn", "사용 여부", "CHAR(1)", False, "사용 여부"),
+        ("reg_dt", "등록 일시", "DATETIME", False, "데이터 등록 일시"),
+        ("mdfcn_dt", "수정 일시", "DATETIME", True, "데이터 수정 일시"),
+    ]
+    for physical, logical, data_type, nullable, description in required:
+        if len(columns) >= 6:
+            break
+        if physical in existing:
+            continue
+        existing.add(physical)
+        columns.append(
+            {
+                "column_id": f"COL-{table_index + 1:03d}-{len(columns) + 1:03d}",
+                "logical_name": logical,
+                "physical_name": physical,
+                "data_type": data_type,
+                "nullable": nullable,
+                "constraints": [],
+                "description": description,
+            }
+        )
+    return columns
 
 
 def _constraints(table: dict[str, Any]) -> list[dict[str, Any]]:
