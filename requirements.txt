@@ -2,6 +2,7 @@ boto3
 fastapi
 langgraph
 PyMuPDF
+Pillow
 PyMySQL
 python-docx
 python-dotenv

@@ -68,6 +68,86 @@ class FakeFullScenarioLLM:
         return success_result({})
 
 
+class FakeUpdateScenarioRuleLLM:
+    def chat(self, messages, **kwargs):
+        system_prompt = messages[0]["content"]
+        if "작성 규칙" in system_prompt:
+            return success_result(
+                {
+                    "scenario_rule_applied_json_list": [
+                        {
+                            "scenario_json_list": [
+                                {
+                                    "scenario_id": "SCN-LOGIN",
+                                    "scenario_name": "로그인 규칙 적용",
+                                    "source_requirement_ids": ["REQ-001"],
+                                }
+                            ],
+                            "test_case_json_list": [
+                                {
+                                    "test_case_id": "TC-LOGIN-001",
+                                    "scenario_id": "SCN-LOGIN",
+                                    "case_type": "NORMAL",
+                                    "test_case_name": "로그인 정상 규칙 적용",
+                                }
+                            ],
+                            "step_json_list": [
+                                {
+                                    "step_id": "STEP-LOGIN-001",
+                                    "test_case_id": "TC-LOGIN-001",
+                                    "step_no": 1,
+                                    "처리내용": "로그인 버튼 클릭",
+                                    "시험항목": "로그인 정상 검증",
+                                    "사전조건": "로그인 화면 진입",
+                                    "입력값": "아이디/비밀번호",
+                                    "예상결과": "로그인 성공",
+                                    "화면ID": "SCR-LOGIN",
+                                }
+                            ],
+                        }
+                    ]
+                }
+            )
+        if "시나리오 ID" in system_prompt:
+            return success_result(
+                {
+                    "scenario": {
+                        "scenario_id": "SCN-LOGIN",
+                        "scenario_name": "로그인 규칙 적용",
+                        "source_requirement_ids": ["REQ-001"],
+                    }
+                }
+            )
+        if "시험 케이스별 품질" in system_prompt:
+            return success_result(
+                {
+                    "test_case": {
+                        "test_case_id": "TC-LOGIN-001",
+                        "scenario_id": "SCN-LOGIN",
+                        "case_type": "NORMAL",
+                        "test_case_name": "로그인 정상 규칙 적용",
+                    }
+                }
+            )
+        if "Step별 상세 정보를 검토" in system_prompt:
+            return success_result(
+                {
+                    "step": {
+                        "step_id": "STEP-LOGIN-001",
+                        "test_case_id": "TC-LOGIN-001",
+                        "step_no": 1,
+                        "처리내용": "로그인 버튼 클릭",
+                        "시험항목": "로그인 정상 검증",
+                        "사전조건": "로그인 화면 진입",
+                        "입력값": "아이디/비밀번호",
+                        "예상결과": "로그인 성공",
+                        "화면ID": "SCR-LOGIN",
+                    }
+                }
+            )
+        return success_result({})
+
+
 class TestScenarioAgentTest(unittest.TestCase):
     def test_create_builds_scenarios_cases_steps_and_uses_interface(self) -> None:
         state = _create_state()
@@ -78,6 +158,8 @@ class TestScenarioAgentTest(unittest.TestCase):
         self.assertEqual(len(document["scenario_json_list"]), 1)
         self.assertEqual(len(document["test_case_json_list"]), 6)
         self.assertEqual(len(document["step_json_list"]), 6)
+        self.assertEqual(len(document["step_detail_json_list"]), 6)
+        self.assertEqual(document["step_detail_json_list"][0]["step_id"], document["step_json_list"][0]["step_id"])
         self.assertTrue(
             all(step["화면ID"] == "SCR-LOGIN" for step in document["step_json_list"])
         )
@@ -133,6 +215,35 @@ class TestScenarioAgentTest(unittest.TestCase):
         self.assertEqual(step["화면ID"], "N/A")
         self.assertTrue(step["입력값"])
         self.assertTrue(step["예상결과"])
+        self.assertEqual(
+            document["step_detail_json_list"][0]["step_id"],
+            document["step_json_list"][0]["step_id"],
+        )
+
+    def test_update_applies_scenario_rules_before_refinement(self) -> None:
+        state = {
+            "docs_cd": "TS",
+            "udt_yn": "Y",
+            "etc": {"debug": True},
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "integrated_artifact_json_list": [
+                        {
+                            "scenario_json_list": [{"scenario_name": "로그인"}],
+                            "test_case_json_list": [{"name": "로그인 정상 처리"}],
+                            "step_json_list": [{"action": "로그인 버튼 클릭"}],
+                        }
+                    ]
+                }
+            },
+        }
+        result = TestScenarioGenerationAgent(llm_client=FakeUpdateScenarioRuleLLM()).execute(state)
+        document = result["integrated_test_scenario_json"]
+
+        self.assertEqual(document["scenario_json_list"][0]["scenario_name"], "로그인 규칙 적용")
+        self.assertEqual(document["test_case_json_list"][0]["test_case_id"], "TC-LOGIN-001")
+        self.assertEqual(document["step_detail_json_list"][0]["화면ID"], "SCR-LOGIN")
+        self.assertIn("scenario_rule_applied_json_list", result["debug"])
 
     def test_missing_inputs_fail_and_debug_is_optional(self) -> None:
         missing = TestScenarioGenerationAgent().execute({"docs_cd": "TS", "udt_yn": "N"})

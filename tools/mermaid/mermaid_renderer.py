@@ -18,9 +18,10 @@ def render_mermaid(
     mermaid_path = destination / f"{file_stem}.mmd"
     image_path = destination / f"{file_stem}.png"
     mermaid_path.write_text(mermaid_code, encoding="utf-8")
+    cli_path = settings.mermaid_cli_path
     try:
         completed = subprocess.run(
-            ["mmdc", "-i", str(mermaid_path), "-o", str(image_path)],
+            [cli_path, "-i", str(mermaid_path), "-o", str(image_path)],
             capture_output=True,
             text=True,
             timeout=120,

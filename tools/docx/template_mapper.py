@@ -8,7 +8,7 @@ from tools.result import ToolResult, error_result, success_result
 
 DOCUMENT_CONTENT_KEYS = {
     "SRS": ("requirement_json_list",),
-    "INTERFACE": ("interface_json_list",),
+    "INTERFACE": ("interface_json_list", "ui_structure"),
     "TS": ("integrated_test_scenario_json",),
     "ERD": ("erd_entity_json", "mermaid_image_path"),
     "DB": ("db_design_json",),

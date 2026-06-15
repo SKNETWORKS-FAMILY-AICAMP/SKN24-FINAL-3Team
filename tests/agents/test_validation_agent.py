@@ -158,6 +158,29 @@ class ValidationAgentTest(unittest.TestCase):
         self.assertEqual(check["target_agent"], "image_analysis_agent")
         self.assertEqual(check["target_scope"], ["SCR-001"])
 
+    def test_interface_unmapped_image_does_not_fail_requirement_mapping(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "INTERFACE",
+                "agent_outputs": {
+                    "image_analysis_agent": {
+                        "interface_image_analysis_json_list": [
+                            {
+                                "screen_id": "SCR-004",
+                                "screen_name": "참고 이미지",
+                                "description": "요구사항과 매핑되지 않은 이미지입니다. 사용 여부 확인 필요",
+                                "matched_requirement_ids": [],
+                                "match_status": "UNMAPPED_IMAGE",
+                                "image_path": "screen.png",
+                            }
+                        ]
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["validation_result"]["validation_status"], "PASS")
+
     def test_ts_detects_missing_step_detail(self) -> None:
         result = self.agent.execute(
             {

@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import base64
 from pathlib import Path
 
 import fitz
@@ -18,6 +19,7 @@ from tools.search.search_schema import SearchRequest
 from tools.storage.cleanup_manager import cleanup_paths
 from tools.storage.downloader import download_file
 from tools.storage.uploader import upload_file
+from tools.docx.docx_exporter import export_docx
 
 
 class CommonToolsTest(unittest.TestCase):
@@ -65,6 +67,24 @@ class CommonToolsTest(unittest.TestCase):
         self.assertEqual(both["data"]["search_type"], "BOTH")
         self.assertEqual(none["data"]["normalized_results"], [])
         self.assertEqual(none["data"]["search_type"], "NONE")
+
+    def test_search_router_builds_embedding_when_query_vector_is_missing(self) -> None:
+        captured = {}
+
+        class FakeQdrant:
+            def query_points(self, **kwargs):
+                captured.update(kwargs)
+                return type("Response", (), {"points": []})()
+
+        result = search(
+            "공공데이터 표준 용어",
+            rag_client=FakeQdrant(),
+            embedding_provider=lambda query: [0.1, 0.2, 0.3],
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(captured["query"], [0.1, 0.2, 0.3])
+        self.assertEqual(result["data"]["search_type"], "RAG")
 
     def test_search_request_validates_contract(self) -> None:
         request = SearchRequest(
@@ -114,6 +134,57 @@ class CommonToolsTest(unittest.TestCase):
             result["data"]["normalized_results"][0]["citation"],
             "https://example.test/standard",
         )
+
+    def test_erd_template_diagram_cell_contains_image_without_relationship_text(self) -> None:
+        png_bytes = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lN1mAAAAAABJRU5ErkJggg=="
+        )
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            image_path = root_path / "erd.png"
+            image_path.write_bytes(png_bytes)
+            output_path = root_path / "erd.docx"
+
+            result = export_docx(
+                {
+                    "docs_cd": "ERD",
+                    "content": {
+                        "erd_entity_json": {
+                            "erd_id": "ERD-001",
+                            "erd_name": "테스트 ERD",
+                            "tables": [
+                                {
+                                    "table_id": "ENT-001",
+                                    "logical_name": "너무 긴 사용자 계정 인증 관리 엔티티 이름",
+                                    "physical_name": "tbl_user_account",
+                                    "description": "사용자 계정 인증 정보를 관리하는 엔티티입니다.",
+                                    "columns": [
+                                        {
+                                            "logical_name": "사용자 계정 일련번호",
+                                            "physical_name": "user_account_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        }
+                                    ],
+                                }
+                            ],
+                            "relationships": [
+                                {"from_table": "tbl_user_account", "to_table": "tbl_docs", "description": "relates"}
+                            ],
+                        }
+                    },
+                    "image_paths": [str(image_path)],
+                },
+                str(output_path),
+                template_path="templates/erd_template.docx",
+            )
+
+            self.assertTrue(result["success"])
+            document = Document(str(output_path))
+            self.assertNotIn("relates", document.tables[1].cell(1, 0).text)
+            self.assertEqual(document.tables[2].cell(0, 7).text.strip(), "USER_ACCOUNT")
+            self.assertEqual(document.tables[2].cell(3, 0).text.strip(), "USER_ACCOUNT_SN")
 
     def test_llm_client_uses_injected_transport(self) -> None:
         captured = {}
