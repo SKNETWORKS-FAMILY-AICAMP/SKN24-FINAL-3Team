@@ -14,6 +14,8 @@ FALLBACK_POSITIONS = [
     (0.50, 0.78),
     (0.82, 0.78),
 ]
+TARGET_DOC_IMAGE_WIDTH_PX = 1800
+OUTPUT_DPI = (220, 220)
 
 
 def enrich_interface_screens(
@@ -87,6 +89,7 @@ def create_numbered_prototype_image(image_path: Path, screen_spec: dict[str, Any
 
     out_dir.mkdir(parents=True, exist_ok=True)
     with Image.open(image_path).convert("RGBA") as image:
+        image = _upscale_for_docx(image)
         width, height = image.size
         overlay = Image.new("RGBA", image.size, (0, 0, 0, 0))
         draw = ImageDraw.Draw(overlay)
@@ -103,8 +106,20 @@ def create_numbered_prototype_image(image_path: Path, screen_spec: dict[str, Any
             _draw_number_marker(draw, x, y, radius, int(marker["no"]), font)
 
         output_path = out_dir / f"{image_path.stem}_numbered.png"
-        Image.alpha_composite(image, overlay).convert("RGB").save(output_path, quality=95)
+        Image.alpha_composite(image, overlay).convert("RGB").save(output_path, dpi=OUTPUT_DPI, optimize=True)
         return output_path
+
+
+def _upscale_for_docx(image: Any) -> Any:
+    from PIL import Image
+
+    width, height = image.size
+    if width >= TARGET_DOC_IMAGE_WIDTH_PX:
+        return image
+    scale = TARGET_DOC_IMAGE_WIDTH_PX / max(1, width)
+    next_size = (TARGET_DOC_IMAGE_WIDTH_PX, max(1, int(height * scale)))
+    resampling = getattr(getattr(Image, "Resampling", None), "LANCZOS", Image.LANCZOS)
+    return image.resize(next_size, resampling)
 
 
 def _normalize_process_contents(
