@@ -249,6 +249,32 @@ class CommonToolsTest(unittest.TestCase):
             self.assertIn("로그인", item["detail_text"])
             self.assertEqual(item["validation_criteria"], ["정상 로그인 여부를 확인한다."])
 
+    def test_rfp_rule_parser_extracts_pdf_text_requirements(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "rfp.pdf"
+            document = fitz.open()
+            page = document.new_page()
+            page.insert_text(
+                (72, 72),
+                "\n".join(
+                    [
+                        "SFR-001",
+                        "Login feature allows users to sign in with ID and password.",
+                        "The system must validate credentials and return the login result.",
+                    ]
+                ),
+            )
+            document.save(path)
+            document.close()
+
+            result = parse_rfp_requirements(str(path))
+
+            self.assertTrue(result["success"])
+            item = result["data"]["requirements"][0]
+            self.assertEqual(item["requirement_id"], "SFR-001")
+            self.assertIn("Login feature", item["requirement_name"])
+            self.assertIn("credentials", item["detail_text"])
+
     def test_pdf_parser(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             path = Path(root) / "sample.pdf"

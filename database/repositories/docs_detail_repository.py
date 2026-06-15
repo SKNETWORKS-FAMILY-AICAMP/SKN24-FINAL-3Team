@@ -10,7 +10,6 @@ from config.constants import (
 )
 from database.repositories.file_repository import FileRepository
 from database.queries.docs_detail_query import (
-    DEACTIVATE_ACTIVE_DOCS_DETAIL,
     FIND_ACTIVE_DOC,
     FIND_ACTIVE_SRS,
     FIND_CURRENT_DOCS,
@@ -26,12 +25,9 @@ class DocsDetailRepository:
         self.session = session
 
     def find_active_srs(self, project_sn: int) -> Any | None:
-        requirement_json = FileRepository(self.session).find_latest_file_by_project_and_code(
+        return FileRepository(self.session).find_latest_file_by_project_and_code(
             project_sn, FILE_CODE_REQUIREMENT_JSON
         )
-        if requirement_json is not None:
-            return requirement_json
-        return self.find_active_doc(project_sn, "SRS")
 
     def find_active_doc(self, project_sn: int, docs_cd: DocsCode) -> Any | None:
         row = self.session.execute(
@@ -45,7 +41,19 @@ class DocsDetailRepository:
         project_sn: int,
         docs_cd: DocsCode,
     ) -> None:
-        self._upsert_docs_status(
+        self._update_docs_status(
+            project_sn=project_sn,
+            docs_cd=docs_cd,
+            status="GENERATING",
+            mdfcn_cn="산출물 생성 중",
+        )
+
+    def ensure_docs_status_generating(
+        self,
+        project_sn: int,
+        docs_cd: DocsCode,
+    ) -> int | None:
+        return self._upsert_docs_status(
             project_sn=project_sn,
             docs_cd=docs_cd,
             status="GENERATING",
@@ -53,7 +61,7 @@ class DocsDetailRepository:
         )
 
     def update_docs_status_done(self, project_sn: int, docs_cd: DocsCode) -> None:
-        self._upsert_docs_status(
+        self._update_docs_status(
             project_sn=project_sn,
             docs_cd=docs_cd,
             status="DONE",
@@ -66,7 +74,7 @@ class DocsDetailRepository:
         docs_cd: DocsCode,
         error_message: str,
     ) -> None:
-        self._upsert_docs_status(
+        self._update_docs_status(
             project_sn=project_sn,
             docs_cd=docs_cd,
             status="FAILED",
@@ -74,10 +82,7 @@ class DocsDetailRepository:
         )
 
     def deactivate_active_doc(self, project_sn: int, docs_cd: DocsCode) -> None:
-        self.session.execute(
-            text(DEACTIVATE_ACTIVE_DOCS_DETAIL),
-            {"project_sn": project_sn, "docs_cd": _to_db_docs_cd(docs_cd)},
-        )
+        return None
 
     def insert_docs_detail(
         self,
@@ -93,13 +98,9 @@ class DocsDetailRepository:
         user_sn: int = 1,
         docs_ver: str | None = None,
     ) -> Any:
-        docs_sn = self._ensure_docs(
+        docs_sn = self._find_docs_sn(
             project_sn=project_sn,
             docs_cd=docs_cd,
-            status=status,
-            mdfcn_cn="산출물 생성 완료" if status == "DONE" else None,
-            user_sn=user_sn,
-            docs_ver=docs_ver,
         )
         result = self.session.execute(
             text(INSERT_DOCS_DETAIL),
@@ -112,6 +113,30 @@ class DocsDetailRepository:
         )
         return {"docs_sn": docs_sn, "docs_dtl_sn": int(result.lastrowid)}
 
+    def _update_docs_status(
+        self,
+        *,
+        project_sn: int,
+        docs_cd: DocsCode,
+        status: str,
+        mdfcn_cn: str | None,
+        user_sn: int = 1,
+    ) -> None:
+        result = self.session.execute(
+            text(UPDATE_DOCS_STATUS),
+            {
+                "project_sn": project_sn,
+                "docs_cd": _to_db_docs_cd(docs_cd),
+                "docs_prgrs_stts_cd": _to_db_status(status),
+                "mdfcn_cn": mdfcn_cn,
+                "user_sn": user_sn,
+            },
+        )
+        if result.rowcount == 0:
+            raise LookupError(
+                f"tbl_docs row not found: project_sn={project_sn}, docs_cd={docs_cd}"
+            )
+
     def _upsert_docs_status(
         self,
         *,
@@ -120,34 +145,32 @@ class DocsDetailRepository:
         status: str,
         mdfcn_cn: str | None,
         user_sn: int = 1,
-    ) -> int:
-        docs_sn = self._ensure_docs(
+    ) -> int | None:
+        result = self.session.execute(
+            text(UPDATE_DOCS_STATUS),
+            {
+                "project_sn": project_sn,
+                "docs_cd": _to_db_docs_cd(docs_cd),
+                "docs_prgrs_stts_cd": _to_db_status(status),
+                "mdfcn_cn": mdfcn_cn,
+                "user_sn": user_sn,
+            },
+        )
+        if result.rowcount != 0:
+            return None
+        return self._insert_docs(
             project_sn=project_sn,
             docs_cd=docs_cd,
             status=status,
             mdfcn_cn=mdfcn_cn,
             user_sn=user_sn,
         )
-        self.session.execute(
-            text(UPDATE_DOCS_STATUS),
-            {
-                "docs_sn": docs_sn,
-                "docs_prgrs_stts_cd": _to_db_status(status),
-                "mdfcn_cn": mdfcn_cn,
-                "user_sn": user_sn,
-            },
-        )
-        return docs_sn
 
-    def _ensure_docs(
+    def _find_docs_sn(
         self,
         *,
         project_sn: int,
         docs_cd: DocsCode,
-        status: str,
-        mdfcn_cn: str | None,
-        user_sn: int = 1,
-        docs_ver: str | None = None,
     ) -> int:
         current = self.session.execute(
             text(FIND_CURRENT_DOCS),
@@ -155,14 +178,28 @@ class DocsDetailRepository:
         ).mappings().first()
         if current is not None:
             return int(current["docs_sn"])
+        return self._insert_docs(
+            project_sn=project_sn,
+            docs_cd=docs_cd,
+            status="DONE",
+            mdfcn_cn="산출물 생성 완료",
+        )
 
+    def _insert_docs(
+        self,
+        *,
+        project_sn: int,
+        docs_cd: DocsCode,
+        status: str,
+        mdfcn_cn: str | None,
+        user_sn: int = 1,
+    ) -> int:
         result = self.session.execute(
             text(INSERT_DOCS),
             {
                 "project_sn": project_sn,
-                "pssn_user_sn": user_sn,
                 "docs_cd": _to_db_docs_cd(docs_cd),
-                "docs_ver": docs_ver,
+                "docs_ver": None,
                 "docs_prgrs_stts_cd": _to_db_status(status),
                 "mdfcn_cn": mdfcn_cn,
                 "user_sn": user_sn,

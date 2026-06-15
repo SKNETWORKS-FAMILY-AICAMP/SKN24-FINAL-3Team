@@ -78,6 +78,63 @@ class ValidationAgentTest(unittest.TestCase):
 
         self.assertEqual(result["validation_result"]["validation_status"], "PASS")
 
+    def test_srs_update_validates_document_merge_output(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "SRS",
+                "udt_yn": "Y",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "integrated_artifact_json_list": [
+                            {
+                                "requirement_id": "SFR-001",
+                                "requirement_name": "로그인 수정",
+                                "requirement_type": "기능",
+                                "description": "사용자가 로그인한다.",
+                                "source": ["SFR-001"],
+                                "validation_criteria": ["로그인 성공 여부 확인"],
+                            },
+                            {
+                                "requirement_id": "NFR-001",
+                                "requirement_name": "응답시간",
+                                "requirement_type": "성능",
+                                "description": "3초 이내 응답",
+                                "source": ["NFR-001"],
+                            },
+                        ]
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["validation_result"]["validation_status"], "PASS")
+
+    def test_srs_update_reports_non_object_items_as_schema_error(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "SRS",
+                "udt_yn": "Y",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "integrated_artifact_json_list": [
+                            "잘못 들어온 문자열 항목",
+                            {
+                                "requirement_id": "SFR-001",
+                                "requirement_name": "로그인 수정",
+                                "requirement_type": "기능",
+                                "description": "사용자가 로그인한다.",
+                                "source": ["SFR-001"],
+                                "validation_criteria": ["로그인 성공 여부 확인"],
+                            },
+                        ]
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(_failure(result, "SRS_SCHEMA_ERROR")["target_scope"], ["0"])
+
     def test_interface_failure_returns_target_agent_and_scope(self) -> None:
         result = self.agent.execute(
             {

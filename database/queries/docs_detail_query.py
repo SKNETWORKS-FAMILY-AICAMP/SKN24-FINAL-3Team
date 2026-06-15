@@ -14,7 +14,6 @@ JOIN tbl_docs_detail dd
   ON dd.docs_sn = d.docs_sn
 WHERE d.prj_sn = :project_sn
   AND d.docs_cd = :docs_cd
-  AND d.docs_prgrs_stts_cd = 'PRGRS_COMPLETED'
   AND dd.del_yn = 'N'
 ORDER BY dd.docs_dtl_sn DESC
 LIMIT 1
@@ -52,7 +51,7 @@ INSERT INTO tbl_docs (
 )
 VALUES (
     :project_sn,
-    :pssn_user_sn,
+    NULL,
     :docs_cd,
     :docs_ver,
     :docs_prgrs_stts_cd,
@@ -70,17 +69,10 @@ SET docs_prgrs_stts_cd = :docs_prgrs_stts_cd,
     mdfcn_cn = :mdfcn_cn,
     mdfcn_dt = NOW(),
     mdfr_sn = :user_sn
-WHERE docs_sn = :docs_sn
-"""
-
-DEACTIVATE_ACTIVE_DOCS_DETAIL = """
-UPDATE tbl_docs_detail dd
-JOIN tbl_docs d
-  ON d.docs_sn = dd.docs_sn
-SET dd.del_yn = 'Y'
-WHERE d.prj_sn = :project_sn
-  AND d.docs_cd = :docs_cd
-  AND dd.del_yn = 'N'
+WHERE prj_sn = :project_sn
+  AND docs_cd = :docs_cd
+ORDER BY docs_sn DESC
+LIMIT 1
 """
 
 INSERT_DOCS_DETAIL = """

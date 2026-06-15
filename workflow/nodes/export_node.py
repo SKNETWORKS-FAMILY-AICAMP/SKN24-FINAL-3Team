@@ -1,12 +1,13 @@
 # 최종 문서 JSON을 기반으로 DOCX 파일을 생성하고 저장소 및 DB에 등록합니다.
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from config.constants import DOCS_CODE_DB_MAP, DOCS_CODES
+from config.constants import DOCS_CODE_DB_MAP, DOCS_CODES, FILE_CODE_REQUIREMENT_JSON
 from config.settings import Settings, get_settings
 from database.repositories.docs_detail_repository import DocsDetailRepository
 from database.repositories.file_repository import FileRepository
@@ -34,8 +35,6 @@ class FileRepositoryProtocol(Protocol):
 
 
 class DocsDetailRepositoryProtocol(Protocol):
-    def deactivate_active_doc(self, project_sn: int, docs_cd: DocsCode) -> None: ...
-
     def insert_docs_detail(
         self,
         *,
@@ -88,6 +87,14 @@ def export_node(
     settings = dependencies.settings or get_settings()
     try:
         project_sn, docs_cd, final_document_json = _validate_state(state)
+        requirement_json_record = _export_requirement_json_if_needed(
+            state=state,
+            project_sn=project_sn,
+            docs_cd=docs_cd,
+            final_document_json=final_document_json,
+            dependencies=dependencies,
+            settings=settings,
+        )
         mapped = dependencies.template_mapper(final_document_json, docs_cd)
         export_payload = _unwrap_tool_result(mapped, "EXPORT_MAPPING_FAILED")
 
@@ -122,8 +129,6 @@ def export_node(
             file_ext="docx",
         )
         file_sn = _read_file_sn(file_record)
-        if state.get("udt_yn") == "Y":
-            dependencies.docs_detail_repository.deactivate_active_doc(project_sn, docs_cd)
         dependencies.docs_detail_repository.insert_docs_detail(
             project_sn=project_sn,
             docs_cd=docs_cd,
@@ -143,6 +148,8 @@ def export_node(
             "project_sn": project_sn,
             "docs_cd": docs_cd,
             "file_sn": file_sn,
+            "requirement_json_file_sn": requirement_json_record.get("file_sn") if requirement_json_record else None,
+            "requirement_json_file_path": requirement_json_record.get("storage_file_path") if requirement_json_record else "",
             "local_file_path": generated_local_file_path,
             "storage_file_path": storage_file_path,
             "file_name": generated_file_name,
@@ -175,6 +182,52 @@ def _validate_state(state: WorkflowState) -> tuple[int, DocsCode, dict[str, Any]
     return project_sn, docs_cd, final_document_json
 
 
+def _export_requirement_json_if_needed(
+    *,
+    state: WorkflowState,
+    project_sn: int,
+    docs_cd: DocsCode,
+    final_document_json: dict[str, Any],
+    dependencies: ExportDependencies,
+    settings: Settings,
+) -> dict[str, Any] | None:
+    if docs_cd != "SRS":
+        return None
+
+    file_name = _build_json_file_name(project_sn, docs_cd)
+    local_file_path = settings.output_dir / file_name
+    local_file_path.parent.mkdir(parents=True, exist_ok=True)
+    local_file_path.write_text(
+        json.dumps(final_document_json, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    upload_kwargs: dict[str, Any] = {"settings": settings}
+    if settings.s3_bucket:
+        upload_kwargs["s3_key"] = f"project/{project_sn}/{docs_cd}/{file_name}"
+    else:
+        upload_kwargs["storage_path"] = str(local_file_path)
+    uploaded = dependencies.uploader(str(local_file_path), **upload_kwargs)
+    uploaded_data = _unwrap_tool_result(uploaded, "REQUIREMENT_JSON_UPLOAD_FAILED")
+    storage_file_path = str(uploaded_data["storage_file_path"])
+
+    file_record = dependencies.file_repository.insert_file(
+        project_sn=project_sn,
+        file_cd=FILE_CODE_REQUIREMENT_JSON,
+        file_nm=file_name,
+        file_path=storage_file_path,
+        file_size=local_file_path.stat().st_size,
+        file_ext="json",
+    )
+    return {
+        "file_sn": _read_file_sn(file_record),
+        "local_file_path": str(local_file_path),
+        "storage_file_path": storage_file_path,
+        "file_name": file_name,
+        "file_size": local_file_path.stat().st_size,
+    }
+
+
 def _unwrap_tool_result(result: ToolResult, default_code: str) -> Any:
     if result["success"]:
         return result["data"]
@@ -185,6 +238,11 @@ def _unwrap_tool_result(result: ToolResult, default_code: str) -> Any:
 def _build_file_name(project_sn: int, docs_cd: str) -> str:
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
     return f"{docs_cd}_{project_sn}_{timestamp}.docx"
+
+
+def _build_json_file_name(project_sn: int, docs_cd: str) -> str:
+    timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+    return f"{docs_cd}_{project_sn}_{timestamp}.json"
 
 
 def _read_file_sn(record: Any) -> int:
@@ -220,5 +278,10 @@ def _mark_failed(
             repository.update_docs_status_failed(
                 state["project_sn"], state["docs_cd"], error.message
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            state["errors"].append(
+                {
+                    "code": "DOCS_STATUS_UPDATE_FAILED",
+                    "message": str(exc) or "산출물 상태 업데이트에 실패했습니다.",
+                }
+            )

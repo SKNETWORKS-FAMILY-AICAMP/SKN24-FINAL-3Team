@@ -38,7 +38,17 @@ def build_final_requirement(
     if not isinstance(existing_constraints, list):
         existing_constraints = [str(existing_constraints)]
     all_constraints = list(dict.fromkeys([*existing_constraints, *constraints]))
-    criteria = constraints_to_validation_criteria(all_constraints)
+    existing_criteria = item.get("validation_criteria") or []
+    if not isinstance(existing_criteria, list):
+        existing_criteria = [str(existing_criteria)]
+    criteria = list(
+        dict.fromkeys(
+            [
+                *[str(value) for value in existing_criteria if value],
+                *constraints_to_validation_criteria(all_constraints),
+            ]
+        )
+    )
     return {
         "requirement_id": requirement_id,
         "requirement_name": requirement_name,

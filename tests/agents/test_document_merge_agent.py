@@ -190,6 +190,41 @@ class DocumentMergeAgentTest(unittest.TestCase):
             self.assertEqual(db["reference_erd_json_list"], [{"table_id": "T1"}])
             self.assertEqual(ts["reference_interface_json_list"], [{"screen_id": "SCR-1"}])
 
+    def test_other_create_loads_requirement_json_from_final_document_wrapper(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            requirements = Path(root) / "requirements.json"
+            requirements.write_text(
+                json.dumps(
+                    {
+                        "result": {
+                            "final_document_json": {
+                                "docs_cd": "SRS",
+                                "requirement_json_list": [
+                                    {
+                                        "req_id": "REQ-001",
+                                        "requirement_type": "기능",
+                                        "detail_text": "데이터를 관리한다.",
+                                    }
+                                ],
+                            }
+                        }
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+            result = DocumentMergeAgent().execute(
+                {
+                    "docs_cd": "ERD",
+                    "udt_yn": "N",
+                    "base_requirement_json_path": str(requirements),
+                }
+            )
+
+            self.assertEqual(result["status"], "SUCCESS")
+            self.assertEqual(result["integrated_requirement_json_list"][0]["req_id"], "REQ-001")
+
     def test_other_create_filters_requirements_by_docs_cd(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             requirements = Path(root) / "requirements.json"
@@ -249,6 +284,49 @@ class DocumentMergeAgentTest(unittest.TestCase):
             self.assertIn("integrated_artifact_json_list", document)
             self.assertNotIn("existing_output_raw_json", document)
             self.assertNotIn("integrated_artifact_json_list", document_state)
+
+    def test_update_fallback_meeting_text_is_not_appended_as_artifact_item(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            existing = root_path / "existing.json"
+            meeting = root_path / "meeting.txt"
+            existing.write_text(
+                json.dumps(
+                    {
+                        "requirement_json_list": [
+                            {
+                                "requirement_id": "SFR-001",
+                                "requirement_name": "로그인",
+                                "requirement_type": "기능",
+                                "description": "로그인한다.",
+                                "source": ["SFR-001"],
+                                "validation_criteria": ["로그인 성공 여부 확인"],
+                            }
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            meeting.write_text("변경 요구사항 검토 회의록 원문", encoding="utf-8")
+
+            result = DocumentMergeAgent().execute(
+                {
+                    "docs_cd": "SRS",
+                    "udt_yn": "Y",
+                    "existing_output_path": str(existing),
+                    "input_file_paths": [str(meeting)],
+                }
+            )
+
+            self.assertEqual(result["status"], "SUCCESS")
+            self.assertEqual(len(result["integrated_artifact_json_list"]), 1)
+            self.assertTrue(
+                all(
+                    isinstance(item, dict)
+                    for item in result["integrated_artifact_json_list"]
+                )
+            )
 
     def test_missing_required_input_returns_failed_output_in_agent_outputs(self) -> None:
         state = {"docs_cd": "SRS", "udt_yn": "N"}

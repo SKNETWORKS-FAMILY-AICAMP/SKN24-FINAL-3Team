@@ -35,6 +35,12 @@ def artifact_items(data: Any) -> list[Any]:
         return [data] if data is not None else []
     if "raw_json" in data:
         return artifact_items(data["raw_json"])
+    if isinstance(data.get("final_document_json"), dict):
+        return artifact_items(data["final_document_json"])
+    if isinstance(data.get("result"), dict):
+        result = data["result"]
+        if isinstance(result.get("final_document_json"), dict):
+            return artifact_items(result["final_document_json"])
     for key in (
         "requirements",
         "requirement_json_list",

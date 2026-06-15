@@ -226,6 +226,52 @@ class GenerationSupervisorTest(unittest.TestCase):
         )
         self.assertEqual(plan["steps"][0]["retry_scope"], ["SCR-001"])
 
+    def test_middle_agent_transient_failure_retries_same_step_before_replan(self) -> None:
+        calls = {"requirement": 0}
+        registry = successful_registry()
+
+        def flaky_requirement_agent(state) -> dict[str, Any]:
+            calls["requirement"] += 1
+            if calls["requirement"] == 1:
+                raise RuntimeError("temporary llm error")
+            return success_output(final_requirement_json_list=[{"stub": True}])
+
+        registry.register("requirement_generation_agent", flaky_requirement_agent)
+
+        result = run_generation_supervisor(
+            {"project_sn": 1, "docs_cd": "SRS", "udt_yn": "N", "max_round": 3},
+            registry,
+        )
+
+        self.assertEqual(calls["requirement"], 2)
+        self.assertEqual(result["current_round"], 1)
+        self.assertEqual(result["next_action"], "EXPORT")
+        requirement_step = result["execution_plan"]["steps"][1]
+        self.assertEqual(requirement_step["status"], "DONE")
+        self.assertEqual(requirement_step["retry_count"], 1)
+
+    def test_terminal_missing_input_failure_ends_without_replan(self) -> None:
+        registry = successful_registry()
+        registry.register(
+            "document_merge_agent",
+            lambda state: {
+                "status": "FAILED",
+                "failure_type": "SRS_RFP_MISSING",
+                "warnings": [],
+                "errors": [{"code": "SRS_RFP_MISSING", "message": "RFP 없음"}],
+            },
+        )
+
+        result = run_generation_supervisor(
+            {"project_sn": 1, "docs_cd": "SRS", "udt_yn": "N", "max_round": 3},
+            registry,
+        )
+
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["next_action"], "END")
+        self.assertEqual(result["current_round"], 1)
+        self.assertNotIn("replan_reason", result["execution_plan"])
+
 
 if __name__ == "__main__":
     unittest.main()
