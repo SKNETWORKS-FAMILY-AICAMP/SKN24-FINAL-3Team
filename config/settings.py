@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,7 +24,12 @@ class Settings(BaseSettings):
     port: int = 8000
 
     # Database
-    database_url: str = "sqlite:///./alpled.db"
+    db_driver: str = "mysql+pymysql"
+    db_host: str | None = None
+    db_port: int = 3306
+    db_name: str | None = None
+    db_user: str | None = None
+    db_password: str | None = None
 
     # S3
     s3_endpoint: str | None = None
@@ -58,6 +64,17 @@ class Settings(BaseSettings):
 
     # Supervisor
     max_round: int = Field(default=3, ge=1)
+
+    @property
+    def resolved_database_url(self) -> str:
+        if self.db_host and self.db_name and self.db_user is not None:
+            user = quote_plus(self.db_user)
+            password = quote_plus(self.db_password or "")
+            return (
+                f"{self.db_driver}://{user}:{password}"
+                f"@{self.db_host}:{self.db_port}/{self.db_name}"
+            )
+        return "sqlite:///./alpled.db"
 
 
 @lru_cache

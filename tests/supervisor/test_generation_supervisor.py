@@ -84,7 +84,7 @@ class GenerationSupervisorTest(unittest.TestCase):
 
         self.assertFalse(result["success"])
 
-    def test_successful_mock_agents_reduce_to_empty_document(self) -> None:
+    def test_successful_mock_agents_reduce_to_agent_outputs(self) -> None:
         state = {
             "project_sn": 1,
             "docs_cd": "ERD",
@@ -97,7 +97,11 @@ class GenerationSupervisorTest(unittest.TestCase):
         self.assertEqual(result["next_action"], "EXPORT")
         self.assertEqual(
             result["final_document_json"],
-            {"docs_cd": "ERD", "erd_entity_json": {}, "mermaid_image_path": ""},
+            {
+                "docs_cd": "ERD",
+                "erd_entity_json": {"stub": True},
+                "mermaid_image_path": "/tmp/stub.png",
+            },
         )
         self.assertIn("document_merge_agent", result["agent_outputs"])
         self.assertIn("validation_agent", result["agent_outputs"])
@@ -124,6 +128,8 @@ class GenerationSupervisorTest(unittest.TestCase):
                             {
                                 "status": "FAIL",
                                 "failure_type": "ERD_MERMAID_RENDER_FAILED",
+                                "target_agent": "mermaid_generation_agent",
+                                "target_scope": ["all"],
                             }
                         ],
                     },
@@ -152,8 +158,9 @@ class GenerationSupervisorTest(unittest.TestCase):
         agents = [step["agent"] for step in result["execution_plan"]["steps"]]
         self.assertEqual(
             agents,
-            ["document_merge_agent", "mermaid_generation_agent", "validation_agent"],
+            ["mermaid_generation_agent", "validation_agent"],
         )
+        self.assertEqual(result["execution_plan"]["steps"][0]["retry_scope"], ["all"])
         self.assertEqual(result["next_action"], "EXPORT")
 
     def test_max_round_failure_ends_supervisor(self) -> None:
@@ -184,7 +191,7 @@ class GenerationSupervisorTest(unittest.TestCase):
         self.assertEqual(result["status"], "FAILED")
         self.assertEqual(result["next_action"], "END")
 
-    def test_replan_keeps_mandatory_agents(self) -> None:
+    def test_replan_runs_only_mapped_target_agents(self) -> None:
         plan = build_replan(
             "ARCH",
             "N",
@@ -194,8 +201,76 @@ class GenerationSupervisorTest(unittest.TestCase):
         )
         agents = [step["agent"] for step in plan["steps"]]
 
-        self.assertEqual(agents[0], "document_merge_agent")
-        self.assertEqual(agents[-1], "validation_agent")
+        self.assertEqual(agents, ["architecture_analysis_agent", "validation_agent"])
+
+    def test_replan_prefers_validation_target_agent_and_scope(self) -> None:
+        plan = build_replan(
+            "INTERFACE",
+            "N",
+            "CUSTOM_INTERFACE_FAILURE",
+            current_round=1,
+            max_round=3,
+            failed_checks=[
+                {
+                    "status": "FAIL",
+                    "failure_type": "CUSTOM_INTERFACE_FAILURE",
+                    "target_agent": "image_analysis_agent",
+                    "target_scope": ["SCR-001"],
+                }
+            ],
+        )
+
+        self.assertEqual(
+            [step["agent"] for step in plan["steps"]],
+            ["image_analysis_agent", "validation_agent"],
+        )
+        self.assertEqual(plan["steps"][0]["retry_scope"], ["SCR-001"])
+
+    def test_middle_agent_transient_failure_retries_same_step_before_replan(self) -> None:
+        calls = {"requirement": 0}
+        registry = successful_registry()
+
+        def flaky_requirement_agent(state) -> dict[str, Any]:
+            calls["requirement"] += 1
+            if calls["requirement"] == 1:
+                raise RuntimeError("temporary llm error")
+            return success_output(final_requirement_json_list=[{"stub": True}])
+
+        registry.register("requirement_generation_agent", flaky_requirement_agent)
+
+        result = run_generation_supervisor(
+            {"project_sn": 1, "docs_cd": "SRS", "udt_yn": "N", "max_round": 3},
+            registry,
+        )
+
+        self.assertEqual(calls["requirement"], 2)
+        self.assertEqual(result["current_round"], 1)
+        self.assertEqual(result["next_action"], "EXPORT")
+        requirement_step = result["execution_plan"]["steps"][1]
+        self.assertEqual(requirement_step["status"], "DONE")
+        self.assertEqual(requirement_step["retry_count"], 1)
+
+    def test_terminal_missing_input_failure_ends_without_replan(self) -> None:
+        registry = successful_registry()
+        registry.register(
+            "document_merge_agent",
+            lambda state: {
+                "status": "FAILED",
+                "failure_type": "SRS_RFP_MISSING",
+                "warnings": [],
+                "errors": [{"code": "SRS_RFP_MISSING", "message": "RFP 없음"}],
+            },
+        )
+
+        result = run_generation_supervisor(
+            {"project_sn": 1, "docs_cd": "SRS", "udt_yn": "N", "max_round": 3},
+            registry,
+        )
+
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["next_action"], "END")
+        self.assertEqual(result["current_round"], 1)
+        self.assertNotIn("replan_reason", result["execution_plan"])
 
 
 if __name__ == "__main__":

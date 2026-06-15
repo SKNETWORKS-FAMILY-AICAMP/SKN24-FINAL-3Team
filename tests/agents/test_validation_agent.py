@@ -48,6 +48,93 @@ class ValidationAgentTest(unittest.TestCase):
         self.assertEqual(partial["validation_result"]["validation_status"], "PARTIAL_PASS")
         self.assertEqual(partial["validation_result"]["warning_count"], 1)
 
+    def test_srs_accepts_canonical_requirement_fields(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "SRS",
+                "agent_outputs": {
+                    "requirement_generation_agent": {
+                        "final_requirement_json_list": [
+                            {
+                                "requirement_id": "REQ-001",
+                                "requirement_name": "로그인",
+                                "requirement_type": "기능",
+                                "description": "사용자가 로그인한다.",
+                                "source": ["RFP-001"],
+                                "validation_criteria": ["로그인 성공 여부 확인"],
+                            },
+                            {
+                                "requirement_id": "NFR-001",
+                                "requirement_name": "응답시간",
+                                "requirement_type": "성능",
+                                "description": "3초 이내 응답",
+                                "source": ["RFP-002"],
+                            },
+                        ]
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["validation_result"]["validation_status"], "PASS")
+
+    def test_srs_update_validates_document_merge_output(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "SRS",
+                "udt_yn": "Y",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "integrated_artifact_json_list": [
+                            {
+                                "requirement_id": "SFR-001",
+                                "requirement_name": "로그인 수정",
+                                "requirement_type": "기능",
+                                "description": "사용자가 로그인한다.",
+                                "source": ["SFR-001"],
+                                "validation_criteria": ["로그인 성공 여부 확인"],
+                            },
+                            {
+                                "requirement_id": "NFR-001",
+                                "requirement_name": "응답시간",
+                                "requirement_type": "성능",
+                                "description": "3초 이내 응답",
+                                "source": ["NFR-001"],
+                            },
+                        ]
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["validation_result"]["validation_status"], "PASS")
+
+    def test_srs_update_reports_non_object_items_as_schema_error(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "SRS",
+                "udt_yn": "Y",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "integrated_artifact_json_list": [
+                            "잘못 들어온 문자열 항목",
+                            {
+                                "requirement_id": "SFR-001",
+                                "requirement_name": "로그인 수정",
+                                "requirement_type": "기능",
+                                "description": "사용자가 로그인한다.",
+                                "source": ["SFR-001"],
+                                "validation_criteria": ["로그인 성공 여부 확인"],
+                            },
+                        ]
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["status"], "FAIL")
+        self.assertEqual(_failure(result, "SRS_SCHEMA_ERROR")["target_scope"], ["0"])
+
     def test_interface_failure_returns_target_agent_and_scope(self) -> None:
         result = self.agent.execute(
             {
@@ -245,6 +332,66 @@ class ValidationAgentTest(unittest.TestCase):
         self.assertEqual(_failure(erd, "ERD_FK_INVALID")["target_agent"], "data_structure_design_agent")
         self.assertEqual(_failure(erd, "ERD_STANDARD_NAMING_ERROR")["target_agent"], "data_structure_design_agent")
         self.assertEqual(_failure(arch, "ARCH_COMPONENT_ISOLATED")["target_agent"], "architecture_analysis_agent")
+
+    def test_db_detects_constraints_and_indexes_that_reference_missing_columns(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "DB",
+                "agent_outputs": {
+                    "data_structure_design_agent": {
+                        "db_design_json": {
+                            "tables": [
+                                {
+                                    "table_name": "tbl_user",
+                                    "table_description": "사용자",
+                                    "columns": [
+                                        {
+                                            "column_name": "user_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "default": None,
+                                            "description": "사용자 번호",
+                                        }
+                                    ],
+                                    "constraints": [{"type": "PK", "columns": ["missing_column"]}],
+                                    "indexes": [{"name": "idx_missing", "columns": ["missing_column"]}],
+                                }
+                            ]
+                        }
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(_failure(result, "DB_CONSTRAINT_INVALID")["target_scope"], ["tbl_user"])
+        self.assertEqual(_failure(result, "DB_INDEX_INVALID")["target_scope"], ["tbl_user"])
+
+    def test_arch_detects_relations_referencing_missing_components(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "ARCH",
+                "agent_outputs": {
+                    "architecture_analysis_agent": {
+                        "architecture_structure_json": {
+                            "overview": "개요",
+                            "components": [{"component_id": "WEB"}, {"component_id": "API"}],
+                            "relations": [{"relation_id": "R1", "source": "WEB", "target": "MISSING"}],
+                            "layers": ["app"],
+                            "deployment_environment": "cloud",
+                            "security": "보안",
+                            "performance": "성능",
+                            "operation": "운영",
+                            "integration": "연계",
+                            "deployment": "배포",
+                        },
+                        "architecture_document_json": {"overview": "개요"},
+                    },
+                    "mermaid_generation_agent": {"mermaid_code": "flowchart TD", "mermaid_image_path": "arch.png"},
+                },
+            }
+        )
+
+        self.assertEqual(_failure(result, "ARCH_RELATION_MISSING")["target_scope"], ["R1"])
 
 
 def _failure(result, failure_type):

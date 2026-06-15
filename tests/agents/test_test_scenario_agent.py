@@ -18,6 +18,56 @@ class FakeScenarioLLM:
         )
 
 
+class FakeFullScenarioLLM:
+    def chat(self, messages, **kwargs):
+        system_prompt = messages[0]["content"]
+        if "요구사항별 업무 시험 시나리오" in system_prompt:
+            return success_result(
+                {
+                    "scenario": {
+                        "scenario_name": "로그인 업무",
+                        "source_requirement_ids": ["REQ-001"],
+                        "description": "로그인 업무를 검증한다.",
+                    }
+                }
+            )
+        if "시나리오별 통합시험 케이스" in system_prompt:
+            return success_result(
+                {
+                    "test_case_json_list": [
+                        {
+                            "case_type": "NORMAL",
+                            "test_case_name": "LLM 로그인 정상 케이스",
+                            "source_requirement_ids": ["REQ-001"],
+                        }
+                    ]
+                }
+            )
+        if "시험케이스별 시험 절차" in system_prompt:
+            return success_result(
+                {
+                    "step_json_list": [
+                        {
+                            "처리내용": "LLM 로그인 화면 진입 후 로그인 버튼을 클릭한다.",
+                        }
+                    ]
+                }
+            )
+        if "Step별 상세 시험 정보" in system_prompt:
+            return success_result(
+                {
+                    "step_detail_json": {
+                        "시험항목": "LLM 로그인 정상 검증",
+                        "사전조건": "로그인 화면에 접근한다.",
+                        "입력값": "아이디/비밀번호",
+                        "예상결과": "로그인 성공",
+                        "화면ID": "SCR-LOGIN",
+                    }
+                }
+            )
+        return success_result({})
+
+
 class TestScenarioAgentTest(unittest.TestCase):
     def test_create_builds_scenarios_cases_steps_and_uses_interface(self) -> None:
         state = _create_state()
@@ -38,6 +88,17 @@ class TestScenarioAgentTest(unittest.TestCase):
         self.assertIs(state["agent_outputs"]["test_scenario_generation_agent"], result)
         self.assertNotIn("integrated_test_scenario_json", state)
         self.assertNotIn("debug", result)
+
+    def test_create_uses_parallel_llm_case_and_step_detail_stages(self) -> None:
+        state = _create_state()
+        result = TestScenarioGenerationAgent(llm_client=FakeFullScenarioLLM()).execute(state)
+        document = result["integrated_test_scenario_json"]
+
+        self.assertEqual(document["test_case_json_list"][0]["test_case_name"], "LLM 로그인 정상 케이스")
+        self.assertEqual(document["step_json_list"][0]["처리내용"], "LLM 로그인 화면 진입 후 로그인 버튼을 클릭한다.")
+        self.assertEqual(document["step_json_list"][0]["시험항목"], "LLM 로그인 정상 검증")
+        self.assertEqual(document["step_json_list"][0]["입력값"], "아이디/비밀번호")
+        self.assertEqual(document["step_json_list"][0]["화면ID"], "SCR-LOGIN")
 
     def test_created_output_passes_current_ts_validator(self) -> None:
         state = _create_state()

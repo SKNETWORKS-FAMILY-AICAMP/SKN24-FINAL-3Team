@@ -9,6 +9,7 @@ from typing import Any
 from docx import Document
 
 from tools.result import ToolResult, error_result, success_result
+from tools.parser.pdf_parser import parse_pdf
 
 
 RuleParser = Callable[[str], Any]
@@ -18,6 +19,7 @@ ID_PATTERN = re.compile(r"^[A-Za-z]{2,5}[\-\u2013\u2014]\d{2,4}$")
 DEFAULT_PREFIX_MAP = {
     "SFR": "기능",
     "FUR": "기능",
+    "ECR": "시스템 장비구성",
     "NFR": "비기능",
     "PER": "성능",
     "SER": "보안",
@@ -88,12 +90,19 @@ def parse_rfp_requirements(
 ) -> ToolResult:
     """RFP 파일에서 요구사항 목록을 추출해 공통 ToolResult로 반환합니다."""
 
-    selected_parser = parser or extract_requirements_from_rfp_docx
+    selected_parser = parser or extract_requirements_from_rfp
     try:
         requirements = selected_parser(file_path)
         return success_result({"file_path": file_path, "requirements": requirements})
     except Exception as exc:
         return error_result("RFP_RULE_PARSE_FAILED", str(exc), {"file_path": file_path})
+
+
+def extract_requirements_from_rfp(file_path: str) -> list[dict[str, Any]]:
+    path = Path(file_path)
+    if path.suffix.lower() == ".pdf":
+        return extract_requirements_from_rfp_pdf(file_path)
+    return extract_requirements_from_rfp_docx(file_path)
 
 
 def extract_requirements_from_rfp_docx(file_path: str) -> list[dict[str, Any]]:
@@ -158,6 +167,67 @@ def extract_requirements_from_rfp_docx(file_path: str) -> list[dict[str, Any]]:
     return [_build_requirement(data) for data in requirements_map.values() if _is_valid_requirement(data)]
 
 
+def extract_requirements_from_rfp_pdf(file_path: str) -> list[dict[str, Any]]:
+    """PDF 텍스트에서 요구사항 ID 블록을 찾아 요구사항 항목을 구성합니다."""
+
+    parsed = parse_pdf(file_path)
+    if not parsed["success"]:
+        error = parsed["error"] or {}
+        raise ValueError(str(error.get("message", "PDF 파싱에 실패했습니다.")))
+
+    path = Path(file_path)
+    requirements_map: dict[str, dict[str, Any]] = {}
+    for page in parsed["data"].get("pages", []):
+        page_number = int(page.get("page_number") or 0)
+        lines = _pdf_lines(str(page.get("text") or ""))
+        current_id: str | None = None
+        line_index = 0
+        while line_index < len(lines):
+            line = lines[line_index]
+            requirement_id = _find_requirement_id_in_text(line)
+            if requirement_id:
+                current_id = requirement_id
+                current = requirements_map.setdefault(
+                    requirement_id,
+                    _new_requirement(requirement_id, path.name, page_number, line_index),
+                )
+                rest = _remove_requirement_id_label(line, requirement_id)
+                if rest:
+                    current["desc_parts"].append(rest)
+                line_index += 1
+                continue
+
+            if not current_id:
+                line_index += 1
+                continue
+
+            current = requirements_map[current_id]
+            field_value = _split_pdf_field(line)
+            if field_value:
+                field, value = field_value
+                _apply_pdf_field(current, field, value)
+                line_index += 1
+                continue
+
+            field = _detect_field(line)
+            if field:
+                value, next_index = _collect_pdf_field_value(lines, line_index + 1, field)
+                if value:
+                    _apply_pdf_field(current, field, value)
+                    line_index = next_index
+                else:
+                    line_index += 1
+                continue
+
+            if _looks_like_section_boundary(line):
+                line_index += 1
+                continue
+            current["desc_parts"].append(line)
+            line_index += 1
+
+    return [_build_requirement(data) for data in requirements_map.values() if _is_valid_requirement(data)]
+
+
 def _new_requirement(
     requirement_id: str,
     file_name: str,
@@ -184,7 +254,12 @@ def _build_requirement(data: dict[str, Any]) -> dict[str, Any]:
     unique_parts = _clean_parts(data["desc_parts"])
     name = data["name"] or _infer_requirement_name(unique_parts)
     description = _clean_description("\n".join(unique_parts))
-    req_type = data["type"] or _infer_requirement_type(req_id, name, description)
+    req_type = _normalize_requirement_type(
+        req_id,
+        data.get("type"),
+        name,
+        description,
+    )
     source_refs = list(dict.fromkeys([*data["source_refs"], req_id]))
     validation_criteria = list(dict.fromkeys(data["validation_criteria"])) or ["검토 필요"]
     constraints = list(dict.fromkeys(data["constraints"]))
@@ -232,6 +307,12 @@ def _find_requirement_id(cells: list[str]) -> str | None:
     return None
 
 
+def _find_requirement_id_in_text(text: str) -> str | None:
+    normalized = _normalize_id(text)
+    match = re.search(r"\b[A-Z]{2,5}-\d{2,4}\b", normalized)
+    return match.group(0) if match else None
+
+
 def _normalize_id(text: str) -> str:
     return re.sub(r"[\-\u2013\u2014]", "-", text.strip()).upper()
 
@@ -248,6 +329,112 @@ def _detect_field(text: str) -> str | None:
         if any(normalized == alias or alias in normalized for alias in aliases):
             return field
     return None
+
+
+def _pdf_lines(text: str) -> list[str]:
+    return [normalize_text(line) for line in text.splitlines() if normalize_text(line)]
+
+
+def _remove_requirement_id_label(text: str, requirement_id: str) -> str:
+    value = _normalize_id(text)
+    value = value.replace(requirement_id, " ")
+    value = re.sub(r"(요구사항\s*고유번호|요구사항\s*번호|요구사항\s*ID|ID)\s*[:：]?", " ", value, flags=re.IGNORECASE)
+    return normalize_text(value)
+
+
+def _split_pdf_field(text: str) -> tuple[str, str] | None:
+    normalized = normalize_text(text)
+    if any(normalized == alias for aliases in FIELD_ALIASES.values() for alias in aliases):
+        return None
+    for separator in (":", "："):
+        if separator in normalized:
+            label, value = [part.strip() for part in normalized.split(separator, 1)]
+            field = _detect_field(label)
+            if field and value:
+                return field, value
+
+    field = _detect_field(normalized)
+    if not field:
+        return None
+    for aliases in FIELD_ALIASES.values():
+        for alias in sorted(aliases, key=len, reverse=True):
+            if normalized.startswith(alias):
+                value = normalize_text(normalized[len(alias):])
+                value = re.sub(r"^[\s\-:：]+", "", value)
+                if value:
+                    return field, value
+    return None
+
+
+def _collect_pdf_field_value(
+    lines: list[str],
+    start_index: int,
+    field: str,
+) -> tuple[str, int]:
+    values: list[str] = []
+    index = start_index
+    while index < len(lines):
+        line = lines[index]
+        if _find_requirement_id_in_text(line):
+            break
+        if _detect_field(line):
+            break
+        if line in BLACKLIST or line in {"요구사항", "상세설명"}:
+            index += 1
+            if field in {"name", "type", "priority", "source_ref"} and values:
+                break
+            continue
+        if _looks_like_section_boundary(line):
+            if values:
+                break
+            index += 1
+            continue
+        values.append(line)
+        index += 1
+        if field in {"type", "priority", "source_ref", "validation", "constraint"}:
+            break
+        if field == "name" and len(values) >= 4:
+            break
+        if field == "description" and len(values) >= 20:
+            break
+    return _clean_pdf_field_value(field, values), index
+
+
+def _clean_pdf_field_value(field: str, values: list[str]) -> str:
+    if not values:
+        return ""
+    if field == "name":
+        value = " ".join(values)
+        value = re.sub(r"\s*([()])\s*", r"\1", value)
+        value = re.sub(r"\s+", " ", value)
+        return value.strip()
+    return "\n".join(values).strip()
+
+
+def _apply_pdf_field(current: dict[str, Any], field: str, value: str) -> None:
+    if not value:
+        return
+    if field == "name":
+        current["name"] = value
+    elif field == "type":
+        current["type"] = value
+    elif field == "description":
+        current["desc_parts"].append(value)
+    elif field == "constraint":
+        current["constraints"].append(value)
+    elif field == "validation":
+        current["validation_criteria"].append(value)
+    elif field == "priority":
+        current["priority"] = value
+    elif field == "source_ref":
+        current["source_refs"].append(value)
+
+
+def _looks_like_section_boundary(text: str) -> bool:
+    normalized = normalize_text(text)
+    if normalized in BLACKLIST:
+        return True
+    return bool(re.match(r"^\d+(\.\d+){0,4}\s+.{1,30}$", normalized))
 
 
 def _clean_parts(parts: list[str]) -> list[str]:
@@ -321,6 +508,37 @@ def _infer_requirement_type(req_id: str, name: str, description: str) -> str:
     if any(keyword in text for keyword in ("인프라", "서버", "아키텍처")):
         return "시스템 장비구성"
     return "기능"
+
+
+def _normalize_requirement_type(
+    req_id: str,
+    raw_type: Any,
+    name: str,
+    description: str,
+) -> str:
+    prefix = req_id.split("-")[0].upper()
+    inferred = _infer_requirement_type(req_id, name, description)
+    if prefix in DEFAULT_PREFIX_MAP:
+        default = DEFAULT_PREFIX_MAP[prefix]
+    else:
+        default = inferred
+    if prefix in {"SFR", "FUR"}:
+        return "기능"
+
+    value = normalize_text(str(raw_type or ""))
+    if not value:
+        return default
+    if value in {"기능", "기능 요구사항"}:
+        return "기능"
+    if value in {"비기능", "비기능 요구사항"}:
+        return "비기능"
+    if any(keyword in value for keyword in ("보안", "성능", "품질", "데이터", "인터페이스")):
+        return _infer_requirement_type(req_id, value, description)
+    if "시스템" in value or "장비" in value or "인프라" in value:
+        return "시스템 장비구성"
+    if len(value) > 20 or value.startswith(("ㅇ", "-", ",")):
+        return default
+    return default if prefix in DEFAULT_PREFIX_MAP else value
 
 
 def dump_requirements_json(requirements: list[dict[str, Any]]) -> str:

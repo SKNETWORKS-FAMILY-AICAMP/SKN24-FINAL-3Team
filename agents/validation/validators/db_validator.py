@@ -30,9 +30,12 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
             column_missing.append(scope)
         if any(is_empty(column.get("data_type")) for column in columns if isinstance(column, dict)):
             type_missing.append(scope)
-        if not isinstance(table.get("constraints"), list):
+        constraints = table.get("constraints")
+        indexes = table.get("indexes")
+        column_names = {str(column.get("column_name")) for column in columns if isinstance(column, dict)}
+        if not isinstance(constraints, list) or _invalid_column_refs(constraints, column_names, "columns"):
             constraint_invalid.append(scope)
-        if not isinstance(table.get("indexes"), list):
+        if not isinstance(indexes, list) or _invalid_column_refs(indexes, column_names, "columns"):
             index_invalid.append(scope)
         if any(" " in str(column.get("column_name") or "") for column in columns if isinstance(column, dict)):
             ddl_invalid.append(scope)
@@ -79,3 +82,15 @@ def _reference_names(state: WorkflowState) -> tuple[set[str], set[tuple[str, str
 def _meeting_check(state: WorkflowState) -> dict[str, Any]:
     artifact = state.get("agent_outputs", {}).get("document_merge_agent", {}).get("integrated_artifact_json_list")
     return make_check("DB_MEETING_001", "수정 회의록 반영 검증", state.get("udt_yn") != "Y" or bool(artifact), failure_type="DB_MEETING_CHANGE_MISSING", message="회의록이 반영된 DB 통합 산출물을 확인할 수 없습니다.", target_agent="document_merge_agent")
+
+
+def _invalid_column_refs(items: list[Any], column_names: set[str], key: str) -> bool:
+    for item in items:
+        if not isinstance(item, dict):
+            return True
+        refs = item.get(key) or []
+        if not isinstance(refs, list):
+            return True
+        if any(str(ref) not in column_names for ref in refs):
+            return True
+    return False
