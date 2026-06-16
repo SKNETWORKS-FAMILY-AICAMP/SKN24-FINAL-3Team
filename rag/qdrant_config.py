@@ -14,6 +14,7 @@ ALPLED_REFERENCE_COLLECTION = os.getenv(
     "ALPLED_REFERENCE_COLLECTION",
     "ALPLED_reference",
 )
+COLLECTION_NAME = ALPLED_REFERENCE_COLLECTION
 REQUIREMENT_RAG_TOP_K = int(os.getenv("REQUIREMENT_RAG_TOP_K", "3"))
 
 _client = None
@@ -69,4 +70,8 @@ def ensure_named_collection(collection_name: str, recreate: bool = False):
         print(f"[생성 완료] collection={collection_name}, dim={dim}")
     else:
         print(f"[이미 존재] collection={collection_name}")
+
+
+def ensure_collection(recreate: bool = False):
+    ensure_named_collection(COLLECTION_NAME, recreate=recreate)
 
