@@ -213,7 +213,7 @@ class ArchitectureAnalysisAgent:
                         "agent_name": "architecture_analysis_agent",
                         "search_intent": spec["search_intent"],
                         "query": spec["query"],
-                        "search_targets": ["RAG"],
+                        "search_targets": "RAG",
                         "filters": spec["filters"],
                         "top_k": 5,
                     },

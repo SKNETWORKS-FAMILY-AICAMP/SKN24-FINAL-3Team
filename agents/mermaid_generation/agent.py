@@ -45,12 +45,20 @@ class MermaidGenerationAgent:
             result = self.renderer(code, file_stem=f"{docs_cd.lower()}_diagram")
             attempts.append({"attempt": attempt + 1, "success": result["success"], "error": result["error"]})
             if result["success"]:
+                renderer_warnings = list(result["data"].get("warnings", []))
+                if attempt != 0:
+                    renderer_warnings.append(
+                        {
+                            "code": "MERMAID_REPAIRED",
+                            "message": f"{attempt}회 보정 후 렌더링에 성공했습니다.",
+                        }
+                    )
                 output = {
                     "status": "SUCCESS",
                     "mermaid_code": code,
                     "mermaid_file_path": result["data"]["mermaid_file_path"],
                     "mermaid_image_path": result["data"]["mermaid_image_path"],
-                    "warnings": [] if attempt == 0 else [{"code": "MERMAID_REPAIRED", "message": f"{attempt}회 보정 후 렌더링에 성공했습니다."}],
+                    "warnings": renderer_warnings,
                     "errors": [],
                 }
                 if bool(state.get("etc", {}).get("debug")):

@@ -7,9 +7,14 @@ from typing import Any
 from agents.image_analysis.processors import (
     analyze_images,
     build_description,
+    build_image_request_message,
+    build_ui_structure,
+    enrich_interface_screens,
     match_creation_screens,
     match_update_screens,
+    refine_screen_designs,
 )
+from config.settings import get_settings
 from tools.llm.llm_client import LLMClient
 from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
@@ -48,6 +53,7 @@ class ImageAnalysisAgent:
             query_specs = self._build_search_queries(fallback_screens, state, warnings)
             search_debug = self._search_contexts_parallel(query_specs, warnings)
             screens = self._match_creation_with_llm(requirements, analyses, search_debug, fallback_screens, warnings)
+            source_items = requirements
         elif mode == "Y":
             artifacts = document_merge.get("integrated_artifact_json_list")
             if not isinstance(artifacts, list) or not artifacts:
@@ -67,14 +73,30 @@ class ImageAnalysisAgent:
             query_specs = self._build_search_queries(fallback_screens, state, warnings)
             search_debug = self._search_contexts_parallel(query_specs, warnings)
             screens = self._match_update_with_llm(artifacts, analyses, search_debug, fallback_screens, warnings)
+            source_items = artifacts
         else:
             return self._store(state, self._failed("IMAGE_ANALYSIS_INVALID_MODE", f"허용되지 않은 udt_yn입니다: {mode}"))
 
+        screens = refine_screen_designs(
+            screens,
+            source_items,
+            llm_client=self.llm_client,
+            warnings=warnings,
+            search_contexts=search_debug,
+            max_workers=self.max_parallel_workers,
+        )
         self._apply_descriptions(screens, search_debug, warnings)
+        screens, marker_warnings = enrich_interface_screens(
+            screens,
+            output_dir=get_settings().temp_dir / "interface_numbered_images",
+        )
+        warnings.extend(marker_warnings)
+        ui_structure = self._generate_ui_structure(screens, warnings)
 
         output: dict[str, Any] = {
             "status": "SUCCESS",
             "interface_image_analysis_json_list": screens,
+            "ui_structure": ui_structure,
             "warnings": warnings,
             "errors": [],
         }
@@ -82,6 +104,7 @@ class ImageAnalysisAgent:
             output["debug"] = {
                 "image_analysis_result_list": analyses,
                 "rag_results": search_debug,
+                "ui_structure": ui_structure,
             }
         return self._store(state, output)
 
@@ -325,6 +348,7 @@ class ImageAnalysisAgent:
         if self.llm_client is None or not screens:
             for screen, description in zip(screens, fallback_descriptions):
                 screen["description"] = description
+                screen["image_request_message"] = build_image_request_message(screen)
             return
 
         requests = [
@@ -358,6 +382,7 @@ class ImageAnalysisAgent:
             warnings.append({"code": "IMAGE_ANALYSIS_DESCRIPTION_LLM_FAILED", "message": result["error"]["message"]})
             for screen, description in zip(screens, fallback_descriptions):
                 screen["description"] = description
+                screen["image_request_message"] = build_image_request_message(screen)
             return
 
         for index, (screen, llm_result) in enumerate(zip(screens, result["data"])):
@@ -367,6 +392,53 @@ class ImageAnalysisAgent:
                 if parsed["success"] and isinstance(parsed["data"], dict):
                     description = str(parsed["data"].get("description") or description)
             screen["description"] = description
+            screen["image_request_message"] = build_image_request_message(screen)
+
+    def _generate_ui_structure(
+        self,
+        screens: list[dict[str, Any]],
+        warnings: list[dict[str, Any]],
+    ) -> list[dict[str, str]]:
+        fallback = build_ui_structure(screens)
+        if self.llm_client is None or not screens:
+            return fallback
+        result = self.llm_client.chat(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        "사용자 인터페이스 구조도를 Level1~Level4 JSON 배열로 생성하세요. "
+                        "각 항목은 level1, level2, level3, level4를 가져야 합니다."
+                    ),
+                },
+                {"role": "user", "content": str({"screens": screens, "fallback": fallback})},
+            ]
+        )
+        if not result["success"]:
+            warnings.append({"code": "IMAGE_ANALYSIS_UI_STRUCTURE_FAILED", "message": result["error"]["message"]})
+            return fallback
+        parsed = parse_json_response(result["data"])
+        if not parsed["success"]:
+            warnings.append({"code": "IMAGE_ANALYSIS_UI_STRUCTURE_FALLBACK", "message": parsed["error"]["message"]})
+            return fallback
+        rows = parsed["data"]
+        if isinstance(rows, dict):
+            rows = rows.get("ui_structure") or rows.get("items") or []
+        if not isinstance(rows, list):
+            return fallback
+        normalized = []
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            normalized.append(
+                {
+                    "level1": str(item.get("level1") or ""),
+                    "level2": str(item.get("level2") or ""),
+                    "level3": str(item.get("level3") or ""),
+                    "level4": str(item.get("level4") or ""),
+                }
+            )
+        return normalized or fallback
 
     @staticmethod
     def _store(state: WorkflowState, output: dict[str, Any]) -> dict[str, Any]:
@@ -400,14 +472,34 @@ def _merge_llm_screens(
     fallback_screens: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     fallback_by_id = {screen["screen_id"]: screen for screen in fallback_screens}
+    fallback_by_image_path = {
+        str(screen.get("image_path")): screen
+        for screen in fallback_screens
+        if screen.get("image_path")
+    }
+    fallback_by_name = {
+        str(screen.get("screen_name")): screen
+        for screen in fallback_screens
+        if screen.get("screen_name")
+    }
     merged: list[dict[str, Any]] = []
     used_ids: set[str] = set()
     for index, llm_screen in enumerate(llm_screens):
         if not isinstance(llm_screen, dict):
             continue
         screen_id = str(llm_screen.get("screen_id") or f"SCR-{index + 1:03d}")
-        base = dict(fallback_by_id.get(screen_id) or {})
+        fallback_base = (
+            fallback_by_id.get(screen_id)
+            or fallback_by_image_path.get(str(llm_screen.get("image_path")))
+            or fallback_by_name.get(str(llm_screen.get("screen_name")))
+            or {}
+        )
+        fallback_base_id = str(fallback_base.get("screen_id") or "")
+        base = dict(fallback_base)
+        base_analysis = base.get("analysis") if isinstance(base.get("analysis"), dict) else {}
+        llm_analysis = llm_screen.get("analysis") if isinstance(llm_screen.get("analysis"), dict) else {}
         base.update(llm_screen)
+        base["analysis"] = {**base_analysis, **llm_analysis}
         base.setdefault("screen_id", screen_id)
         base.setdefault("screen_name", str(base.get("screen_name") or f"화면 {index + 1}"))
         base.setdefault("matched_requirement_ids", [])
@@ -415,7 +507,9 @@ def _merge_llm_screens(
         base.setdefault("image_status", base["match_status"])
         base.setdefault("analysis", {})
         merged.append(base)
-        used_ids.add(screen_id)
+        used_ids.add(str(base["screen_id"]))
+        if fallback_base_id:
+            used_ids.add(fallback_base_id)
 
     for fallback in fallback_screens:
         if fallback["screen_id"] not in used_ids:

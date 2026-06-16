@@ -69,7 +69,7 @@ class DocumentMergeAgentTest(unittest.TestCase):
 
             def rfp_parser(path):
                 return success_result(
-                    {"requirements": [{"req_id": "REQ-001", "name": "기존"}]}
+                    {"functional_requirements": [{"req_id": "REQ-001", "name": "기존"}]}
                 )
 
             def search_tool(query, **kwargs):
@@ -107,7 +107,7 @@ class DocumentMergeAgentTest(unittest.TestCase):
             def rfp_parser(path):
                 return success_result(
                     {
-                        "requirements": [
+                        "functional_requirements": [
                             {
                                 "req_id": "REQ-001",
                                 "name": "기존",

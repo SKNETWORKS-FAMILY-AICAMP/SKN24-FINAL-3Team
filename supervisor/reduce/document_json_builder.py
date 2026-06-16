@@ -2,6 +2,9 @@
 
 from typing import Any
 
+from agents.requirement_generation.processors.requirement_refiner import (
+    normalize_task3_output,
+)
 from supervisor.reduce.reduce_harness import get_empty_document_json
 from workflow.state import WorkflowState
 
@@ -21,10 +24,13 @@ def build_final_document_json(state: WorkflowState) -> dict[str, Any]:
             final_document_json["requirement_json_list"] = agent_outputs.get(
                 "requirement_generation_agent", {}
             ).get("final_requirement_json_list", [])
+        final_document_json["requirement_json_list"] = normalize_task3_output(
+            final_document_json["requirement_json_list"]
+        )
     elif docs_cd == "INTERFACE":
-        final_document_json["interface_json_list"] = agent_outputs.get(
-            "image_analysis_agent", {}
-        ).get("interface_image_analysis_json_list", [])
+        image_output = agent_outputs.get("image_analysis_agent", {})
+        final_document_json["interface_json_list"] = image_output.get("interface_image_analysis_json_list", [])
+        final_document_json["ui_structure"] = image_output.get("ui_structure", [])
     elif docs_cd == "TS":
         final_document_json["integrated_test_scenario_json"] = agent_outputs.get(
             "test_scenario_generation_agent", {}

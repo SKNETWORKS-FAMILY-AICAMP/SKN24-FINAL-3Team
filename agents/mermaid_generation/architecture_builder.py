@@ -19,6 +19,7 @@ def build_architecture_mermaid(structure: dict[str, Any]) -> str:
         layer_name = str(layer.get("name") or layer.get("layer_name") or f"Layer {layer_index + 1}") if isinstance(layer, dict) else str(layer)
         layer_components = _layer_component_refs(layer) if isinstance(layer, dict) else []
         lines.append(f"    subgraph {_node_id(layer_name)}[{_escape_label(layer_name)}]")
+        lines.append("        direction TB")
         for component_ref in layer_components:
             raw_component_id = str(component_ref if not isinstance(component_ref, dict) else component_ref.get("component_id") or component_ref.get("id") or component_ref.get("name"))
             component_id = original_to_node.get(raw_component_id) or _node_id(raw_component_id)

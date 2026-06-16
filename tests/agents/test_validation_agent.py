@@ -78,6 +78,30 @@ class ValidationAgentTest(unittest.TestCase):
 
         self.assertEqual(result["validation_result"]["validation_status"], "PASS")
 
+    def test_srs_function_type_prefix_and_constraints_satisfy_nfr_check(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "SRS",
+                "agent_outputs": {
+                    "requirement_generation_agent": {
+                        "final_requirement_json_list": [
+                            {
+                                "requirement_id": "REQ-001",
+                                "requirement_name": "로그인",
+                                "requirement_type": "기능 요구사항",
+                                "description": "사용자가 로그인한다.",
+                                "source": ["RFP-001"],
+                                "constraints": ["3초 이내 응답한다."],
+                                "validation_criteria": ["3초 이내 응답 여부 확인"],
+                            }
+                        ]
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["validation_result"]["validation_status"], "PASS")
+
     def test_srs_update_validates_document_merge_output(self) -> None:
         result = self.agent.execute(
             {
@@ -157,6 +181,29 @@ class ValidationAgentTest(unittest.TestCase):
         check = _failure(result, "INTERFACE_IMAGE_MAPPING_MISSING")
         self.assertEqual(check["target_agent"], "image_analysis_agent")
         self.assertEqual(check["target_scope"], ["SCR-001"])
+
+    def test_interface_unmapped_image_does_not_fail_requirement_mapping(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "INTERFACE",
+                "agent_outputs": {
+                    "image_analysis_agent": {
+                        "interface_image_analysis_json_list": [
+                            {
+                                "screen_id": "SCR-004",
+                                "screen_name": "참고 이미지",
+                                "description": "요구사항과 매핑되지 않은 이미지입니다. 사용 여부 확인 필요",
+                                "matched_requirement_ids": [],
+                                "match_status": "UNMAPPED_IMAGE",
+                                "image_path": "screen.png",
+                            }
+                        ]
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["validation_result"]["validation_status"], "PASS")
 
     def test_ts_detects_missing_step_detail(self) -> None:
         result = self.agent.execute(

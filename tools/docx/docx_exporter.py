@@ -2,6 +2,8 @@
 
 import copy
 import json
+import re
+import tempfile
 import zipfile
 from datetime import date
 from pathlib import Path
@@ -28,13 +30,14 @@ def export_docx(
         target = Path(output_path).resolve()
         target.parent.mkdir(parents=True, exist_ok=True)
         template = Path(template_path).resolve() if template_path else None
+        safe_template = _docx_safe_template_path(template) if template else None
         document = (
-            Document(str(template))
-            if template and template.is_file() and zipfile.is_zipfile(template)
+            Document(str(safe_template))
+            if safe_template and safe_template.is_file() and zipfile.is_zipfile(safe_template)
             else Document()
         )
 
-        if template and template.is_file() and zipfile.is_zipfile(template):
+        if safe_template and safe_template.is_file() and zipfile.is_zipfile(safe_template):
             _fill_template_document(document, export_payload)
         else:
             _fill_generic_document(document, export_payload)
@@ -56,7 +59,11 @@ def _fill_template_document(document: Any, payload: dict[str, Any]) -> None:
     if docs_cd == "SRS":
         _fill_srs_template(document, _list_content(payload, "requirement_json_list"))
     elif docs_cd == "INTERFACE":
-        _fill_interface_template(document, _list_content(payload, "interface_json_list"))
+        _fill_interface_template(
+            document,
+            _list_content(payload, "interface_json_list"),
+            _list_content(payload, "ui_structure"),
+        )
     elif docs_cd == "ERD":
         _fill_erd_template(
             document,
@@ -84,7 +91,7 @@ def _fill_generic_document(document: Any, export_payload: dict[str, Any]) -> Non
     for image_path in export_payload.get("image_paths", []):
         image = Path(str(image_path))
         if image.is_file():
-            document.add_picture(str(image), width=Inches(6.0))
+            document.add_picture(str(_docx_safe_image_path(image)), width=Inches(6.0))
 
 
 def _fill_srs_template(document: Any, requirements: list[dict[str, Any]]) -> None:
@@ -101,14 +108,14 @@ def _fill_srs_template(document: Any, requirements: list[dict[str, Any]]) -> Non
     for index, requirement in enumerate(requirements):
         row = table.rows[base_row_idx + index] if base_row_idx + index < len(table.rows) else table.add_row()
         values = [
-            _pick(requirement, "requirement_id", "req_id", "id"),
+            _pick(requirement, "requirement_id", "gold_id", "req_id", "id"),
             _pick(requirement, "requirement_name", "req_name", "name"),
-            _pick(requirement, "requirement_type", "type"),
-            _pick(requirement, "description", "detail_text", "content"),
-            _join(_pick(requirement, "source", "source_req_ids", "source_refs")),
+            _pick(requirement, "action_type", "requirement_type", "type"),
+            _pick(requirement, "requirement_detail", "description", "detail_text", "content"),
+            _join(_pick(requirement, "sources", "source", "source_req_ids", "source_refs")),
             _join(requirement.get("constraints")),
             _pick(requirement, "priority", default="미지정"),
-            _pick(requirement, "note"),
+            _pick(requirement, "merge_basis", "note"),
             _join(requirement.get("validation_criteria")),
             _pick(requirement, "status", default=""),
         ]
@@ -116,13 +123,17 @@ def _fill_srs_template(document: Any, requirements: list[dict[str, Any]]) -> Non
             _set_cell(cell, value)
 
 
-def _fill_interface_template(document: Any, screens: list[dict[str, Any]]) -> None:
+def _fill_interface_template(
+    document: Any,
+    screens: list[dict[str, Any]],
+    ui_structure: list[dict[str, Any]] | None = None,
+) -> None:
     if len(document.tables) < 5:
         _fill_generic_document(document, {"title": "인터페이스 설계서", "content": {"interface_json_list": screens}})
         return
 
     _fill_interface_header(document.tables[0])
-    _fill_interface_structure_table(document.tables[1], screens)
+    _fill_interface_structure_table(document.tables[1], screens, ui_structure or [])
     _fill_repeating_table(
         document.tables[2],
         [[_pick(screen, "screen_id"), _pick(screen, "screen_name", "name")] for screen in screens],
@@ -174,9 +185,8 @@ def _fill_erd_template(document: Any, erd: dict[str, Any], image_path: str | Non
     erd_table = document.tables[1]
     _set_cell_safe(erd_table, 0, 1, erd.get("erd_id", "ERD-SYSTEM-ALL"))
     _set_cell_safe(erd_table, 0, 3, erd.get("erd_name", "통합 ERD"))
-    relation_text = "\n".join(_relationship_text(item) for item in relationships)
-    _set_cell_safe(erd_table, 1, 0, relation_text)
-    _insert_image_in_cell_safe(erd_table.cell(1, 0), image_path, width=6.5, trailing_text=relation_text)
+    _set_cell_safe(erd_table, 1, 0, "")
+    _insert_image_in_cell_safe(erd_table.cell(1, 0), image_path, width=9.5)
 
     template_table = document.tables[2]
     if not entities:
@@ -278,8 +288,24 @@ def _fill_interface_header(table: Table) -> None:
     _set_cell_safe(table, 2, 5, "v1.0")
 
 
-def _fill_interface_structure_table(table: Table, screens: list[dict[str, Any]]) -> None:
+def _fill_interface_structure_table(
+    table: Table,
+    screens: list[dict[str, Any]],
+    ui_structure: list[dict[str, Any]] | None = None,
+) -> None:
     rows = []
+    for item in ui_structure or []:
+        rows.append(
+            [
+                _pick(item, "level1"),
+                _pick(item, "level2"),
+                _pick(item, "level3"),
+                _pick(item, "level4"),
+            ]
+        )
+    if rows:
+        _fill_repeating_table(table, rows)
+        return
     for screen in screens:
         menu_path = str(_pick(screen, "menu_path", default=""))
         levels = [part.strip() for part in menu_path.split(">") if part.strip()]
@@ -423,9 +449,51 @@ def _insert_image_in_cell_safe(
     cell.text = ""
     paragraph = cell.paragraphs[0]
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    paragraph.add_run().add_picture(str(image), width=Inches(width))
+    paragraph.add_run().add_picture(str(_docx_safe_image_path(image)), width=Inches(width))
     if trailing_text.strip():
         cell.add_paragraph(trailing_text)
+
+
+def _docx_safe_image_path(image_path: Path) -> Path:
+    """python-docx가 파싱하지 못하는 PNG 메타데이터를 제거한 삽입용 이미지를 반환합니다."""
+
+    try:
+        from PIL import Image
+
+        with Image.open(image_path) as image:
+            image.load()
+            mode = "RGBA" if image.mode in {"RGBA", "LA", "P"} else "RGB"
+            safe_image = image.convert(mode)
+            safe_dir = Path(tempfile.gettempdir()) / "alpled_docx_images"
+            safe_dir.mkdir(parents=True, exist_ok=True)
+            safe_path = safe_dir / f"{image_path.stem}_docx_safe.png"
+            safe_image.save(safe_path, format="PNG", optimize=True)
+            return safe_path
+    except Exception:
+        return image_path
+
+
+def _docx_safe_template_path(template_path: Path) -> Path:
+    """python-docx가 읽지 못하는 소수 twips 값을 정수로 바꾼 임시 템플릿을 반환합니다."""
+
+    if not template_path.is_file() or not zipfile.is_zipfile(template_path):
+        return template_path
+    safe_dir = Path(tempfile.gettempdir()) / "alpled_docx_templates"
+    safe_dir.mkdir(parents=True, exist_ok=True)
+    safe_path = safe_dir / f"{template_path.stem}_docx_safe.docx"
+    with zipfile.ZipFile(template_path, "r") as source, zipfile.ZipFile(safe_path, "w", zipfile.ZIP_DEFLATED) as target:
+        for item in source.infolist():
+            data = source.read(item.filename)
+            if item.filename.endswith(".xml"):
+                text = data.decode("utf-8", errors="ignore")
+                text = re.sub(
+                    r'(w:w=")([0-9]+\.[0-9]+)(")',
+                    lambda match: f'{match.group(1)}{int(round(float(match.group(2))))}{match.group(3)}',
+                    text,
+                )
+                data = text.encode("utf-8")
+            target.writestr(item, data)
+    return safe_path
 
 
 def _clone_table_after(block: Any, table: Table) -> Table:
@@ -523,8 +591,8 @@ def _erd_entities(erd: dict[str, Any]) -> list[dict[str, Any]]:
         entities.append(
             {
                 "entity_id": _pick(table, "entity_id", "table_id", default=f"ENT-{index:03d}"),
-                "entity_name": _pick(table, "entity_name", "logical_name", "physical_name", "table_name"),
-                "entity_description": _pick(table, "entity_description", "description", "table_comment"),
+                "entity_name": _entity_display_name(table),
+                "entity_description": _short_text(_pick(table, "entity_description", "description", "table_comment"), 80),
                 "columns": _entity_columns(table),
             }
         )
@@ -551,18 +619,41 @@ def _entity_columns(item: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _erd_column_to_row(column: dict[str, Any]) -> list[Any]:
+    constraints = column.get("constraints")
     return [
-        _pick(column, "name", "logical_name", "column_name", "physical_name"),
-        _pick(column, "synonym", "description", "comment"),
+        _column_display_name(column),
+        _short_text(_pick(column, "synonym", "logical_name", "description", "comment"), 30),
         _pick(column, "type", "data_type"),
         _pick(column, "length", default=""),
         _yes_no(not bool(column.get("nullable", True))) or _pick(column, "not_null"),
-        _yes_no(column.get("is_pk")) or _pick(column, "pk"),
-        _yes_no(column.get("is_fk")) or _pick(column, "fk"),
-        _yes_no(column.get("is_pk") or column.get("is_fk")) or _pick(column, "inx"),
+        _yes_no(column.get("is_pk")) or _pick(column, "pk") or _contains_constraint(constraints, "PK"),
+        _yes_no(column.get("is_fk")) or _pick(column, "fk") or _contains_constraint(constraints, "FK"),
+        _yes_no(column.get("is_pk") or column.get("is_fk")) or _pick(column, "inx") or _contains_constraint(constraints, "PK", "FK"),
         _pick(column, "default", default=""),
-        _pick(column, "constraint", "constraints", "description", "comment"),
+        _short_text(_column_constraint_text(column), 60),
     ]
+
+
+def _entity_display_name(table: dict[str, Any]) -> str:
+    explicit = _pick(table, "entity_name")
+    if explicit:
+        return _short_text(explicit, 40).upper()
+    physical = _pick(table, "physical_name", "table_name")
+    if physical:
+        return str(physical).removeprefix("tbl_").upper()
+    return _short_text(_pick(table, "logical_name"), 40).upper()
+
+
+def _column_display_name(column: dict[str, Any]) -> str:
+    physical = _pick(column, "physical_name", "column_name", "name")
+    if physical:
+        return str(physical).upper()
+    return _short_text(_pick(column, "logical_name"), 40).upper()
+
+
+def _short_text(value: Any, max_length: int) -> str:
+    text = _to_plain_text(value).replace("\n", " ").strip()
+    return text if len(text) <= max_length else text[:max_length].rstrip()
 
 
 def _db_tables(design: dict[str, Any]) -> list[dict[str, Any]]:
@@ -594,10 +685,24 @@ def _yes_no(value: Any) -> str:
     return "Y" if bool(value) else ""
 
 
-def _contains_constraint(value: Any, needle: str) -> str:
+def _contains_constraint(value: Any, *needles: str) -> str:
+    if not needles:
+        return ""
     if isinstance(value, list):
-        return "Y" if any(needle.upper() in str(item).upper() for item in value) else ""
-    return "Y" if needle.upper() in str(value).upper() else ""
+        return "Y" if any(any(needle.upper() in str(item).upper() for needle in needles) for item in value) else ""
+    return "Y" if any(needle.upper() in str(value).upper() for needle in needles) else ""
+
+
+def _column_constraint_text(column: dict[str, Any]) -> str:
+    explicit = _pick(column, "constraint")
+    if explicit:
+        return explicit
+    constraints = column.get("constraints")
+    if isinstance(constraints, list):
+        filtered = [str(item) for item in constraints if str(item).upper() not in {"PK", "FK", "INDEX", "IDX", "NOT NULL"}]
+        if filtered:
+            return ", ".join(filtered)
+    return _pick(column, "comment", "description")
 
 
 def _arch_requirement_items(arch_doc: dict[str, Any]) -> list[dict[str, Any]]:

@@ -8,17 +8,18 @@ from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
 
 
-FUNCTION_TYPES = {"기능", "기능 요구사항", "functional", "function"}
-
-
 def filter_function_requirements(items: list[Any]) -> list[dict[str, Any]]:
     return [
         deepcopy(item)
         for item in items
         if isinstance(item, dict)
-        and str(item.get("requirement_type") or item.get("type") or "").lower()
-        in FUNCTION_TYPES
+        and _is_functional_type(item.get("requirement_type") or item.get("type"))
     ]
+
+
+def _is_functional_type(value: Any) -> bool:
+    requirement_type = str(value or "").strip().lower()
+    return requirement_type.startswith("기능") or requirement_type.startswith("functional") or requirement_type == "function"
 
 
 def generate_scenarios(
@@ -49,6 +50,51 @@ def refine_scenarios(
         "scenario",
     )
     return [_normalize_scenario(item, index) for index, item in enumerate(refined)], warnings
+
+
+def apply_scenario_rules(
+    artifacts: list[dict[str, Any]],
+    *,
+    llm_client: LLMClient | None = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """수정 모드 산출물 JSON에 시나리오 작성 규칙을 먼저 적용합니다."""
+
+    fallback = [deepcopy(item) for item in artifacts]
+    if llm_client is None:
+        return fallback, []
+
+    result = llm_client.chat(
+        [
+            {
+                "role": "system",
+                "content": (
+                    "통합시험 시나리오 수정 산출물에 작성 규칙을 적용하세요. "
+                    "Scenario ID, Test Case ID, Step 번호, 명칭, 작성 형식, 화면ID 규칙을 정리하고 "
+                    "JSON으로 integrated_artifact_json_list 또는 scenario_rule_applied_json_list를 반환하세요."
+                ),
+            },
+            {"role": "user", "content": str({"integrated_artifact_json_list": artifacts})},
+        ]
+    )
+    if not result["success"]:
+        return fallback, [{"code": "TS_SCENARIO_RULE_LLM_FAILED", "message": result["error"]["message"]}]
+
+    parsed = parse_json_response(result["data"])
+    if not parsed["success"]:
+        return fallback, [{"code": "TS_SCENARIO_RULE_PARSE_FAILED", "message": parsed["error"]["message"]}]
+
+    value = parsed["data"]
+    if isinstance(value, dict):
+        value = (
+            value.get("integrated_artifact_json_list")
+            or value.get("scenario_rule_applied_json_list")
+            or value.get("artifacts")
+        )
+    if isinstance(value, list):
+        items = [item for item in value if isinstance(item, dict)]
+        if items:
+            return items, []
+    return fallback, [{"code": "TS_SCENARIO_RULE_FALLBACK", "message": "시나리오 작성 규칙 적용 결과를 기본값으로 대체했습니다."}]
 
 
 def _parallel_or_fallback(items, llm_client, instruction, fallback, output_key):

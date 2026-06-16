@@ -96,10 +96,10 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
     functional = [
         item for item in items
         if isinstance(item, dict)
-        and str(item.get("requirement_type", "")).lower() in {"기능", "functional", "function"}
+        and _is_functional_type(item.get("requirement_type") or item.get("type"))
     ]
     has_non_functional = any(
-        value and value not in {"기능", "functional", "function"} for value in types
+        value and not _is_functional_type(value) for value in types
     ) or any(item.get("constraints") for item in items if isinstance(item, dict))
     work_unit_invalid = [
         str(item.get("req_id") or index)
@@ -175,3 +175,8 @@ def _missing_requirement_fields(item: dict[str, Any]) -> bool:
         ("detail_text", "description"),
     ]
     return any(all(is_empty(item.get(key)) for key in group) for group in required_groups)
+
+
+def _is_functional_type(value: Any) -> bool:
+    requirement_type = str(value or "").strip().lower()
+    return requirement_type.startswith("기능") or requirement_type.startswith("functional") or requirement_type == "function"

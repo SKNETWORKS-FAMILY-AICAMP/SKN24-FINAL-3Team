@@ -1,6 +1,9 @@
 import unittest
 
 from agents.requirement_generation.agent import RequirementGenerationAgent
+from agents.requirement_generation.processors.requirement_refiner import (
+    normalize_task3_output,
+)
 from tools.result import success_result
 
 
@@ -115,8 +118,17 @@ class RequirementGenerationAgentTest(unittest.TestCase):
         result = RequirementGenerationAgent(search_tool=failed_search).execute(_state())
 
         self.assertEqual(result["status"], "SUCCESS")
-        self.assertEqual(result["final_requirement_json_list"][0]["constraints"], [])
+        self.assertEqual(result["final_requirement_json_list"][0]["constraints"], ["응답시간 - 3초 이내 응답한다."])
         self.assertEqual(result["warnings"][0]["code"], "REQUIREMENT_RAG_SEARCH_FAILED")
+
+    def test_empty_rag_uses_non_functional_source_requirements_as_constraints(self) -> None:
+        result = RequirementGenerationAgent(
+            search_tool=lambda query, **kwargs: success_result({"normalized_results": []})
+        ).execute(_state())
+
+        item = result["final_requirement_json_list"][0]
+        self.assertIn("응답시간 - 3초 이내 응답한다.", item["constraints"])
+        self.assertIn("응답시간 - 3초 이내 응답한다 준수 여부를 확인한다.", item["validation_criteria"])
 
     def test_invalid_mode_and_missing_input_fail(self) -> None:
         invalid = RequirementGenerationAgent().execute({"docs_cd": "DB", "udt_yn": "N"})
@@ -124,6 +136,34 @@ class RequirementGenerationAgentTest(unittest.TestCase):
 
         self.assertEqual(invalid["failure_type"], "REQUIREMENT_GENERATION_INVALID_MODE")
         self.assertEqual(missing["failure_type"], "INTEGRATED_REQUIREMENT_MISSING")
+
+    def test_task3_output_is_normalized_for_cbd_document(self) -> None:
+        normalized = normalize_task3_output(
+            {
+                "final_requirements": [
+                    {
+                        "gold_id": "GOLD-001",
+                        "action_type": "산출",
+                        "requirement_name": "CXL 메모리 프레임워크",
+                        "requirement_detail": "CXL 메모리 프레임워크를 설계하여야 한다.",
+                        "source_task2_ids": ["T2-000001"],
+                        "source_atomic_ids": ["SFR-001::SFR-001-001"],
+                        "sources": ["SFR-001", "SFR-003"],
+                        "processing_type": "통합",
+                        "merge_basis": "중복 기능을 통합함.",
+                    }
+                ]
+            }
+        )
+
+        item = normalized[0]
+        self.assertEqual(item["requirement_id"], "GOLD-001")
+        self.assertEqual(item["action_type"], "산출")
+        self.assertEqual(item["description"], "CXL 메모리 프레임워크를 설계하여야 한다.")
+        self.assertEqual(item["source"], ["SFR-001", "SFR-003"])
+        self.assertEqual(item["note"], "중복 기능을 통합함.")
+        self.assertNotIn("source_task2_ids", item)
+        self.assertNotIn("source_atomic_ids", item)
 
 
 def _state(debug=False):

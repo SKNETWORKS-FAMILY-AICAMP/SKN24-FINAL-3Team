@@ -75,6 +75,27 @@ def refine_steps(
     return refined, warnings
 
 
+def build_step_detail_list(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    details = []
+    for index, step in enumerate(steps, start=1):
+        details.append(
+            {
+                "step_detail_id": str(step.get("step_detail_id") or f"STEP-DTL-{index:04d}"),
+                "step_id": str(step.get("step_id") or f"STEP-{index:04d}"),
+                "test_case_id": str(step.get("test_case_id") or ""),
+                "step_no": step.get("step_no") or index,
+                "처리내용": step.get("처리내용") or step.get("process") or step.get("action") or "",
+                "시험항목": step.get("시험항목") or step.get("test_item") or "",
+                "사전조건": step.get("사전조건") or step.get("precondition") or "",
+                "입력값": step.get("입력값") or step.get("input") or step.get("input_value") or "",
+                "예상결과": step.get("예상결과") or step.get("expected_result") or "",
+                "화면ID": step.get("화면ID") or step.get("screen_id") or "",
+                "screen_id": step.get("screen_id") or step.get("화면ID") or "",
+            }
+        )
+    return details
+
+
 def _fallback_steps(
     test_cases: list[dict[str, Any]],
     interfaces: list[dict[str, Any]],

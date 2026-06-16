@@ -110,7 +110,7 @@ class ExportNodeTest(unittest.TestCase):
     def test_exports_all_document_types_with_required_final_json_shapes(self) -> None:
         cases = {
             "SRS": {"docs_cd": "SRS", "requirement_json_list": []},
-            "INTERFACE": {"docs_cd": "INTERFACE", "interface_json_list": []},
+            "INTERFACE": {"docs_cd": "INTERFACE", "interface_json_list": [], "ui_structure": []},
             "TS": {"docs_cd": "TS", "integrated_test_scenario_json": {}},
             "ERD": {"docs_cd": "ERD", "erd_entity_json": {}, "mermaid_image_path": ""},
             "DB": {"docs_cd": "DB", "db_design_json": {}},

@@ -89,6 +89,36 @@ class FakeStructuredDataLLM:
         return success_result({})
 
 
+class FakeBadNamingDataLLM:
+    def chat(self, messages, **kwargs):
+        system_prompt = messages[0]["content"]
+        if "ERD JSON" in system_prompt:
+            return success_result(
+                {
+                    "tables": [
+                        {
+                            "table_id": "TABLE-001",
+                            "logical_name": "AI 플랫폼",
+                            "physical_name": "AI 플랫폼(관리)",
+                            "source_requirement_ids": ["REQ-001"],
+                            "columns": [
+                                {
+                                    "column_id": "COL-001-001",
+                                    "logical_name": "AI 플랫폼 번호",
+                                    "physical_name": "AI 플랫폼 번호",
+                                    "data_type": "BIGINT",
+                                    "nullable": False,
+                                    "constraints": ["PK"],
+                                }
+                            ],
+                        }
+                    ],
+                    "relationships": [],
+                }
+            )
+        return success_result({})
+
+
 class DataStructureDesignAgentTest(unittest.TestCase):
     def test_erd_create_builds_tables_relationships_mermaid_and_uses_rag(self) -> None:
         calls = []
@@ -188,6 +218,95 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         self.assertEqual(table["physical_name"], "tbl_user")
         self.assertIn("user_id", {column["physical_name"] for column in table["columns"]})
         self.assertEqual(result["erd_mermaid_json"]["entities"][0]["name"], "tbl_user")
+
+    def test_erd_create_standardizes_bad_llm_physical_names_before_validation(self) -> None:
+        state = {
+            "project_sn": 1,
+            "docs_cd": "ERD",
+            "udt_yn": "N",
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "integrated_requirement_json_list": [
+                        {
+                            "req_id": "REQ-001",
+                            "req_name": "AI 플랫폼 관리",
+                            "requirement_type": "기능",
+                            "detail_text": "AI 플랫폼 데이터를 관리한다.",
+                        }
+                    ]
+                },
+                "mermaid_generation_agent": {
+                    "mermaid_code": "erDiagram",
+                    "mermaid_image_path": "erd.png",
+                },
+            },
+        }
+        DataStructureDesignAgent(
+            llm_client=FakeBadNamingDataLLM(),
+            search_tool=lambda query, **kwargs: success_result({"normalized_results": []}),
+        ).execute(state)
+        validation = ValidationAgent().execute(state)
+        table = state["agent_outputs"]["data_structure_design_agent"]["erd_entity_json"]["tables"][0]
+
+        self.assertEqual(table["physical_name"], "tbl_ai_management")
+        self.assertEqual(table["columns"][0]["physical_name"], "ai_sn")
+        self.assertEqual(validation["validation_result"]["validation_status"], "PASS")
+
+    def test_erd_descriptions_are_shortened_for_document_output(self) -> None:
+        long_description = "설명" * 100
+        state = {
+            "project_sn": 1,
+            "docs_cd": "ERD",
+            "udt_yn": "N",
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "integrated_requirement_json_list": [
+                        {
+                            "req_id": "REQ-001",
+                            "req_name": "사용자 관리",
+                            "requirement_type": "기능",
+                            "detail_text": "사용자를 관리한다.",
+                        }
+                    ]
+                }
+            },
+        }
+
+        class LongDescriptionLLM(FakeStructuredDataLLM):
+            def chat(self, messages, **kwargs):
+                content = messages[0]["content"]
+                if "엔티티별 테이블 후보" in content:
+                    return success_result(
+                        {
+                            "table_candidate_list": [
+                                {
+                                    "logical_name": "사용자",
+                                    "physical_name": "tbl_user",
+                                    "description": long_description,
+                                    "columns": [
+                                        {
+                                            "logical_name": "사용자 번호",
+                                            "physical_name": "user_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                            "description": long_description,
+                                        }
+                                    ],
+                                }
+                            ]
+                        }
+                    )
+                return super().chat(messages, **kwargs)
+
+        result = DataStructureDesignAgent(
+            llm_client=LongDescriptionLLM(),
+            search_tool=lambda query, **kwargs: success_result({"normalized_results": []}),
+        ).execute(state)
+        table = result["erd_entity_json"]["tables"][0]
+
+        self.assertLessEqual(len(table["description"]), 120)
+        self.assertLessEqual(len(table["columns"][0]["description"]), 80)
 
     def test_db_create_converts_reference_erd_and_passes_db_validator(self) -> None:
         state = {

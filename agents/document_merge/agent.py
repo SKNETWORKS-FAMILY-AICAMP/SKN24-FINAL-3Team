@@ -54,7 +54,7 @@ class DocumentMergeAgent:
         parsed = self.rfp_parser(base_rfp_path)
         if not parsed["success"]:
             return self._tool_failed("SRS_RFP_PARSE_FAILED", parsed)
-        requirements = list(parsed["data"].get("requirements", []))
+        requirements = list(parsed["data"].get("requirements") or parsed["data"].get("functional_requirements", []))
         changes, warnings = self._meeting_changes(state)
         changes = self._enrich_changes_with_search(changes, warnings)
         changes = self._merge_search_results_with_llm(changes, warnings)
