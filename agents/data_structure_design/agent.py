@@ -15,6 +15,7 @@ from agents.data_structure_design.processors import (
     normalize_db_design,
     normalize_erd_tables,
 )
+from config.settings import get_settings
 from tools.llm.llm_client import LLMClient
 from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
@@ -186,7 +187,8 @@ class DataStructureDesignAgent:
             (
                 "너는 공공 SI 프로젝트 DB 모델러입니다. 엔티티별 테이블 후보를 설계하세요. "
                 "물리 테이블명은 소문자 snake_case이며 tbl_ 접두사를 사용하세요. "
-                "entity_id는 ENT-001 형식으로 유지하고 description은 문서에 들어갈 1문장 요약으로 80자 이내로 작성하세요. "
+                "entity_id는 ENT-001 형식으로 유지하고 description은 '{논리명} 정보를 관리하는 엔티티입니다.'처럼 "
+                "문서에 들어갈 한 줄 설명만 작성하세요. 근거, 목록, 특수기호, 줄바꿈, 요구사항 나열은 금지합니다. "
                 "각 테이블은 최소 6개 이상의 업무 컬럼을 가져야 하며, PK, 명칭/내용, 상태코드, 사용여부, 등록/수정일시 같은 "
                 "공통 컬럼과 요구사항에서 도출한 핵심 업무 컬럼을 포함하세요. "
                 "JSON으로 table 또는 table_candidate_list만 반환하세요."
@@ -209,9 +211,10 @@ class DataStructureDesignAgent:
                     "table": table,
                     "rag_results": rag_by_table.get(table["table_id"], []),
                     "instruction": (
-                        "공공데이터 표준, 컬럼 표준명, 용어사전을 반영해 컬럼 후보를 설계하세요. "
+                        "프로젝트 비기능/데이터 요구사항 RAG 결과와 공공데이터 표준, 컬럼 표준명, 용어사전을 반영해 컬럼 후보를 설계하세요. "
                         "컬럼은 6~20개 수준으로 설계하고, 한글 논리명/영문 물리명/데이터 타입/길이/PK/FK/NULL/설명을 포함하세요. "
-                        "PK/FK 여부는 constraints 배열에는 PK/FK로 표시해도 되지만, description에는 업무 의미만 쓰세요."
+                        "constraints에는 해당 컬럼에 직접 적용되는 보안/개인정보/보관/성능/입력값 제약만 넣으세요. "
+                        "컬럼 설명이나 업무 의미는 description에만 쓰고, 제약 근거가 없으면 constraints는 빈 배열로 두세요."
                     ),
                 }
                 for table in tables
@@ -219,6 +222,7 @@ class DataStructureDesignAgent:
             (
                 "테이블별 컬럼 후보를 설계하세요. 기능 요구사항의 입력값, 상태값, 이력, 파일, 권한, 검색 조건, "
                 "연계 식별자를 컬럼으로 반영하고 2개짜리 축약 테이블을 만들지 마세요. "
+                "제약조건은 project_sn 기준 RAG 결과에 근거가 있을 때만 컬럼 constraints에 작성하세요. "
                 "JSON으로 table 또는 table_candidate_list를 반환하세요."
             ),
             "table",
@@ -429,20 +433,37 @@ class DataStructureDesignAgent:
         state: WorkflowState,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         warnings = []
-        results = []
+        results_by_table: dict[str, list[dict[str, Any]]] = {}
+        settings = get_settings()
         with ThreadPoolExecutor(max_workers=self.max_parallel_workers) as executor:
-            future_map = {
-                executor.submit(
-                    self.search_tool,
-                    f"{table['logical_name']} 공공데이터 컬럼 표준명 용어사전",
-                    search_targets="RAG",
-                    filters={
-                        "domain": "public_data",
-                        "doc_type": ["standard_term", "standard_word", "standard_domain", "db_standard_manual"],
-                    },
-                ): table
-                for table in tables
-            }
+            future_map = {}
+            for table in tables:
+                future_map[
+                    executor.submit(
+                        self.search_tool,
+                        f"{table['logical_name']} 공공데이터 컬럼 표준명 용어사전",
+                        search_targets="RAG",
+                        filters={
+                            "domain": "public_data",
+                            "doc_type": ["standard_term", "standard_word", "standard_domain", "db_standard_manual"],
+                        },
+                        collection=settings.alpled_reference_collection,
+                    )
+                ] = table
+                future_map[
+                    executor.submit(
+                        self.search_tool,
+                        f"{table['logical_name']} 데이터 개인정보 보안 보관 성능 제약조건",
+                        search_targets="RAG",
+                        filters={
+                            "project_sn": state.get("project_sn"),
+                            "doc_type": "project_non_functional_requirement",
+                            "domain": "requirements",
+                            "chunk_type": "project_requirement_source",
+                        },
+                        collection=settings.alpled_reference_collection,
+                    )
+                ] = table
             for future in as_completed(future_map):
                 table = future_map[future]
                 try:
@@ -451,9 +472,15 @@ class DataStructureDesignAgent:
                     warnings.append({"code": "DATA_STANDARD_RAG_FAILED", "message": str(exc), "table_id": table["table_id"]})
                     continue
                 if result["success"]:
-                    results.append({"table_id": table["table_id"], "normalized_results": _dedupe_results(result["data"]["normalized_results"])})
+                    results_by_table.setdefault(table["table_id"], []).extend(
+                        result["data"]["normalized_results"]
+                    )
                 else:
                     warnings.append({"code": "DATA_STANDARD_RAG_FAILED", "message": result["error"]["message"], "table_id": table["table_id"]})
+        results = [
+            {"table_id": table_id, "normalized_results": _dedupe_results(items)}
+            for table_id, items in results_by_table.items()
+        ]
         return warnings, results
 
     @staticmethod

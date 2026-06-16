@@ -1,6 +1,7 @@
 # 추출된 엔티티를 기반으로 ERD 테이블과 DB 명세를 설계합니다.
 
 from copy import deepcopy
+import re
 from typing import Any
 
 from agents.data_structure_design.processors.column_standardizer import (
@@ -23,7 +24,8 @@ def build_erd_tables(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "entity_id": str(entity.get("entity_id") or f"ENT-{index + 1:03d}"),
                 "logical_name": logical_name,
                 "physical_name": physical_name,
-                "description": _summary_text(entity.get("description") or f"{logical_name} 정보를 관리하는 엔티티입니다.", 80),
+                "description": _table_description(logical_name),
+                "table_description": _table_description(logical_name),
                 "source_requirement_ids": entity.get("source_requirement_ids", []),
                 "columns": [
                     {
@@ -113,8 +115,8 @@ def normalize_erd_tables(items: list[Any]) -> list[dict[str, Any]]:
                 "entity_id": str(item.get("entity_id") or f"ENT-{index + 1:03d}"),
                 "logical_name": logical_name,
                 "physical_name": physical_name,
-                "description": _summary_text(item.get("description") or item.get("table_description") or logical_name, 80),
-                "table_description": _summary_text(item.get("table_description") or item.get("description") or logical_name, 80),
+                "description": _table_description(logical_name),
+                "table_description": _table_description(logical_name),
                 "columns": _ensure_minimum_columns(
                     [_normalize_erd_column(column, index, col_index, logical_name) for col_index, column in enumerate(columns)],
                     index,
@@ -167,7 +169,7 @@ def _normalize_erd_column(column: Any, table_index: int, column_index: int, logi
         "physical_name": _standard_column_name(raw_name, logical_column_name, logical_name, is_first),
         "data_type": str(source.get("data_type") or "BIGINT"),
         "nullable": source.get("nullable", not is_first),
-        "constraints": source.get("constraints") if isinstance(source.get("constraints"), list) else (["PK"] if is_first else []),
+        "constraints": _normalize_column_constraints(source.get("constraints"), source.get("constraint"), is_first),
         "description": _summary_text(source.get("description") or logical_column_name, 60),
     }
 
@@ -225,6 +227,25 @@ def _summary_text(value: Any, max_length: int) -> str:
     return _short_text(text, max_length)
 
 
+def _table_description(logical_name: Any) -> str:
+    subject = _description_subject(logical_name)
+    if not subject:
+        subject = "업무"
+    if subject.endswith("정보"):
+        return f"{subject}를 관리하는 테이블입니다."
+    if subject.endswith("관리"):
+        return f"{subject} 업무 정보를 관리하는 테이블입니다."
+    return f"{subject} 정보를 관리하는 테이블입니다."
+
+
+def _description_subject(value: Any) -> str:
+    text = str(value or "").replace("\n", " ").replace("\r", " ").strip()
+    text = re.sub(r"[\[\]{}()<>※★*#|`\"'·•:;]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip(" -_/.,")
+    text = re.sub(r"(테이블|엔티티)$", "", text).strip()
+    return _short_text(text, 40)
+
+
 def _merge_duplicate_tables(tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
     merged: dict[str, dict[str, Any]] = {}
     order: list[str] = []
@@ -239,9 +260,8 @@ def _merge_duplicate_tables(tables: list[dict[str, Any]]) -> list[dict[str, Any]
             dict.fromkeys([*target.get("source_requirement_ids", []), *table.get("source_requirement_ids", [])])
         )
         target["columns"] = [*target.get("columns", []), *table.get("columns", [])]
-        if len(str(table.get("description") or "")) > len(str(target.get("description") or "")):
-            target["description"] = _summary_text(table.get("description"), 80)
-            target["table_description"] = target["description"]
+        target["description"] = _table_description(target.get("logical_name"))
+        target["table_description"] = target["description"]
     return [merged[key] for key in order]
 
 
@@ -287,3 +307,60 @@ def _constraints(table: dict[str, Any]) -> list[dict[str, Any]]:
         if "PK" in column.get("constraints", []):
             constraints.append({"type": "PK", "columns": [column["physical_name"]]})
     return constraints
+
+
+def _normalize_column_constraints(raw_constraints: Any, raw_constraint: Any, is_pk: bool) -> list[str]:
+    values: list[str] = ["PK"] if is_pk else []
+    candidates: list[Any] = []
+    if isinstance(raw_constraints, list):
+        candidates.extend(raw_constraints)
+    elif raw_constraints:
+        candidates.append(raw_constraints)
+    if raw_constraint:
+        candidates.append(raw_constraint)
+    for candidate in candidates:
+        text = str(candidate).strip()
+        if not text:
+            continue
+        upper = text.upper()
+        if upper in {"PK", "PRIMARY KEY"}:
+            if "PK" not in values:
+                values.append("PK")
+            continue
+        if upper in {"FK", "FOREIGN KEY"}:
+            if "FK" not in values:
+                values.append("FK")
+            continue
+        if _looks_like_business_constraint(text):
+            values.append(text)
+    return list(dict.fromkeys(values))
+
+
+def _looks_like_business_constraint(text: str) -> bool:
+    keywords = {
+        "마스킹",
+        "암호",
+        "해시",
+        "권한",
+        "접근",
+        "보관",
+        "파기",
+        "개인정보",
+        "필수",
+        "유일",
+        "중복",
+        "최소",
+        "최대",
+        "이내",
+        "초",
+        "분",
+        "허용",
+        "금지",
+        "검증",
+        "제한",
+        "정책",
+        "감사",
+        "로그",
+        "백업",
+    }
+    return any(keyword in text for keyword in keywords)

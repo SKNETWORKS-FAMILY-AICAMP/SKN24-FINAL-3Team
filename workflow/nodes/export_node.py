@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from config.constants import DOCS_CODE_DB_MAP, DOCS_CODES, FILE_CODE_REQUIREMENT_JSON
+from config.constants import DOCS_CODES, FILE_CODE_REQUIREMENT_JSON
 from config.settings import Settings, get_settings
 from database.repositories.docs_detail_repository import DocsDetailRepository
 from database.repositories.file_repository import FileRepository
@@ -120,20 +120,11 @@ def export_node(
         uploaded_data = _unwrap_tool_result(uploaded, "UPLOAD_FAILED")
         storage_file_path = str(uploaded_data["storage_file_path"])
 
-        file_record = dependencies.file_repository.insert_file(
-            project_sn=project_sn,
-            file_cd=DOCS_CODE_DB_MAP[docs_cd],
-            file_nm=generated_file_name,
-            file_path=storage_file_path,
-            file_size=generated_file_size,
-            file_ext="docx",
-        )
-        file_sn = _read_file_sn(file_record)
         dependencies.docs_detail_repository.insert_docs_detail(
             project_sn=project_sn,
             docs_cd=docs_cd,
             docs_path=storage_file_path,
-            file_sn=file_sn,
+            file_sn=None,
             use_yn="Y",
             status="DONE",
         )
@@ -147,7 +138,7 @@ def export_node(
             "status": "SUCCESS",
             "project_sn": project_sn,
             "docs_cd": docs_cd,
-            "file_sn": file_sn,
+            "file_sn": None,
             "requirement_json_file_sn": requirement_json_record.get("file_sn") if requirement_json_record else None,
             "requirement_json_file_path": requirement_json_record.get("storage_file_path") if requirement_json_record else "",
             "local_file_path": generated_local_file_path,
