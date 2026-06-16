@@ -702,7 +702,7 @@ def _column_constraint_text(column: dict[str, Any]) -> str:
         filtered = [str(item) for item in constraints if str(item).upper() not in {"PK", "FK", "INDEX", "IDX", "NOT NULL"}]
         if filtered:
             return ", ".join(filtered)
-    return _pick(column, "comment", "description")
+    return ""
 
 
 def _arch_requirement_items(arch_doc: dict[str, Any]) -> list[dict[str, Any]]:
