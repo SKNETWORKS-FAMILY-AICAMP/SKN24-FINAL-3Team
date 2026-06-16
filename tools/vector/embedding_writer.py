@@ -41,7 +41,7 @@ def write_non_functional_requirements(
         return success_result({"stored_count": 0, "skipped_count": 0, "point_ids": []})
 
     settings = settings or get_settings()
-    selected_collection = collection or settings.qdrant_collection
+    selected_collection = collection or settings.alpled_reference_collection
     points = []
     skipped: list[dict[str, Any]] = []
 
@@ -159,6 +159,10 @@ def _payload(
     file_name = Path(source_path).name if source_path else ""
     return {
         "project_sn": project_sn,
+        "text": embedded_text,
+        "chunk_id": f"project_requirement_{_point_id(project_sn, source_path, item)}",
+        "doc_type": "project_non_functional_requirement",
+        "domain": "requirements",
         "rfp_id": item.get("rfp_id") or item.get("document_id") or file_name,
         "requirement_id": requirement_id,
         "requirement_source_id": list(dict.fromkeys([requirement_id, *source_refs])),
@@ -168,11 +172,19 @@ def _payload(
         "category": _category(item, requirement_type),
         "keywords": _keywords(item),
         "source_type": item.get("source_type") or "RFP",
+        "source_name": Path(source_path).stem if source_path else str(item.get("source_name") or ""),
         "source_path": source_path or item.get("source_path") or "",
+        "source_file": file_name or str(item.get("source_file") or ""),
+        "section": "project non-functional requirements",
+        "title": _requirement_name(item) or requirement_id,
+        "applies_to": "requirements_definition,erd,db_design,architecture_design,interface_design,test_scenario",
+        "priority": item.get("priority") or "project",
+        "chunk_type": "project_requirement_source",
+        "is_active": True,
+        "language": "ko",
         "page": item.get("page") or item.get("page_number"),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "content": embedded_text,
-        "text": embedded_text,
         "original_text": _original_text(item),
         "embedded_text": embedded_text,
     }
