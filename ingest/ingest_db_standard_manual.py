@@ -28,9 +28,9 @@ from rag.ingest_base import (
     upsert_payloads,
 )
 from rag.pdf_reader import read_pdf_pages
-from rag.qdrant_config import DB_ERD_REFERENCE_COLLECTION, ensure_named_collection
+from rag.qdrant_config import ALPLED_REFERENCE_COLLECTION, ensure_named_collection
 
-TARGET_COLLECTION = DB_ERD_REFERENCE_COLLECTION
+TARGET_COLLECTION = ALPLED_REFERENCE_COLLECTION
 
 SOURCE_PATH = Path(
     os.getenv(

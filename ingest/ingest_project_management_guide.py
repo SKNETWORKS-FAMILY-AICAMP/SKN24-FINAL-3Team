@@ -20,9 +20,9 @@ from rag.ingest_base import (
     upsert_payloads,
 )
 from rag.pdf_reader import read_pdf_pages
-from rag.qdrant_config import REQUIREMENT_REFERENCE_COLLECTION, ensure_named_collection
+from rag.qdrant_config import ALPLED_REFERENCE_COLLECTION, ensure_named_collection
 
-COLLECTION_NAME = REQUIREMENT_REFERENCE_COLLECTION
+COLLECTION_NAME = ALPLED_REFERENCE_COLLECTION
 SOURCE_PATH = Path(
     os.getenv(
         "PROJECT_MANAGEMENT_GUIDE_PATH",

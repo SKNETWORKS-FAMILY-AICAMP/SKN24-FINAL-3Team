@@ -8,28 +8,11 @@ from qdrant_client.models import Distance, VectorParams
 load_dotenv()
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
-COLLECTION_NAME = os.getenv("QDRANT_COLLECTION", "arkive")
 EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "BAAI/bge-m3")
 
-REQUIREMENT_REFERENCE_COLLECTION = os.getenv(
-    "REQUIREMENT_REFERENCE_COLLECTION",
-    "requirement_reference",
-)
-REQUIREMENT_SOURCES_COLLECTION = os.getenv(
-    "REQUIREMENT_SOURCES_COLLECTION",
-    "requirement_sources",
-)
-REQUIREMENT_EXAMPLES_COLLECTION = os.getenv(
-    "REQUIREMENT_EXAMPLES_COLLECTION",
-    "requirement_examples",
-)
-ARCHITECTURE_REFERENCE_COLLECTION = os.getenv(
-    "ARCHITECTURE_REFERENCE_COLLECTION",
-    "architecture_reference",
-)
-DB_ERD_REFERENCE_COLLECTION = os.getenv(
-    "DB_ERD_REFERENCE_COLLECTION",
-    "db_erd_reference",
+ALPLED_REFERENCE_COLLECTION = os.getenv(
+    "ALPLED_REFERENCE_COLLECTION",
+    "ALPLED_reference",
 )
 REQUIREMENT_RAG_TOP_K = int(os.getenv("REQUIREMENT_RAG_TOP_K", "3"))
 
@@ -87,6 +70,3 @@ def ensure_named_collection(collection_name: str, recreate: bool = False):
     else:
         print(f"[이미 존재] collection={collection_name}")
 
-
-def ensure_collection(recreate: bool = False):
-    ensure_named_collection(COLLECTION_NAME, recreate=recreate)

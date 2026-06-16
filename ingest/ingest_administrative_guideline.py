@@ -20,11 +20,10 @@ from rag.ingest_base import (
 )
 from rag.pdf_reader import read_pdf_pages
 from rag.qdrant_config import (
-    REQUIREMENT_REFERENCE_COLLECTION,
-    ARCHITECTURE_REFERENCE_COLLECTION,
+    ALPLED_REFERENCE_COLLECTION,
     ensure_named_collection,
 )
-TARGET_COLLECTIONS = [REQUIREMENT_REFERENCE_COLLECTION, ARCHITECTURE_REFERENCE_COLLECTION]
+TARGET_COLLECTION = ALPLED_REFERENCE_COLLECTION
 
 SOURCE_PATH = Path(
     os.getenv(
@@ -101,9 +100,8 @@ def extract_article_title(chunk: str) -> str:
 def main():
     payloads = extract_payloads()
     print(f"[EXTRACTED] administrative guideline chunks={len(payloads)}")
-    for collection in TARGET_COLLECTIONS:
-        ensure_named_collection(collection, recreate=False)
-        upsert_payloads(payloads, collection)
+    ensure_named_collection(TARGET_COLLECTION, recreate=False)
+    upsert_payloads(payloads, TARGET_COLLECTION)
 
 
 if __name__ == "__main__":
