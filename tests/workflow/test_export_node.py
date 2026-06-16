@@ -80,7 +80,7 @@ class ExportNodeTest(unittest.TestCase):
             docs_repository,
         )
 
-    def test_create_exports_registers_file_and_marks_done(self) -> None:
+    def test_srs_create_registers_only_final_json_file_and_marks_done(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             dependencies, files, docs = self.dependencies(root)
             state = {
@@ -97,13 +97,13 @@ class ExportNodeTest(unittest.TestCase):
             result = export_node(state, dependencies)
 
             self.assertEqual(result["status"], "DONE")
-            self.assertEqual(result["export_result"]["file_sn"], 123)
+            self.assertIsNone(result["export_result"]["file_sn"])
             self.assertEqual(result["export_result"]["requirement_json_file_sn"], 123)
             self.assertEqual(files.calls[0]["file_ext"], "json")
             self.assertEqual(files.calls[0]["file_cd"], "FILE_REQ_DOC_JSON")
-            self.assertEqual(files.calls[1]["file_ext"], "docx")
             self.assertEqual(files.calls[0]["project_sn"], 10)
-            self.assertEqual(files.calls[1]["file_cd"], "DOC_SRS")
+            self.assertEqual(len(files.calls), 1)
+            self.assertIsNone(docs.inserted[0]["file_sn"])
             self.assertEqual(docs.done, [(10, "SRS")])
             self.assertFalse(docs.deactivated)
 
@@ -131,15 +131,15 @@ class ExportNodeTest(unittest.TestCase):
 
                 self.assertEqual(result["status"], "DONE")
                 self.assertEqual(result["export_result"]["docs_cd"], docs_cd)
-                docx_call = files.calls[-1]
-                self.assertEqual(docx_call["file_ext"], "docx")
                 if docs_cd == "SRS":
+                    self.assertEqual(len(files.calls), 1)
                     self.assertEqual(files.calls[0]["file_ext"], "json")
                     self.assertEqual(files.calls[0]["file_cd"], "FILE_REQ_DOC_JSON")
                 else:
-                    self.assertEqual(len(files.calls), 1)
+                    self.assertEqual(len(files.calls), 0)
                 self.assertEqual(docs.inserted[0]["docs_cd"], docs_cd)
                 self.assertTrue(docs.inserted[0]["docs_path"].startswith("s3://bucket/"))
+                self.assertIsNone(docs.inserted[0]["file_sn"])
 
     def test_update_inserts_new_detail_without_deactivating_previous_version(self) -> None:
         with tempfile.TemporaryDirectory() as root:
@@ -186,7 +186,8 @@ class ExportNodeTest(unittest.TestCase):
 
             self.assertEqual(Path(uploaded_paths[-1]).name, "custom_export.docx")
             self.assertEqual(result["export_result"]["file_name"], "custom_export.docx")
-            self.assertEqual(files.calls[-1]["file_nm"], "custom_export.docx")
+            self.assertEqual(len(files.calls), 1)
+            self.assertEqual(files.calls[0]["file_ext"], "json")
 
     def test_srs_create_uploads_requirement_json_before_docx(self) -> None:
         uploaded_paths = []
@@ -215,8 +216,7 @@ class ExportNodeTest(unittest.TestCase):
             self.assertEqual(Path(uploaded_paths[1][0]).suffix, ".docx")
             self.assertEqual(files.calls[0]["file_cd"], "FILE_REQ_DOC_JSON")
             self.assertEqual(files.calls[0]["file_ext"], "json")
-            self.assertEqual(files.calls[1]["file_cd"], "DOC_SRS")
-            self.assertEqual(files.calls[1]["file_ext"], "docx")
+            self.assertEqual(len(files.calls), 1)
 
     def test_srs_update_also_uploads_replacement_requirement_json(self) -> None:
         uploaded_paths = []
@@ -245,7 +245,7 @@ class ExportNodeTest(unittest.TestCase):
             self.assertEqual(Path(uploaded_paths[0][0]).suffix, ".json")
             self.assertEqual(Path(uploaded_paths[1][0]).suffix, ".docx")
             self.assertEqual(files.calls[0]["file_cd"], "FILE_REQ_DOC_JSON")
-            self.assertEqual(files.calls[1]["file_cd"], "DOC_SRS")
+            self.assertEqual(len(files.calls), 1)
 
     def test_failure_marks_export_and_docs_failed(self) -> None:
         def failed_uploader(local_file_path: str, **_: Any):

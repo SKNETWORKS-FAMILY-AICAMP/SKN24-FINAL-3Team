@@ -165,6 +165,23 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         self.assertTrue(result["erd_entity_json"]["relationships"])
         self.assertTrue(result["erd_mermaid_json"]["entities"])
         self.assertTrue(all(call[1]["search_targets"] == "RAG" for call in calls))
+        project_requirement_filters = [
+            kwargs["filters"]
+            for _, kwargs in calls
+            if kwargs["filters"].get("project_sn") == 1
+        ]
+        self.assertTrue(project_requirement_filters)
+        self.assertTrue(
+            all(
+                filters == {
+                    "project_sn": 1,
+                    "doc_type": "project_non_functional_requirement",
+                    "domain": "requirements",
+                    "chunk_type": "project_requirement_source",
+                }
+                for filters in project_requirement_filters
+            )
+        )
         self.assertIs(state["agent_outputs"]["data_structure_design_agent"], result)
         self.assertNotIn("erd_entity_json", state)
 
@@ -252,8 +269,8 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         self.assertEqual(table["columns"][0]["physical_name"], "ai_sn")
         self.assertEqual(validation["validation_result"]["validation_status"], "PASS")
 
-    def test_erd_descriptions_are_shortened_for_document_output(self) -> None:
-        long_description = "설명" * 100
+    def test_erd_descriptions_are_standardized_for_document_output(self) -> None:
+        noisy_description = "※ 상세 설명:\n- 사용자 로그인, 권한, 세션, 개인정보, 이력 등 모든 근거를 장황하게 나열함;;"
         state = {
             "project_sn": 1,
             "docs_cd": "ERD",
@@ -282,7 +299,7 @@ class DataStructureDesignAgentTest(unittest.TestCase):
                                 {
                                     "logical_name": "사용자",
                                     "physical_name": "tbl_user",
-                                    "description": long_description,
+                                    "description": noisy_description,
                                     "columns": [
                                         {
                                             "logical_name": "사용자 번호",
@@ -290,7 +307,7 @@ class DataStructureDesignAgentTest(unittest.TestCase):
                                             "data_type": "BIGINT",
                                             "nullable": False,
                                             "constraints": ["PK"],
-                                            "description": long_description,
+                                            "description": noisy_description,
                                         }
                                     ],
                                 }
@@ -305,8 +322,75 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         ).execute(state)
         table = result["erd_entity_json"]["tables"][0]
 
-        self.assertLessEqual(len(table["description"]), 120)
+        self.assertEqual(table["description"], "사용자 정보를 관리하는 테이블입니다.")
+        self.assertEqual(table["table_description"], "사용자 정보를 관리하는 테이블입니다.")
         self.assertLessEqual(len(table["columns"][0]["description"]), 80)
+
+    def test_erd_table_description_ignores_llm_noise(self) -> None:
+        from agents.data_structure_design.processors.table_builder import normalize_erd_tables
+
+        tables = normalize_erd_tables(
+            [
+                {
+                    "logical_name": "사용자 정보",
+                    "physical_name": "tbl_user",
+                    "description": "★ 근거: 요구사항 A/B/C\n1) 로그인 처리\n2) 권한 처리\n- 장황한 설명",
+                    "columns": [
+                        {
+                            "logical_name": "사용자 번호",
+                            "physical_name": "user_sn",
+                            "data_type": "BIGINT",
+                            "nullable": False,
+                            "constraints": ["PK"],
+                        }
+                    ],
+                }
+            ]
+        )
+
+        self.assertEqual(tables[0]["description"], "사용자 정보를 관리하는 테이블입니다.")
+        self.assertEqual(tables[0]["table_description"], "사용자 정보를 관리하는 테이블입니다.")
+
+    def test_erd_column_constraints_keep_only_actual_constraints(self) -> None:
+        from agents.data_structure_design.processors.table_builder import normalize_erd_tables
+
+        tables = normalize_erd_tables(
+            [
+                {
+                    "logical_name": "사용자",
+                    "physical_name": "tbl_user",
+                    "columns": [
+                        {
+                            "logical_name": "사용자 번호",
+                            "physical_name": "user_sn",
+                            "data_type": "BIGINT",
+                            "nullable": False,
+                            "constraints": ["PK", "사용자 고유 식별자"],
+                        },
+                        {
+                            "logical_name": "사용자명",
+                            "physical_name": "user_nm",
+                            "data_type": "VARCHAR(100)",
+                            "nullable": False,
+                            "constraints": ["사용자 명칭"],
+                        },
+                        {
+                            "logical_name": "비밀번호",
+                            "physical_name": "password_hash",
+                            "data_type": "VARCHAR(255)",
+                            "nullable": False,
+                            "constraints": ["비밀번호는 해시로 저장해야 한다."],
+                        },
+                    ],
+                }
+            ]
+        )
+
+        columns = {column["physical_name"]: column for column in tables[0]["columns"]}
+
+        self.assertEqual(columns["user_sn"]["constraints"], ["PK"])
+        self.assertEqual(columns["user_nm"]["constraints"], [])
+        self.assertEqual(columns["password_hash"]["constraints"], ["비밀번호는 해시로 저장해야 한다."])
 
     def test_db_create_converts_reference_erd_and_passes_db_validator(self) -> None:
         state = {

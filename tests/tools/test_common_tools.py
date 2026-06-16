@@ -162,6 +162,40 @@ class CommonToolsTest(unittest.TestCase):
         self.assertEqual({payload["requirement_id"] for payload in payloads}, {"S-001", "D-001"})
         self.assertTrue(all(payload["project_sn"] == 1 for payload in payloads))
         self.assertTrue(all("requirement_source_id" in payload for payload in payloads))
+        self.assertTrue(all(payload["doc_type"] == "project_non_functional_requirement" for payload in payloads))
+        self.assertTrue(all(payload["chunk_type"] == "project_requirement_source" for payload in payloads))
+
+    def test_embedding_writer_defaults_to_alpled_reference_collection(self) -> None:
+        class FakeQdrant:
+            def __init__(self):
+                self.created = []
+                self.upserts = []
+
+            def collection_exists(self, **kwargs):
+                return False
+
+            def create_collection(self, **kwargs):
+                self.created.append(kwargs)
+
+            def upsert(self, **kwargs):
+                self.upserts.append(kwargs)
+
+        class FakeEmbedder:
+            def encode(self, text, normalize_embeddings=True):
+                return [0.1, 0.2, 0.3]
+
+        qdrant = FakeQdrant()
+        result = write_non_functional_requirements(
+            [{"req_id": "S-001", "requirement_type": "보안", "req_name": "보안", "detail_text": "접근을 제한한다."}],
+            project_sn=1,
+            source_path="rfp.docx",
+            qdrant_client=qdrant,
+            embedder=FakeEmbedder(),
+        )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["data"]["collection"], "ALPLED_reference")
+        self.assertEqual(qdrant.created[0]["collection_name"], "ALPLED_reference")
 
     def test_search_request_validates_contract(self) -> None:
         request = SearchRequest(
@@ -262,6 +296,30 @@ class CommonToolsTest(unittest.TestCase):
             self.assertNotIn("relates", document.tables[1].cell(1, 0).text)
             self.assertEqual(document.tables[2].cell(0, 7).text.strip(), "USER_ACCOUNT")
             self.assertEqual(document.tables[2].cell(3, 0).text.strip(), "USER_ACCOUNT_SN")
+
+    def test_erd_column_constraint_cell_does_not_fallback_to_description(self) -> None:
+        description_only_row = docx_exporter._erd_column_to_row(
+            {
+                "logical_name": "사용자명",
+                "physical_name": "user_nm",
+                "data_type": "VARCHAR(100)",
+                "nullable": True,
+                "constraints": [],
+                "description": "사용자 명칭",
+            }
+        )
+        constrained_row = docx_exporter._erd_column_to_row(
+            {
+                "logical_name": "비밀번호",
+                "physical_name": "password_hash",
+                "data_type": "VARCHAR(255)",
+                "nullable": False,
+                "constraints": ["비밀번호는 해시로 저장해야 한다."],
+            }
+        )
+
+        self.assertEqual(description_only_row[-1], "")
+        self.assertEqual(constrained_row[-1], "비밀번호는 해시로 저장해야 한다.")
 
     def test_docx_export_strips_problematic_png_dpi_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as root:

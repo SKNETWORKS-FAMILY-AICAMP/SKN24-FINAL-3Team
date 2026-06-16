@@ -1,6 +1,9 @@
 import unittest
+import tempfile
+from pathlib import Path
 
 from agents.test_scenario.agent import TestScenarioGenerationAgent
+from agents.test_scenario import prompts as ts_prompts
 from agents.validation.agent import ValidationAgent
 from tools.result import success_result
 
@@ -148,6 +151,60 @@ class FakeUpdateScenarioRuleLLM:
         return success_result({})
 
 
+class FakeCompactProcedureLLM:
+    def __init__(self):
+        self.user_messages = []
+
+    def chat(self, messages, **kwargs):
+        system_prompt = messages[0]["content"]
+        self.user_messages.append(messages[-1]["content"])
+        if "요구사항별 업무 시험 시나리오" in system_prompt:
+            return success_result(
+                {
+                    "scenario": {
+                        "scenario_name": "로그인 업무",
+                        "source_requirement_ids": ["REQ-001"],
+                    }
+                }
+            )
+        if "시나리오별 통합시험 케이스" in system_prompt:
+            return success_result(
+                {
+                    "test_case_json_list": [
+                        {
+                            "case_type": "NORMAL",
+                            "test_case_name": "로그인 정상",
+                            "source_requirement_ids": ["REQ-001"],
+                            "test_procedure": ["화면 진입", "정보 입력", "로그인 버튼 클릭"],
+                            "input_data": ["아이디", "비밀번호"],
+                            "test_result": "PASS",
+                        }
+                    ]
+                }
+            )
+        if "시험케이스별 시험 절차" in system_prompt:
+            return success_result({"step_json_list": [{"처리내용": "화면 진입"}]})
+        if "Step별 상세 시험 정보" in system_prompt:
+            return success_result(
+                {
+                    "step_detail_json": {
+                        "입력값": ["아이디", "비밀번호"],
+                        "예상결과": "로그인 성공",
+                        "화면ID": "SCR-LOGIN",
+                        "test_result": "PASS",
+                    }
+                }
+            )
+        return success_result({})
+
+
+class FakeInvalidCaseLLM(FakeFullScenarioLLM):
+    def chat(self, messages, **kwargs):
+        if "시나리오별 통합시험 케이스" in messages[0]["content"]:
+            return success_result("not a json")
+        return super().chat(messages, **kwargs)
+
+
 class TestScenarioAgentTest(unittest.TestCase):
     def test_create_builds_scenarios_cases_steps_and_uses_interface(self) -> None:
         state = _create_state()
@@ -253,6 +310,46 @@ class TestScenarioAgentTest(unittest.TestCase):
 
         self.assertEqual(missing["failure_type"], "TS_REQUIREMENT_MISSING")
         self.assertIn("functional_requirements", debug["debug"])
+
+    def test_create_compacts_requirements_sanitizes_cases_and_fills_missing_procedure_steps(self) -> None:
+        llm = FakeCompactProcedureLLM()
+        state = _create_state()
+        state["etc"] = {"debug": True}
+        state["agent_outputs"]["document_merge_agent"]["integrated_requirement_json_list"][0]["raw_text"] = "삭제되어야 하는 원문" * 200
+
+        result = TestScenarioGenerationAgent(llm_client=llm).execute(state)
+        document = result["integrated_test_scenario_json"]
+        first_case = document["test_case_json_list"][0]
+        first_case_steps = [
+            step for step in document["step_json_list"]
+            if step["test_case_id"] == first_case["test_case_id"]
+        ]
+
+        self.assertNotIn("raw_text", llm.user_messages[0])
+        self.assertIn("compacted_functional_requirements", result["debug"])
+        self.assertIsNone(first_case["test_result"])
+        self.assertEqual(first_case["input_data"], "아이디 비밀번호")
+        self.assertEqual([step["처리내용"] for step in first_case_steps], ["화면 진입", "정보 입력", "로그인 버튼 클릭"])
+        self.assertTrue(all(step["test_result"] is None for step in document["step_json_list"]))
+        self.assertEqual(document["step_json_list"][0]["입력값"], "아이디 비밀번호")
+
+    def test_invalid_llm_output_is_saved_to_raw_output_file(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            original_dir = ts_prompts.TS_RAW_OUTPUT_DIR
+            ts_prompts.TS_RAW_OUTPUT_DIR = root
+            try:
+                result = TestScenarioGenerationAgent(llm_client=FakeInvalidCaseLLM()).execute(_create_state())
+            finally:
+                ts_prompts.TS_RAW_OUTPUT_DIR = original_dir
+
+            raw_paths = [
+                warning.get("raw_output_path")
+                for warning in result["warnings"]
+                if warning.get("raw_output_path")
+            ]
+            self.assertTrue(raw_paths)
+            self.assertTrue(Path(raw_paths[0]).exists())
+            self.assertIn("not a json", Path(raw_paths[0]).read_text(encoding="utf-8"))
 
 
 def _create_state():

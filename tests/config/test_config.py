@@ -26,7 +26,7 @@ class ConfigTest(unittest.TestCase):
             settings.resolved_database_url,
             "mysql+pymysql://alpled:password@localhost:3306/alpled_db",
         )
-        self.assertEqual(settings.qdrant_collection, "arkive")
+        self.assertEqual(settings.alpled_reference_collection, "ALPLED_reference")
 
     def test_settings_builds_database_url_from_db_parts(self) -> None:
         settings = Settings(
