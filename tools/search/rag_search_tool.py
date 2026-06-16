@@ -28,7 +28,7 @@ def rag_search(
         )
 
     settings = settings or get_settings()
-    selected_collection = collection or settings.qdrant_collection
+    selected_collection = collection or settings.alpled_reference_collection
 
     try:
         qdrant = client or _create_qdrant_client(settings)
@@ -80,8 +80,13 @@ def _to_qdrant_filter(filters: dict[str, Any] | None) -> Any:
         for key, value in filters.items():
             if value is None:
                 continue
+            if isinstance(value, str) and not value.strip():
+                continue
             if isinstance(value, (list, tuple, set)):
-                conditions.append(FieldCondition(key=key, match=MatchAny(any=list(value))))
+                values = [item for item in value if item is not None and str(item).strip()]
+                if not values:
+                    continue
+                conditions.append(FieldCondition(key=key, match=MatchAny(any=values)))
             else:
                 conditions.append(FieldCondition(key=key, match=MatchValue(value=value)))
         return Filter(must=conditions) if conditions else None
