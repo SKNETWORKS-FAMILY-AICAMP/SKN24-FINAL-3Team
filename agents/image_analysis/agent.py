@@ -114,22 +114,25 @@ class ImageAnalysisAgent:
         state: WorkflowState,
         warnings: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
+        settings = get_settings()
         fallback_specs = [
             {
                 "screen_id": screen["screen_id"],
                 "screen_name": screen["screen_name"],
                 "ux_query": f"{screen['screen_name']} UI UX 가이드",
                 "ux_filters": {
-                    "category": "ui_ux_guide",
-                    "screen_type": screen["screen_name"],
+                    "domain": "interface",
+                    "chunk_type": "uiux_guideline",
                     "keywords": _screen_keywords(screen),
                 },
+                "ux_collection": settings.alpled_reference_collection,
                 "interface_query": f"{screen['screen_name']} 인터페이스 요구사항",
                 "interface_filters": {
                     "project_sn": state.get("project_sn"),
-                    "requirement_type": "인터페이스 요구사항",
+                    "requirement_type": ["인터페이스", "인터페이스 요구사항"],
                     "keywords": _screen_keywords(screen),
                 },
+                "interface_collection": settings.alpled_reference_collection,
             }
             for screen in screens
         ]
@@ -211,6 +214,7 @@ class ImageAnalysisAgent:
                         self._search,
                         spec["ux_query"],
                         spec["ux_filters"],
+                        spec.get("ux_collection"),
                         warnings,
                     )
                 ] = (index, "ux_guides")
@@ -219,6 +223,7 @@ class ImageAnalysisAgent:
                         self._search,
                         spec["interface_query"],
                         spec["interface_filters"],
+                        spec.get("interface_collection"),
                         warnings,
                     )
                 ] = (index, "interface_requirements")
@@ -242,9 +247,10 @@ class ImageAnalysisAgent:
         self,
         query: str,
         filters: dict[str, Any],
+        collection: str | None,
         warnings: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
-        result = self.search_tool(query, search_targets="RAG", filters=filters)
+        result = self.search_tool(query, search_targets="RAG", filters=filters, collection=collection)
         if result["success"]:
             return result["data"]["normalized_results"]
         warnings.append({"code": "IMAGE_ANALYSIS_RAG_FAILED", "message": result["error"]["message"], "query": query})

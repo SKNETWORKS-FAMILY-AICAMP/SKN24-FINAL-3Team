@@ -19,6 +19,7 @@ from agents.architecture_analysis.processors import (
     normalize_components,
     normalize_relations,
 )
+from config.settings import get_settings
 from tools.llm.llm_client import LLMClient
 from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
@@ -203,6 +204,7 @@ class ArchitectureAnalysisAgent:
         warnings: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
+        settings = get_settings()
         with ThreadPoolExecutor(max_workers=self.max_parallel_workers) as executor:
             future_map = {
                 executor.submit(
@@ -216,6 +218,7 @@ class ArchitectureAnalysisAgent:
                         "search_targets": "RAG",
                         "filters": spec["filters"],
                         "top_k": 5,
+                        "collection": settings.alpled_reference_collection,
                     },
                 ): spec
                 for spec in query_specs

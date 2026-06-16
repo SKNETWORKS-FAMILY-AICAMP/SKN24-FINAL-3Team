@@ -53,7 +53,6 @@ def build_architecture_rag_queries(
                     item for item in requirement_types if item and item not in {"기능", "기능 요구사항"}
                 ]
                 or list(NON_FUNCTIONAL_TYPES),
-                "category": category,
             },
         }
         for category, query in categories
