@@ -2,6 +2,11 @@
 
 from typing import Any
 
+from agents.test_scenario.prompts import (
+    TEST_CASE_GENERATION_PROMPT,
+    compact_payload_for_ts,
+    save_raw_output,
+)
 from tools.llm.llm_client import LLMClient
 from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
@@ -24,13 +29,9 @@ def generate_test_cases(
                 "messages": [
                     {
                         "role": "system",
-                        "content": (
-                            "시나리오별 통합시험 케이스를 생성하세요. 정상 처리, 예외 처리, 권한 검증, "
-                            "입력값 검증, 승인 프로세스, 상태 변경, 인터페이스 연계, 데이터 정합성 검증을 "
-                            "고려하고 JSON으로 test_case_json_list를 반환하세요."
-                        ),
+                        "content": TEST_CASE_GENERATION_PROMPT,
                     },
-                    {"role": "user", "content": str(scenario)},
+                    {"role": "user", "content": str(compact_payload_for_ts(scenario))},
                 ]
             }
             for scenario in scenarios
@@ -47,10 +48,12 @@ def generate_test_cases(
     for scenario_index, (scenario, response) in enumerate(zip(scenarios, result["data"]), start=1):
         generated = _parse_case_list(response)
         if not generated:
+            raw_path = save_raw_output("test_case", scenario.get("scenario_id") or scenario_index, response["data"] if response else "")
             warnings.append(
                 {
                     "code": "TS_TEST_CASE_LLM_FALLBACK",
                     "message": f"시나리오 {scenario_index}의 시험 케이스를 기본값으로 대체했습니다.",
+                    "raw_output_path": raw_path,
                 }
             )
             generated = _fallback_cases_for_scenario(scenario, scenario_index)
@@ -81,7 +84,7 @@ def refine_test_cases(
                             "상태 변경 검증, 데이터 검증 존재 여부를 확인하고 JSON으로 test_case를 반환하세요."
                         ),
                     },
-                    {"role": "user", "content": str(case)},
+                    {"role": "user", "content": str(compact_payload_for_ts(case))},
                 ]
             }
             for case in cases
@@ -96,10 +99,12 @@ def refine_test_cases(
     for index, (case, response) in enumerate(zip(cases, result["data"]), start=1):
         parsed = _parse_case(response)
         if parsed is None:
+            raw_path = save_raw_output("test_case_refine", case.get("test_case_id") or index, response["data"] if response else "")
             warnings.append(
                 {
                     "code": "TS_TEST_CASE_REVIEW_FALLBACK",
                     "message": f"시험 케이스 {index} 품질 검토 결과를 기본값으로 대체했습니다.",
+                    "raw_output_path": raw_path,
                 }
             )
             parsed = case
@@ -137,9 +142,9 @@ def _parse_case_list(response: Any) -> list[dict[str, Any]]:
     if isinstance(value, dict):
         value = value.get("test_case_json_list") or value.get("test_cases") or value.get("cases")
     if isinstance(value, list):
-        return [item for item in value if isinstance(item, dict)]
+        return [_sanitize_case(item) for item in value if isinstance(item, dict)]
     if isinstance(value, dict):
-        return [value]
+        return [_sanitize_case(value)]
     return []
 
 
@@ -152,7 +157,7 @@ def _parse_case(response: Any) -> dict[str, Any] | None:
     value = parsed["data"]
     if isinstance(value, dict):
         value = value.get("test_case") or value.get("case") or value
-    return value if isinstance(value, dict) else None
+    return _sanitize_case(value) if isinstance(value, dict) else None
 
 
 def _normalize_case(
@@ -170,7 +175,20 @@ def _normalize_case(
         "case_type": str(case.get("case_type") or "NORMAL").upper(),
         "test_case_name": str(case.get("test_case_name") or case.get("name") or f"{scenario_name} 시험 케이스 {index}"),
         "source_requirement_ids": case.get("source_requirement_ids") or (scenario or {}).get("source_requirement_ids", []),
+        "test_result": None,
     }
+
+
+def _sanitize_case(case: dict[str, Any]) -> dict[str, Any]:
+    sanitized = dict(case)
+    sanitized["test_result"] = None
+    for key in ("input_data", "입력값"):
+        if key in sanitized and not isinstance(sanitized[key], str):
+            sanitized[key] = " ".join(str(item) for item in sanitized[key]) if isinstance(sanitized[key], list) else str(sanitized[key])
+    procedure = sanitized.get("test_procedure")
+    if procedure is not None and not isinstance(procedure, list):
+        sanitized["test_procedure"] = [str(procedure)]
+    return sanitized
 
 
 def _ensure_case_type_coverage(

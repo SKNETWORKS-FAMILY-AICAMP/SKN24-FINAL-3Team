@@ -2,6 +2,12 @@
 
 from typing import Any
 
+from agents.test_scenario.prompts import (
+    STEP_DETAIL_PROMPT,
+    STEP_SKELETON_PROMPT,
+    compact_payload_for_ts,
+    save_raw_output,
+)
 from tools.llm.llm_client import LLMClient
 from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
@@ -116,9 +122,9 @@ def _generate_step_skeletons(
                 "messages": [
                     {
                         "role": "system",
-                        "content": "시험케이스별 시험 절차를 생성하세요. JSON으로 step_json_list를 반환하세요.",
+                        "content": STEP_SKELETON_PROMPT,
                     },
-                    {"role": "user", "content": str(case)},
+                    {"role": "user", "content": str(compact_payload_for_ts(case))},
                 ]
             }
             for case in test_cases
@@ -133,13 +139,16 @@ def _generate_step_skeletons(
     for index, (case, response) in enumerate(zip(test_cases, result["data"]), start=1):
         generated = _parse_step_list(response)
         if not generated:
+            raw_path = save_raw_output("step", case.get("test_case_id") or index, response["data"] if response else "")
             warnings.append(
                 {
                     "code": "TS_STEP_LLM_FALLBACK",
                     "message": f"시험 케이스 {index}의 Step을 기본값으로 대체했습니다.",
+                    "raw_output_path": raw_path,
                 }
             )
             generated = [{}]
+        generated = _ensure_steps_for_procedure(generated, case)
         for step in generated:
             steps.append(_normalize_step(step, len(steps) + 1, case, []))
     return steps, warnings
@@ -158,20 +167,17 @@ def _generate_step_details(
                 "messages": [
                     {
                         "role": "system",
-                        "content": (
-                            "Step별 상세 시험 정보를 생성하세요. 시험항목, 사전조건, 입력값, 예상결과, 화면ID를 "
-                            "reference_interface_json_list를 활용하여 채우고 JSON으로 step_detail_json을 반환하세요."
-                        ),
+                        "content": STEP_DETAIL_PROMPT,
                     },
                     {
                         "role": "user",
-                        "content": str(
+                        "content": str(compact_payload_for_ts(
                             {
                                 "step": step,
                                 "test_case": case_by_id.get(step.get("test_case_id")),
                                 "reference_interface_json_list": interfaces,
                             }
-                        ),
+                        )),
                     },
                 ]
             }
@@ -190,10 +196,12 @@ def _generate_step_details(
     for index, (step, response) in enumerate(zip(steps, result["data"]), start=1):
         parsed = _parse_step(response)
         if parsed is None:
+            raw_path = save_raw_output("step_detail", step.get("step_id") or index, response["data"] if response else "")
             warnings.append(
                 {
                     "code": "TS_STEP_DETAIL_FALLBACK",
                     "message": f"Step {index} 상세 정보를 기본값으로 대체했습니다.",
+                    "raw_output_path": raw_path,
                 }
             )
             parsed = step
@@ -224,15 +232,38 @@ def _parse_step_list(response: Any) -> list[dict[str, Any]]:
     if isinstance(value, dict):
         value = value.get("step_json_list") or value.get("steps") or value.get("step_detail_json") or value.get("step")
     if isinstance(value, list):
-        return [item for item in value if isinstance(item, dict)]
+        return [_sanitize_step(item) for item in value if isinstance(item, dict)]
     if isinstance(value, dict):
-        return [value]
+        return [_sanitize_step(value)]
     return []
 
 
 def _parse_step(response: Any) -> dict[str, Any] | None:
     steps = _parse_step_list(response)
     return steps[0] if steps else None
+
+
+def _ensure_steps_for_procedure(steps: list[dict[str, Any]], case: dict[str, Any]) -> list[dict[str, Any]]:
+    procedures = case.get("test_procedure")
+    if not isinstance(procedures, list) or not procedures:
+        return steps
+
+    normalized = list(steps)
+    by_no = {
+        int(step.get("step_no") or index): step
+        for index, step in enumerate(normalized, start=1)
+        if isinstance(step, dict)
+    }
+    filled = []
+    for index, procedure in enumerate(procedures, start=1):
+        step = dict(by_no.get(index) or {})
+        step.setdefault("step_no", index)
+        step.setdefault("처리내용", str(procedure))
+        step.setdefault("process", str(procedure))
+        step.setdefault("test_case_id", case.get("test_case_id"))
+        step.setdefault("test_result", None)
+        filled.append(step)
+    return filled
 
 
 def _normalize_step(
@@ -273,4 +304,14 @@ def _normalize_step(
         "예상결과": expected_result,
         "화면ID": screen_id,
         "screen_id": screen_id,
+        "test_result": None,
     }
+
+
+def _sanitize_step(step: dict[str, Any]) -> dict[str, Any]:
+    sanitized = dict(step)
+    sanitized["test_result"] = None
+    for key in ("입력값", "input", "input_value", "input_data"):
+        if key in sanitized and not isinstance(sanitized[key], str):
+            sanitized[key] = " ".join(str(item) for item in sanitized[key]) if isinstance(sanitized[key], list) else str(sanitized[key])
+    return sanitized

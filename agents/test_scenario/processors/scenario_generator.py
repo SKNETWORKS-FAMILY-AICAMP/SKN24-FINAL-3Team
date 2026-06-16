@@ -3,6 +3,11 @@
 from copy import deepcopy
 from typing import Any
 
+from agents.test_scenario.prompts import (
+    SCENARIO_GENERATION_PROMPT,
+    compact_payload_for_ts,
+    save_raw_output,
+)
 from tools.llm.llm_client import LLMClient
 from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
@@ -30,8 +35,9 @@ def generate_scenarios(
     scenarios, warnings = _parallel_or_fallback(
         requirements,
         llm_client,
-        "요구사항별 업무 시험 시나리오를 JSON으로 생성하세요.",
+        SCENARIO_GENERATION_PROMPT,
         _fallback_scenario,
+        "scenario",
         "scenario",
     )
     return [_normalize_scenario(item, index) for index, item in enumerate(scenarios)], warnings
@@ -48,6 +54,7 @@ def refine_scenarios(
         "시나리오 ID, 명칭, 누락 Step, 중복 Step, 요구사항 반영 여부를 검토하고 정제하세요.",
         _fallback_scenario,
         "scenario",
+        "scenario_refine",
     )
     return [_normalize_scenario(item, index) for index, item in enumerate(refined)], warnings
 
@@ -97,11 +104,11 @@ def apply_scenario_rules(
     return fallback, [{"code": "TS_SCENARIO_RULE_FALLBACK", "message": "시나리오 작성 규칙 적용 결과를 기본값으로 대체했습니다."}]
 
 
-def _parallel_or_fallback(items, llm_client, instruction, fallback, output_key):
+def _parallel_or_fallback(items, llm_client, instruction, fallback, output_key, stage):
     if llm_client is None:
         return [fallback(item, index) for index, item in enumerate(items)], []
     requests = [
-        {"messages": [{"role": "system", "content": instruction}, {"role": "user", "content": str(item)}]}
+        {"messages": [{"role": "system", "content": instruction}, {"role": "user", "content": str(compact_payload_for_ts(item))}]}
         for item in items
     ]
     result = send_parallel(requests, client=llm_client)
@@ -115,7 +122,12 @@ def _parallel_or_fallback(items, llm_client, instruction, fallback, output_key):
                 value = value.get(output_key, value)
             output.append(value if isinstance(value, dict) else fallback(item, index))
             if not isinstance(value, dict):
-                warnings.append({"code": "TS_SCENARIO_LLM_FALLBACK", "message": f"시나리오 {index + 1}을 기본값으로 대체했습니다."})
+                raw_path = save_raw_output(stage, _requirement_id(item, index), response["data"] if response else "")
+                warnings.append({
+                    "code": "TS_SCENARIO_LLM_FALLBACK",
+                    "message": f"시나리오 {index + 1}을 기본값으로 대체했습니다.",
+                    "raw_output_path": raw_path,
+                })
         return output, warnings
     return [fallback(item, index) for index, item in enumerate(items)], [{"code": "TS_SCENARIO_LLM_FAILED", "message": result["error"]["message"]}]
 
@@ -125,7 +137,7 @@ def _fallback_scenario(item: dict[str, Any], index: int) -> dict[str, Any]:
 
 
 def _normalize_scenario(item: dict[str, Any], index: int) -> dict[str, Any]:
-    requirement_id = str(item.get("req_id") or item.get("requirement_id") or item.get("source_requirement_id") or f"REQ-{index + 1:03d}")
+    requirement_id = _requirement_id(item, index)
     name = str(item.get("scenario_name") or item.get("req_name") or item.get("requirement_name") or item.get("name") or f"업무 시나리오 {index + 1}")
     return {
         **item,
@@ -134,3 +146,7 @@ def _normalize_scenario(item: dict[str, Any], index: int) -> dict[str, Any]:
         "source_requirement_ids": item.get("source_requirement_ids") or [requirement_id],
         "description": item.get("description") or item.get("detail_text") or f"{name} 기능을 검증합니다.",
     }
+
+
+def _requirement_id(item: dict[str, Any], index: int) -> str:
+    return str(item.get("req_id") or item.get("requirement_id") or item.get("source_requirement_id") or f"REQ-{index + 1:03d}")

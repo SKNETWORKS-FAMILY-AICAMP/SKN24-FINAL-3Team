@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from agents.test_scenario.prompts import compact_requirement_for_ts
 from agents.test_scenario.processors import (
     apply_scenario_rules,
     build_step_detail_list,
@@ -47,12 +48,23 @@ class TestScenarioGenerationAgent:
         if not functional:
             return self._failed("TS_FUNCTION_REQUIREMENT_MISSING", "기능 요구사항이 없습니다.")
 
-        scenarios, warnings = generate_scenarios(functional, llm_client=self.llm_client)
+        compacted_functional = [compact_requirement_for_ts(item) for item in functional]
+        scenarios, warnings = generate_scenarios(compacted_functional, llm_client=self.llm_client)
         cases, case_warnings = generate_test_cases(scenarios, llm_client=self.llm_client)
         steps, step_warnings = generate_steps_with_llm(cases, interfaces, llm_client=self.llm_client)
         warnings.extend(case_warnings)
         warnings.extend(step_warnings)
-        return self._success(state, scenarios, cases, steps, warnings, {"functional_requirements": functional})
+        return self._success(
+            state,
+            scenarios,
+            cases,
+            steps,
+            warnings,
+            {
+                "functional_requirements": functional,
+                "compacted_functional_requirements": compacted_functional,
+            },
+        )
 
     def _update(self, document_merge: dict[str, Any], state: WorkflowState) -> dict[str, Any]:
         artifacts = document_merge.get("integrated_artifact_json_list")
