@@ -1,5 +1,5 @@
 .env
 __pycache__/
 qdrant_storage/
-storage/output/
+storage/
 requests/generate_srs.http
