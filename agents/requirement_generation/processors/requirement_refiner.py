@@ -71,6 +71,70 @@ def build_final_requirement(
     }
 
 
+def normalize_task3_requirement(item: dict[str, Any]) -> dict[str, Any]:
+    """Task3 최종 항목을 사용자 요구사항 정의서의 표준 필드로 변환합니다."""
+
+    requirement_id = str(
+        item.get("requirement_id")
+        or item.get("gold_id")
+        or item.get("req_id")
+        or ""
+    )
+    requirement_name = str(
+        item.get("requirement_name")
+        or item.get("req_name")
+        or ""
+    )
+    description = str(
+        item.get("requirement_detail")
+        or item.get("description")
+        or item.get("detail_text")
+        or ""
+    )
+    source = item.get("sources") or item.get("source") or item.get("source_req_ids") or []
+    if not isinstance(source, list):
+        source = [source]
+    constraints = item.get("constraints") or []
+    if not isinstance(constraints, list):
+        constraints = [str(constraints)]
+    validation_criteria = item.get("validation_criteria") or []
+    if not isinstance(validation_criteria, list):
+        validation_criteria = [str(validation_criteria)]
+
+    return {
+        "requirement_id": requirement_id,
+        "requirement_name": requirement_name,
+        "requirement_type": str(item.get("requirement_type") or "기능"),
+        "action_type": str(item.get("action_type") or ""),
+        "description": description,
+        "source": [str(value) for value in source if value],
+        "constraints": [str(value) for value in constraints if value],
+        "priority": item.get("priority", "미지정"),
+        "validation_criteria": [str(value) for value in validation_criteria if value],
+        "note": item.get("merge_basis") or item.get("note"),
+        "processing_type": item.get("processing_type"),
+        "req_id": requirement_id,
+        "req_name": requirement_name,
+        "detail_text": description,
+        "source_req_ids": [str(value) for value in source if value],
+    }
+
+
+def normalize_task3_output(value: Any) -> Any:
+    """Task3 문서 래퍼 또는 항목 목록만 표준 요구사항 목록으로 변환합니다."""
+
+    items = value.get("final_requirements") if isinstance(value, dict) else value
+    if not isinstance(items, list):
+        return value
+    if not any(isinstance(item, dict) and item.get("gold_id") for item in items):
+        return items
+    return [
+        normalize_task3_requirement(item)
+        for item in items
+        if isinstance(item, dict)
+    ]
+
+
 def refine_requirements_parallel(
     split_items: list[dict[str, Any]],
     rag_results_by_item: list[list[dict[str, Any]]],
@@ -134,6 +198,9 @@ def refine_requirements_parallel(
 
 
 def _normalize_final_requirement(item: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+    if item.get("gold_id") or item.get("sources") or item.get("merge_basis"):
+        return normalize_task3_requirement(item)
+
     merged = {**fallback, **item}
     source = merged.get("source") or merged.get("source_req_ids") or fallback.get("source", [])
     if not isinstance(source, list):

@@ -5,6 +5,8 @@ from agents.requirement_generation.processors.rag_query_builder import (
 from agents.requirement_generation.processors.requirement_refiner import (
     build_final_requirement,
     extract_constraints,
+    normalize_task3_output,
+    normalize_task3_requirement,
     refine_requirements_parallel,
 )
 from agents.requirement_generation.processors.splitter import (
@@ -21,6 +23,8 @@ __all__ = [
     "build_rag_query",
     "extract_constraints",
     "filter_function_requirements",
+    "normalize_task3_requirement",
+    "normalize_task3_output",
     "refine_requirements_parallel",
     "split_function_requirements",
 ]

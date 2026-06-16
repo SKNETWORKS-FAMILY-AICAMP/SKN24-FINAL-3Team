@@ -26,6 +26,38 @@ import tools.mermaid.mermaid_renderer as mermaid_renderer
 
 
 class CommonToolsTest(unittest.TestCase):
+    def test_srs_template_maps_task3_fields_to_cbd_columns(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            output_path = Path(root) / "task3-srs.docx"
+            result = export_docx(
+                {
+                    "docs_cd": "SRS",
+                    "content": {
+                        "requirement_json_list": [
+                            {
+                                "gold_id": "GOLD-001",
+                                "action_type": "산출",
+                                "requirement_name": "CXL 메모리 프레임워크",
+                                "requirement_detail": "CXL 메모리 프레임워크를 설계한다.",
+                                "sources": ["SFR-001", "SFR-003"],
+                                "merge_basis": "중복 기능을 통합함.",
+                            }
+                        ]
+                    },
+                    "image_paths": [],
+                },
+                str(output_path),
+                template_path="templates/srs_template.docx",
+            )
+
+            self.assertTrue(result["success"])
+            row = Document(output_path).tables[1].rows[1]
+            self.assertEqual(row.cells[0].text, "GOLD-001")
+            self.assertEqual(row.cells[2].text, "산출")
+            self.assertEqual(row.cells[3].text, "CXL 메모리 프레임워크를 설계한다.")
+            self.assertEqual(row.cells[4].text, "SFR-001\nSFR-003")
+            self.assertEqual(row.cells[7].text, "중복 기능을 통합함.")
+
     def test_search_router_normalizes_rag_web_both_and_none(self) -> None:
         class FakeQdrant:
             def query_points(self, **kwargs):

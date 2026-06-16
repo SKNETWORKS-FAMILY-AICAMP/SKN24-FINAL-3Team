@@ -45,6 +45,7 @@ def artifact_items(data: Any) -> list[Any]:
         "requirements",
         "requirement_json_list",
         "final_requirement_json_list",
+        "final_requirements",
         "integrated_requirement_json_list",
         "integrated_artifact_json_list",
         "interface_json_list",
