@@ -2,7 +2,7 @@ from django.contrib import messages
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Q
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -94,13 +94,6 @@ def _demo_users():
         }
         for index in range(1, 11)
     ]
-
-
-def _next_sn(model):
-    current_max = model.objects.aggregate(max_sn=Max("sn"))["max_sn"] or 0
-    return current_max + 1
-
-
 def _get_actor():
     return User.objects.filter(user_id="admin").first() or User.objects.order_by("sn").first()
 
@@ -199,7 +192,6 @@ def _create_user(request):
 
     actor = _get_actor()
     User.objects.create_user(
-        sn=_next_sn(User),
         user_id=form_data["user_id"],
         password=TEMP_PASSWORD,
         name=form_data["name"],
@@ -230,7 +222,7 @@ def _reset_user_password(request):
     target_user.set_password(TEMP_PASSWORD)
     target_user.tmpr_pswd_yn = YesNoChoices.YES
     target_user.updated_by = request.user
-    target_user.save(update_fields=["password", "tmpr_pswd_yn", "updated_by", "updated_at"])
+    target_user.save(update_fields=["password", "tmpr_pswd_yn", "updated_by"])
 
     if target_user.sn == request.user.sn:
         update_session_auth_hash(request, target_user)

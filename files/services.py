@@ -1,6 +1,11 @@
+import mimetypes
+from pathlib import Path
+from uuid import uuid4
+
 from django.db.models import Q
 
 from common.models import Code
+from common.storage import build_s3_uri, delete_object_at_uri, read_bytes_from_uri, save_bytes
 
 
 FILE_TYPE_SEQUENCE = ("FILE_RFP", "FILE_MEETING")
@@ -71,3 +76,29 @@ def build_project_file_rows(queryset):
             }
         )
     return rows
+
+
+def build_project_file_storage_key(project, filename):
+    safe_name = Path(filename or "file").name
+    return f"project-files/{project.sn}/{uuid4().hex}-{safe_name}"
+
+
+def guess_file_content_type(filename):
+    return mimetypes.guess_type(filename or "")[0] or "application/octet-stream"
+
+
+def save_project_file_bytes(project, filename, content_bytes):
+    storage_key = build_project_file_storage_key(project, filename)
+    save_bytes(storage_key, content_bytes, content_type=guess_file_content_type(filename))
+    return build_s3_uri(storage_key)
+
+
+def get_project_file_bytes(project_file):
+    return read_bytes_from_uri(project_file.path)
+
+
+def delete_project_file_bytes(project_file):
+    storage_path = str(getattr(project_file, "path", "") or "").strip()
+    if not storage_path:
+        return
+    delete_object_at_uri(storage_path)

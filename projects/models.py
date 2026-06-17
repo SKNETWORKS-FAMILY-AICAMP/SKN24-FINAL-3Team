@@ -4,7 +4,6 @@ from django.db import models
 from common.models import (
     CreatedAtMixin,
     CreatedByMixin,
-    ProjectFile as SharedProjectFile,
     SoftDeleteMixin,
     UpdatedAtMixin,
     UpdatedByMixin,
@@ -13,7 +12,7 @@ from common.models import (
 
 
 class Project(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin, SoftDeleteMixin):
-    sn = models.IntegerField(primary_key=True, db_column="prj_sn")
+    sn = models.AutoField(primary_key=True, db_column="prj_sn")
     name = models.CharField(max_length=200, db_column="prj_nm")
 
     class Meta:
@@ -26,7 +25,7 @@ class Project(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin, So
 
 
 class ProjectNet(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin):
-    sn = models.IntegerField(primary_key=True, db_column="prj_net_sn")
+    sn = models.AutoField(primary_key=True, db_column="prj_net_sn")
     project = models.ForeignKey(
         Project,
         on_delete=models.PROTECT,
@@ -94,7 +93,7 @@ class ProjectNet(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin)
 
 
 class ProjectUserRole(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin):
-    sn = models.IntegerField(primary_key=True, db_column="prj_user_role_sn")
+    sn = models.AutoField(primary_key=True, db_column="prj_user_role_sn")
     project = models.ForeignKey(
         Project,
         on_delete=models.PROTECT,
@@ -125,6 +124,3 @@ class ProjectUserRole(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByM
 
     def __str__(self) -> str:
         return f"{self.project} / {self.user} / {self.role}"
-
-
-ProjectFile = SharedProjectFile

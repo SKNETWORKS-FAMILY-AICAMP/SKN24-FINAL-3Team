@@ -11,7 +11,7 @@ from common.models import (
 
 
 class Document(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin):
-    sn = models.IntegerField(primary_key=True, db_column="docs_sn")
+    sn = models.AutoField(primary_key=True, db_column="docs_sn")
     project = models.ForeignKey(
         "projects.Project",
         on_delete=models.PROTECT,
@@ -19,11 +19,11 @@ class Document(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin):
         related_name="documents",
         db_constraint=False,
     )
-    user = models.ForeignKey(
+    possession_user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
-        db_column="user_sn",
-        related_name="documents",
+        db_column="pssn_user_sn",
+        related_name="occupied_documents",
         db_constraint=False,
         null=True,
         blank=True,
@@ -35,6 +35,15 @@ class Document(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin):
         db_column="docs_cd",
         related_name="documents",
         db_constraint=False,
+    )
+    progress_status = models.ForeignKey(
+        "common.Code",
+        to_field="code",
+        on_delete=models.PROTECT,
+        db_column="docs_prgrs_stts_cd",
+        related_name="documents_by_progress",
+        db_constraint=False,
+        default="PRGRS_PENDING",
     )
     version = models.CharField(max_length=20, db_column="docs_ver")
     modification_content = models.CharField(max_length=100, db_column="mdfcn_cn")
@@ -49,7 +58,7 @@ class Document(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin):
 
 
 class DocumentDetail(CreatedAtMixin, CreatedByMixin, SoftDeleteMixin):
-    sn = models.IntegerField(primary_key=True, db_column="docs_dtl_sn")
+    sn = models.AutoField(primary_key=True, db_column="docs_dtl_sn")
     document = models.ForeignKey(
         Document,
         on_delete=models.PROTECT,
@@ -57,7 +66,8 @@ class DocumentDetail(CreatedAtMixin, CreatedByMixin, SoftDeleteMixin):
         related_name="details",
         db_constraint=False,
     )
-    content = models.BinaryField(null=True, blank=True, db_column="docs_dtl_cn")
+    detail_content = models.BinaryField(db_column="docs_dtl_cn", null=True, blank=True)
+    path = models.CharField(max_length=300, db_column="docs_path")
 
     class Meta:
         db_table = "tbl_docs_detail"
@@ -69,7 +79,7 @@ class DocumentDetail(CreatedAtMixin, CreatedByMixin, SoftDeleteMixin):
 
 
 class DocumentApproval(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin):
-    sn = models.IntegerField(primary_key=True, db_column="docsaprv_sn")
+    approval_sn = models.AutoField(primary_key=True, db_column="docs_aprv_sn")
     detail = models.ForeignKey(
         DocumentDetail,
         on_delete=models.PROTECT,
@@ -100,3 +110,7 @@ class DocumentApproval(CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedBy
 
     def __str__(self) -> str:
         return f"{self.detail} / {self.approval_status}"
+
+    @property
+    def sn(self):
+        return self.approval_sn

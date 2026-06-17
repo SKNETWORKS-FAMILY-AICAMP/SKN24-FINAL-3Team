@@ -3,7 +3,6 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.db import connection
 from django.db.backends.signals import connection_created
-from django.db.models import Max
 from django.db.models.signals import post_migrate
 from django.dispatch import receiver
 
@@ -32,37 +31,61 @@ SEED_CODES = [
     ("APRV_COM", "승인 완료", "산출물 승인 완료 상태"),
     ("APRV_RJT", "반려", "산출물 승인 반려 상태"),
 ]
-
-
-def _next_sn(model):
-    current_max = model.objects.aggregate(max_sn=Max("sn"))["max_sn"] or 0
-    return current_max + 1
-
-
 def _ensure_admin_user():
     try:
         User = get_user_model()
-        admin_defaults = {
-            "sn": _next_sn(User),
-            "name": "관리자",
-            "department": "시스템",
-            "position": "관리자",
-            "sys_mngr_yn": "Y",
-            "tmpr_pswd_yn": "N",
-            "use_yn": "Y",
-        }
-        admin, created = User.objects.get_or_create(user_id="admin", defaults=admin_defaults)
-        if created and admin.sn is None:
-            admin.sn = admin_defaults["sn"]
+        admin = User.objects.filter(user_id="admin").first()
+        created = False
+        if admin is None:
+            next_sn = (User.objects.order_by("-sn").values_list("sn", flat=True).first() or 0) + 1
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO tbl_user (
+                        user_sn,
+                        user_id,
+                        user_pswd,
+                        user_nm,
+                        dept_nm,
+                        jbgd_nm,
+                        sys_mngr_yn,
+                        tmpr_pswd_yn,
+                        use_yn,
+                        crt_dt,
+                        creatr_sn,
+                        mdfcn_dt,
+                        mdfr_sn
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        CURRENT_TIMESTAMP, %s, CURRENT_TIMESTAMP, %s
+                    )
+                    """,
+                    [
+                        next_sn,
+                        "admin",
+                        make_password("abc1234"),
+                        "관리자",
+                        "시스템",
+                        "관리자",
+                        "Y",
+                        "N",
+                        "Y",
+                        next_sn,
+                        next_sn,
+                    ],
+                )
+            admin = User.objects.get(sn=next_sn)
+            created = True
 
         admin.name = "관리자"
         admin.department = "시스템"
         admin.position = "관리자"
         admin.sys_mngr_yn = "Y"
         admin.use_yn = "Y"
+        admin.created_by = admin
+        admin.updated_by = admin
         if created:
             admin.tmpr_pswd_yn = "N"
-            admin.password = make_password("abc1234")
         admin.save()
         return admin
     except Exception:

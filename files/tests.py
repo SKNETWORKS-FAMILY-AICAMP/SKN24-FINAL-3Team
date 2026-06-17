@@ -1,10 +1,16 @@
+import shutil
+from pathlib import Path
+
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 
-from common.models import Code, ProjectFile, YesNoChoices
+from common.models import Code, YesNoChoices
+from common.storage import build_s3_uri, save_bytes
 from projects.models import Project, ProjectUserRole
 from users.models import User
+
+from .models import ProjectFile
 
 
 class FileListViewTests(TestCase):
@@ -59,6 +65,11 @@ class FileListViewTests(TestCase):
 
         self.project = self._create_project(1, "First Project")
         self._grant_project_role(1, self.project, self.role_manager)
+        self.temp_dir = Path.cwd() / ".tmp-test-storage" / self._testMethodName
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def _create_project(self, sn, name, is_deleted=YesNoChoices.NO):
         return Project.objects.create(
@@ -79,33 +90,50 @@ class FileListViewTests(TestCase):
             updated_by=self.user,
         )
 
-    def test_upload_files_creates_project_files(self):
-        response = self.client.post(
-            reverse("file_list"),
-            {
-                "action": "upload",
-                "project_sn": self.project.sn,
-                "rfp_files": [
-                    SimpleUploadedFile(
-                        "proposal.pdf",
-                        b"rfp-content",
-                        content_type="application/pdf",
-                    )
-                ],
-                "meeting_files": [
-                    SimpleUploadedFile(
-                        "meeting.docx",
-                        b"meeting-content",
-                        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    )
-                ],
-            },
+    def _create_stored_project_file(self, sn, name, content_bytes, *, file_type=None):
+        storage_key = f"project-files/{self.project.sn}/{sn}-{name}"
+        save_bytes(storage_key, content_bytes)
+        return ProjectFile.objects.create(
+            sn=sn,
+            project=self.project,
+            file_type=file_type or self.rfp_code,
+            name=name,
+            path=build_s3_uri(storage_key),
+            size=len(content_bytes),
+            extension=name.split(".")[-1][:4],
+            created_by=self.user,
+            updated_by=self.user,
         )
+
+    def test_upload_files_creates_project_files(self):
+        with self.settings(ALPLED_LOCAL_STORAGE_ROOT=self.temp_dir):
+            response = self.client.post(
+                reverse("file_list"),
+                {
+                    "action": "upload",
+                    "project_sn": self.project.sn,
+                    "rfp_files": [
+                        SimpleUploadedFile(
+                            "proposal.pdf",
+                            b"rfp-content",
+                            content_type="application/pdf",
+                        )
+                    ],
+                    "meeting_files": [
+                        SimpleUploadedFile(
+                            "meeting.docx",
+                            b"meeting-content",
+                            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        )
+                    ],
+                },
+            )
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(ProjectFile.objects.count(), 2)
         self.assertTrue(ProjectFile.objects.filter(file_type=self.rfp_code).exists())
         self.assertTrue(ProjectFile.objects.filter(file_type=self.meeting_code).exists())
+        self.assertTrue(ProjectFile.objects.filter(path__startswith="s3://").exists())
 
     def test_search_filters_files_by_type_and_name(self):
         ProjectFile.objects.create(
@@ -113,8 +141,7 @@ class FileListViewTests(TestCase):
             project=self.project,
             file_type=self.rfp_code,
             name="RFP_20260520.pdf",
-            path="RFP_20260520.pdf",
-            content=b"rfp",
+            path=build_s3_uri(f"project-files/{self.project.sn}/1-RFP_20260520.pdf"),
             size=3,
             extension="pdf",
             created_by=self.user,
@@ -125,8 +152,7 @@ class FileListViewTests(TestCase):
             project=self.project,
             file_type=self.meeting_code,
             name="meeting_20260520.docx",
-            path="meeting_20260520.docx",
-            content=b"meeting",
+            path=build_s3_uri(f"project-files/{self.project.sn}/2-meeting_20260520.docx"),
             size=7,
             extension="docx",
             created_by=self.user,
@@ -148,20 +174,76 @@ class FileListViewTests(TestCase):
         self.assertEqual(documents[0]["name"], "RFP_20260520.pdf")
 
     def test_delete_and_download_selected_files(self):
+        with self.settings(ALPLED_LOCAL_STORAGE_ROOT=self.temp_dir):
+            project_file = self._create_stored_project_file(1, "proposal.pdf", b"download-me")
+
+            download_response = self.client.post(
+                reverse("file_list"),
+                {
+                    "action": "download",
+                    "project_sn": self.project.sn,
+                    "selected_files": [project_file.sn],
+                },
+            )
+            self.assertEqual(download_response.status_code, 200)
+            self.assertIn("attachment;", download_response["Content-Disposition"])
+            self.assertEqual(download_response.content, b"download-me")
+
+            delete_response = self.client.post(
+                reverse("file_list"),
+                {
+                    "action": "delete",
+                    "project_sn": self.project.sn,
+                    "selected_files": [project_file.sn],
+                },
+            )
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertFalse(ProjectFile.objects.filter(sn=project_file.sn).exists())
+
+    def test_download_reads_uploaded_file_from_s3_uri_path(self):
+        with self.settings(ALPLED_LOCAL_STORAGE_ROOT=self.temp_dir):
+            self.client.post(
+                reverse("file_list"),
+                {
+                    "action": "upload",
+                    "project_sn": self.project.sn,
+                    "rfp_files": [
+                        SimpleUploadedFile(
+                            "proposal.pdf",
+                            b"stored-download",
+                            content_type="application/pdf",
+                        )
+                    ],
+                },
+            )
+
+            project_file = ProjectFile.objects.get()
+            response = self.client.post(
+                reverse("file_list"),
+                {
+                    "action": "download",
+                    "project_sn": self.project.sn,
+                    "selected_files": [project_file.sn],
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"stored-download")
+
+    def test_download_rejects_legacy_non_s3_path(self):
         project_file = ProjectFile.objects.create(
             sn=1,
             project=self.project,
             file_type=self.rfp_code,
             name="proposal.pdf",
             path="proposal.pdf",
-            content=b"download-me",
             size=11,
             extension="pdf",
             created_by=self.user,
             updated_by=self.user,
         )
 
-        download_response = self.client.post(
+        response = self.client.post(
             reverse("file_list"),
             {
                 "action": "download",
@@ -169,20 +251,8 @@ class FileListViewTests(TestCase):
                 "selected_files": [project_file.sn],
             },
         )
-        self.assertEqual(download_response.status_code, 200)
-        self.assertIn("attachment;", download_response["Content-Disposition"])
-        self.assertEqual(download_response.content, b"download-me")
 
-        delete_response = self.client.post(
-            reverse("file_list"),
-            {
-                "action": "delete",
-                "project_sn": self.project.sn,
-                "selected_files": [project_file.sn],
-            },
-        )
-        self.assertEqual(delete_response.status_code, 302)
-        self.assertFalse(ProjectFile.objects.filter(sn=project_file.sn).exists())
+        self.assertEqual(response.status_code, 302)
 
     def test_sidebar_lists_only_accessible_non_deleted_projects(self):
         member_project = self._create_project(2, "Member Project")

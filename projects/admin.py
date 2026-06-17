@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Project, ProjectFile, ProjectNet, ProjectUserRole
+from .models import Project, ProjectNet, ProjectUserRole
 
 
 @admin.register(Project)
@@ -21,9 +21,3 @@ class ProjectNetAdmin(admin.ModelAdmin):
 class ProjectUserRoleAdmin(admin.ModelAdmin):
     list_display = ("sn", "project", "user", "role", "created_at", "updated_at")
     search_fields = ("project__name", "user__user_id", "role__code")
-
-
-@admin.register(ProjectFile)
-class ProjectFileAdmin(admin.ModelAdmin):
-    list_display = ("sn", "project", "name", "file_type", "size", "created_at", "updated_at")
-    search_fields = ("name", "project__name", "file_type__code")

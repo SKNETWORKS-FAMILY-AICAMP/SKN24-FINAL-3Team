@@ -50,6 +50,7 @@ from .services import (
     get_approval_status_choices,
     get_current_generation_code,
     get_detail_by_sn,
+    get_document_detail_bytes,
     get_document_label,
     get_document_history_queryset,
     get_document_title,
@@ -91,7 +92,7 @@ def _get_document_or_404(project, document_sn):
         "document_type",
         "created_by",
         "updated_by",
-        "user",
+        "possession_user",
     )
     if project is not None:
         queryset = queryset.filter(project=project)
@@ -105,7 +106,7 @@ def _get_document_by_sn_or_404(document_sn):
             "document_type",
             "created_by",
             "updated_by",
-            "user",
+            "possession_user",
         ),
         sn=document_sn,
     )
@@ -134,7 +135,7 @@ def _document_detail_redirect(document, **query):
 
 
 def _approval_detail_redirect(approval, **query):
-    base_url = reverse("doc_approval_detail", args=[approval.sn])
+    base_url = reverse("doc_approval_detail", args=[approval.approval_sn])
     if not query:
         return base_url
     return f"{base_url}?{urlencode(query)}"
@@ -142,6 +143,10 @@ def _approval_detail_redirect(approval, **query):
 
 def _is_ajax_request(request):
     return request.headers.get("X-Requested-With") == "XMLHttpRequest"
+
+
+def _legacy_detail_error_message():
+    return "This document revision is missing docs_path. Ask an administrator to migrate legacy rows."
 
 
 def _build_history_help_text(can_generate):
@@ -476,11 +481,22 @@ def document_detail(request, document_sn):
     preferred_mode = "edit" if request.GET.get("mode") == "edit" else "view"
     state, pending_approval = get_document_view_state(document, actor, preferred_mode=preferred_mode)
     latest_detail = get_latest_detail(document)
-    latest_text = extract_text_from_docx(latest_detail.content if latest_detail else None)
+    try:
+        latest_text = extract_text_from_docx(get_document_detail_bytes(latest_detail))
+    except ValueError:
+        messages.error(request, _legacy_detail_error_message())
+        return redirect(f"{reverse('doc_history_list')}?docs_cd={document.document_type_id}")
 
     preview_detail_sn = request.GET.get("preview_detail")
     preview_detail = get_detail_by_sn(document, preview_detail_sn) if preview_detail_sn else None
-    preview_text = extract_text_from_docx(preview_detail.content) if preview_detail else latest_text
+    if preview_detail:
+        try:
+            preview_text = extract_text_from_docx(get_document_detail_bytes(preview_detail))
+        except ValueError:
+            messages.error(request, _legacy_detail_error_message())
+            return redirect(reverse("doc_detail", args=[document.sn]))
+    else:
+        preview_text = latest_text
 
     meeting_files = get_project_files(current_project, allowed_types=("FILE_MEETING",))
     meeting_filter_params = _collect_prefixed_filters(request, "meeting_")
@@ -540,7 +556,7 @@ def document_detail(request, document_sn):
             pending_approval=pending_approval,
             is_generation_draft=is_generation_draft,
         ),
-        "locked_by_name": getattr(document.user, "name", ""),
+        "locked_by_name": getattr(document.possession_user, "name", ""),
         "meeting_documents": build_project_file_rows(meeting_files),
         "meeting_file_type": meeting_file_type,
         "meeting_search_field": meeting_search_field,
@@ -588,7 +604,7 @@ def document_save(request, document_sn):
         if is_ajax:
             return JsonResponse({"message": "잘못된 요청입니다."}, status=405)
         return redirect(reverse("doc_detail", args=[document.sn]))
-    if document.user_id != actor.sn:
+    if document.possession_user_id != actor.sn:
         if is_ajax:
             return JsonResponse({"message": "문서를 점유한 사용자만 저장할 수 있습니다."}, status=403)
         messages.error(request, "문서를 점유한 사용자만 저장할 수 있습니다.")
@@ -597,6 +613,15 @@ def document_save(request, document_sn):
     latest_detail = get_latest_detail(document)
     text_content = request.POST.get("content_text", "").strip()
     saved_detail = latest_detail
+    if not text_content and latest_detail is not None:
+        try:
+            get_document_detail_bytes(latest_detail)
+        except ValueError:
+            message = _legacy_detail_error_message()
+            if is_ajax:
+                return JsonResponse({"message": message}, status=409)
+            messages.error(request, message)
+            return redirect(build_document_detail_url(document, mode="edit"))
     if text_content:
         saved_detail = save_revision(document, actor, text_content=text_content, modification_content="수정 저장")
     elif settings.ONLYOFFICE_DOCUMENT_SERVER_URL:
@@ -664,7 +689,7 @@ def document_cancel_edit(request, document_sn):
     actor = get_actor(request)
     document = _get_document_or_404(current_project, document_sn)
     _ensure_document_access(current_project, actor, document)
-    if request.method == "POST" and document.user_id == actor.sn:
+    if request.method == "POST" and document.possession_user_id == actor.sn:
         release_document_lock(document, actor)
         messages.info(request, "문서 편집을 종료했습니다.")
     return redirect(reverse("doc_detail", args=[document.sn]))
@@ -682,7 +707,11 @@ def document_confirm(request, document_sn):
         messages.error(request, "문서를 확정할 권한이 없습니다.")
         return redirect(reverse("doc_detail", args=[document.sn]))
 
-    confirmed_document, _ = confirm_document(document, actor)
+    try:
+        confirmed_document, _ = confirm_document(document, actor)
+    except ValueError:
+        messages.error(request, _legacy_detail_error_message())
+        return redirect(reverse("doc_detail", args=[document.sn]))
     generation_state = get_generation_state(request.session, current_project)
     if generation_state.get("draft_documents", {}).get(document.document_type_id) == document.sn:
         mark_generation_confirmed(generation_state, document, confirmed_document)
@@ -707,7 +736,7 @@ def document_restore_revision(request, document_sn, detail_sn):
     _ensure_document_access(current_project, actor, document)
     if request.method != "POST":
         return redirect(reverse("doc_detail", args=[document.sn]))
-    if document.user_id != actor.sn:
+    if document.possession_user_id != actor.sn:
         messages.error(request, "문서를 점유한 사용자만 복원할 수 있습니다.")
         return redirect(reverse("doc_detail", args=[document.sn]))
 
@@ -716,7 +745,11 @@ def document_restore_revision(request, document_sn, detail_sn):
         messages.error(request, "복원할 이력을 찾을 수 없습니다.")
         return redirect(reverse("doc_detail", args=[document.sn]))
 
-    restore_revision(document, actor, source_detail)
+    try:
+        restore_revision(document, actor, source_detail)
+    except ValueError:
+        messages.error(request, _legacy_detail_error_message())
+        return redirect(reverse("doc_detail", args=[document.sn]))
     messages.success(request, "선택한 버전으로 복원했습니다.")
     return redirect(reverse("doc_detail", args=[document.sn]))
 
@@ -729,7 +762,7 @@ def document_auto_apply(request, document_sn):
     _ensure_document_access(current_project, actor, document)
     if request.method != "POST":
         return redirect(reverse("doc_detail", args=[document.sn]))
-    if document.user_id != actor.sn:
+    if document.possession_user_id != actor.sn:
         messages.error(request, "문서를 점유한 사용자만 회의 내용을 반영할 수 있습니다.")
         return redirect(reverse("doc_detail", args=[document.sn]))
 
@@ -741,7 +774,11 @@ def document_auto_apply(request, document_sn):
         messages.error(request, "회의록 파일을 하나 이상 선택해 주세요.")
         return redirect(_document_detail_redirect(document, modal="meeting-files"))
 
-    apply_meeting_notes(document, actor, selected_files)
+    try:
+        apply_meeting_notes(document, actor, selected_files)
+    except ValueError:
+        messages.error(request, _legacy_detail_error_message())
+        return redirect(reverse("doc_detail", args=[document.sn]))
     messages.success(request, "회의 내용을 문서에 자동 반영했습니다.")
     return redirect(reverse("doc_detail", args=[document.sn]))
 
@@ -783,11 +820,15 @@ def document_history_preview(request, document_sn, detail_sn):
 
     detail = get_detail_by_sn(document, detail_sn)
     if detail is None:
-        return JsonResponse({"message": "미리볼 이력을 찾을 수 없습니다."}, status=404)
+        return JsonResponse({"message": "Preview revision was not found."}, status=404)
+    try:
+        preview_text = extract_text_from_docx(get_document_detail_bytes(detail)) or "Document content is empty."
+    except ValueError:
+        return JsonResponse({"message": _legacy_detail_error_message()}, status=409)
 
     return JsonResponse(
         {
-            "preview_text": extract_text_from_docx(detail.content) or "문서 내용이 없습니다.",
+            "preview_text": preview_text,
             "creator_name": getattr(detail.created_by, "name", "-") or "-",
             "created_at": detail.created_at.strftime("%Y-%m-%d %H:%M"),
         }
@@ -803,7 +844,10 @@ def document_content(request, document_sn):
         _ensure_document_access(current_project, actor, document)
 
     latest_detail = get_latest_detail(document)
-    content = latest_detail.content if latest_detail else b""
+    try:
+        content = get_document_detail_bytes(latest_detail)
+    except ValueError:
+        return HttpResponse(_legacy_detail_error_message(), status=409, content_type="text/plain; charset=utf-8")
     response = HttpResponse(
         content,
         content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -844,7 +888,7 @@ def document_callback(request, document_sn):
             document,
             document.updated_by or document.created_by,
             content_bytes=content_bytes,
-            text_content=None if content_bytes else payload.get("content_text") or extract_text_from_docx(get_latest_detail(document).content),
+            text_content=None if content_bytes else payload.get("content_text") or extract_text_from_docx(get_document_detail_bytes(get_latest_detail(document))),
             modification_content="OnlyOffice 저장",
         )
     return JsonResponse({"error": 0})
@@ -856,7 +900,7 @@ def document_cancel_approval(request, approval_sn):
     actor = get_actor(request)
     approval = get_object_or_404(
         DocumentApproval.objects.select_related("detail__document__project", "created_by", "approval_status"),
-        sn=approval_sn,
+        approval_sn=approval_sn,
     )
     document = approval.detail.document
     _ensure_document_access(current_project, actor, document)
@@ -911,11 +955,11 @@ def approval_detail(request, approval_sn):
             "detail__document__project",
             "detail__document__document_type",
             "detail__document__created_by",
-            "detail__document__user",
+            "detail__document__possession_user",
             "approval_status",
             "created_by",
         ),
-        sn=approval_sn,
+        approval_sn=approval_sn,
     )
     document = approval.detail.document
     _ensure_document_access(current_project, actor, document)
@@ -926,8 +970,12 @@ def approval_detail(request, approval_sn):
 
     previous_document = latest_confirmed_document(current_project, document.document_type_id)
     previous_detail = get_latest_detail(previous_document) if previous_document else None
-    previous_text = extract_text_from_docx(previous_detail.content if previous_detail else None)
-    updated_text = extract_text_from_docx(approval.detail.content)
+    try:
+        previous_text = extract_text_from_docx(get_document_detail_bytes(previous_detail))
+        updated_text = extract_text_from_docx(get_document_detail_bytes(approval.detail))
+    except ValueError:
+        messages.error(request, _legacy_detail_error_message())
+        return redirect(reverse("doc_approval_list"))
     review = build_consistency_review(approval) if request.GET.get("consistency") == "1" else None
 
     context = {
@@ -962,15 +1010,15 @@ def approval_approve(request, approval_sn):
     actor = get_actor(request)
     approval = get_object_or_404(
         DocumentApproval.objects.select_related("detail__document__project"),
-        sn=approval_sn,
+        approval_sn=approval_sn,
     )
     document = approval.detail.document
     _ensure_document_access(current_project, actor, document)
     if request.method != "POST" or not is_project_manager(current_project, actor):
-        return redirect(reverse("doc_approval_detail", args=[approval.sn]))
+        return redirect(reverse("doc_approval_detail", args=[approval.approval_sn]))
     if approval.approval_status_id != "APRV_REQ":
         messages.error(request, "처리할 수 없는 승인 요청 상태입니다.")
-        return redirect(reverse("doc_approval_detail", args=[approval.sn]))
+        return redirect(reverse("doc_approval_detail", args=[approval.approval_sn]))
 
     new_version = request.POST.get("new_version", "").strip()
     if not new_version:
@@ -980,7 +1028,11 @@ def approval_approve(request, approval_sn):
         messages.error(request, "동일한 산출물 종류에 같은 버전이 이미 존재합니다. 새 버전명을 다시 입력해 주세요.")
         return redirect(_approval_detail_redirect(approval, modal="approve"))
 
-    approved_document, _ = approve_request(approval, actor, new_version)
+    try:
+        approved_document, _ = approve_request(approval, actor, new_version)
+    except ValueError:
+        messages.error(request, _legacy_detail_error_message())
+        return redirect(reverse("doc_approval_detail", args=[approval.approval_sn]))
     messages.success(request, "승인 요청을 반영하고 새 버전을 생성했습니다.")
     return redirect(reverse("doc_detail", args=[approved_document.sn]))
 
@@ -991,15 +1043,15 @@ def approval_reject(request, approval_sn):
     actor = get_actor(request)
     approval = get_object_or_404(
         DocumentApproval.objects.select_related("detail__document__project"),
-        sn=approval_sn,
+        approval_sn=approval_sn,
     )
     document = approval.detail.document
     _ensure_document_access(current_project, actor, document)
     if request.method != "POST" or not is_project_manager(current_project, actor):
-        return redirect(reverse("doc_approval_detail", args=[approval.sn]))
+        return redirect(reverse("doc_approval_detail", args=[approval.approval_sn]))
     if approval.approval_status_id != "APRV_REQ":
         messages.error(request, "처리할 수 없는 승인 요청 상태입니다.")
-        return redirect(reverse("doc_approval_detail", args=[approval.sn]))
+        return redirect(reverse("doc_approval_detail", args=[approval.approval_sn]))
 
     reason = request.POST.get("rejection_reason", "").strip()
     if not reason:
@@ -1008,4 +1060,4 @@ def approval_reject(request, approval_sn):
 
     reject_request(approval, actor, reason)
     messages.success(request, "승인 요청을 반려했습니다.")
-    return redirect(reverse("doc_approval_detail", args=[approval.sn]))
+    return redirect(reverse("doc_approval_detail", args=[approval.approval_sn]))

@@ -1,4 +1,3 @@
-import os
 import shutil
 from pathlib import Path
 from unittest.mock import patch
@@ -7,12 +6,14 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 
-from common.models import Code, ProjectFile, YesNoChoices
+from common.models import Code, YesNoChoices
+from common.storage import build_s3_uri, save_bytes
+from files.models import ProjectFile
 from projects.models import Project, ProjectNet, ProjectUserRole
 from users.models import User
 
 from .models import Document, DocumentApproval, DocumentDetail
-from .services import extract_text_from_docx
+from .services import extract_text_from_docx, get_document_detail_bytes
 
 
 class DocumentWorkflowViewTests(TestCase):
@@ -34,6 +35,8 @@ class DocumentWorkflowViewTests(TestCase):
         self.client.force_login(self.user)
         self.temp_dir = Path.cwd() / ".tmp-test-itf" / self._testMethodName
         self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.storage_override = self.settings(ALPLED_LOCAL_STORAGE_ROOT=self.temp_dir)
+        self.storage_override.enable()
 
         self.role_manager, _ = Code.objects.get_or_create(
             code="ROLE_MANAGER",
@@ -77,6 +80,22 @@ class DocumentWorkflowViewTests(TestCase):
             code="FILE_MEETING",
             defaults={"name": "회의록", "created_by": self.user, "updated_by": self.user},
         )
+        self.progress_pending, _ = Code.objects.get_or_create(
+            code="PRGRS_PENDING",
+            defaults={"name": "생성 대기", "created_by": self.user, "updated_by": self.user},
+        )
+        self.progress_processing, _ = Code.objects.get_or_create(
+            code="PRGRS_PROCESSING",
+            defaults={"name": "생성 중", "created_by": self.user, "updated_by": self.user},
+        )
+        self.progress_completed, _ = Code.objects.get_or_create(
+            code="PRGRS_COMPLETED",
+            defaults={"name": "생성 완료", "created_by": self.user, "updated_by": self.user},
+        )
+        self.progress_failed, _ = Code.objects.get_or_create(
+            code="PRGRS_FAILED",
+            defaults={"name": "생성 실패", "created_by": self.user, "updated_by": self.user},
+        )
 
         self.approval_requested, _ = Code.objects.get_or_create(
             code="APRV_REQ",
@@ -107,6 +126,7 @@ class DocumentWorkflowViewTests(TestCase):
         session.save()
 
     def tearDown(self):
+        self.storage_override.disable()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def _create_project_file(self, sn=1, *, code=None, name="proposal.pdf"):
@@ -115,8 +135,7 @@ class DocumentWorkflowViewTests(TestCase):
             project=self.project,
             file_type=code or self.file_rfp_code,
             name=name,
-            path=name,
-            content=b"file-content",
+            path=build_s3_uri(f"project-files/{self.project.sn}/{sn}-{name}"),
             size=12,
             extension=name.split(".")[-1][:4],
             created_by=self.user,
@@ -127,7 +146,7 @@ class DocumentWorkflowViewTests(TestCase):
         return Document.objects.create(
             sn=sn,
             project=self.project,
-            user=user,
+            possession_user=user,
             document_type=document_type or self.srs_code,
             version=version,
             modification_content="최초 생성",
@@ -135,11 +154,19 @@ class DocumentWorkflowViewTests(TestCase):
             updated_by=self.user,
         )
 
-    def _create_detail(self, sn=1, *, document=None, content=b"docx-binary"):
+    def _create_detail(self, sn=1, *, document=None, content=b"docx-binary", path=None):
+        storage_key = f"document-details/{document.project.sn}/{document.sn}/{sn}.docx"
+        if path is None:
+            save_bytes(
+                storage_key,
+                content,
+                content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+            path = build_s3_uri(storage_key)
         return DocumentDetail.objects.create(
             sn=sn,
             document=document,
-            content=content,
+            path=path,
             is_deleted="N",
             created_by=self.user,
         )
@@ -256,14 +283,14 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(len(response.context["selected_files"]), 1)
 
     def test_reset_generation_clears_session_state_and_temp_references(self):
-        with self.settings(ALPLED_ITF_REFERENCE_ROOT=self.temp_dir):
+        with self.settings(ALPLED_LOCAL_STORAGE_ROOT=self.temp_dir):
             self._set_generation_state(confirmed_documents={"DOC_SRS": 1})
             upload = SimpleUploadedFile("screen.png", b"png-bytes", content_type="image/png")
             self.client.post(
                 reverse("doc_generate"),
                 {"action": "upload_itf_reference", "docs_cd": "DOC_ITF", "itf_references": [upload]},
             )
-            reference_path = self.client.session["docs_initial_generation"]["itf_reference_files"][0]["path"]
+            reference_key = self.client.session["docs_initial_generation"]["itf_reference_files"][0]["storage_key"]
 
             response = self.client.post(
                 reverse("doc_generate"),
@@ -272,7 +299,7 @@ class DocumentWorkflowViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertNotIn("docs_initial_generation", self.client.session)
-        self.assertTrue(reference_path.endswith(".png"))
+        self.assertTrue(reference_key.endswith(".png"))
 
     def test_start_current_generation_creates_first_draft_document(self):
         project_file = self._create_project_file()
@@ -286,6 +313,7 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         draft = Document.objects.get(version="0")
         self.assertEqual(draft.document_type_id, "DOC_SRS")
+        self.assertEqual(draft.progress_status_id, "PRGRS_PROCESSING")
         self.assertEqual(DocumentDetail.objects.filter(document=draft).count(), 1)
 
     def test_confirming_initial_draft_advances_to_next_document_step(self):
@@ -302,6 +330,10 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.url.startswith(reverse("doc_generate")))
         self.assertTrue(Document.objects.filter(document_type=self.srs_code, version="1").exists())
+        draft.refresh_from_db()
+        self.assertEqual(draft.progress_status_id, "PRGRS_COMPLETED")
+        confirmed = Document.objects.get(document_type=self.srs_code, version="1")
+        self.assertEqual(confirmed.progress_status_id, "PRGRS_COMPLETED")
         updated_session = self.client.session["docs_initial_generation"]
         self.assertIn("DOC_SRS", updated_session["confirmed_documents"])
         self.assertNotIn("DOC_SRS", updated_session["draft_documents"])
@@ -328,7 +360,7 @@ class DocumentWorkflowViewTests(TestCase):
             content_type="image/jpeg",
         )
 
-        with self.settings(ALPLED_ITF_REFERENCE_ROOT=self.temp_dir):
+        with self.settings(ALPLED_LOCAL_STORAGE_ROOT=self.temp_dir):
             response = self.client.post(
                 reverse("doc_generate"),
                 {
@@ -342,14 +374,14 @@ class DocumentWorkflowViewTests(TestCase):
         references = self.client.session["docs_initial_generation"]["itf_reference_files"]
         self.assertEqual(len(references), 1)
         self.assertEqual(references[0]["name"], "screen.png")
-        self.assertTrue(os.path.exists(references[0]["path"]))
+        self.assertTrue((self.temp_dir / references[0]["storage_key"]).exists())
 
     def test_itf_upload_appends_references_across_multiple_requests(self):
         self._set_generation_state(confirmed_documents={"DOC_SRS": 1})
         first = SimpleUploadedFile("screen-1.png", b"png-bytes-1", content_type="image/png")
         second = SimpleUploadedFile("screen-2.jpg", b"jpg-bytes-2", content_type="image/jpeg")
 
-        with self.settings(ALPLED_ITF_REFERENCE_ROOT=self.temp_dir):
+        with self.settings(ALPLED_LOCAL_STORAGE_ROOT=self.temp_dir):
             first_response = self.client.post(
                 reverse("doc_generate"),
                 {
@@ -377,7 +409,7 @@ class DocumentWorkflowViewTests(TestCase):
         self._set_generation_state(confirmed_documents={"DOC_SRS": 1})
         upload = SimpleUploadedFile("screen.png", b"png-bytes", content_type="image/png")
 
-        with self.settings(ALPLED_ITF_REFERENCE_ROOT=self.temp_dir):
+        with self.settings(ALPLED_LOCAL_STORAGE_ROOT=self.temp_dir):
             self.client.post(
                 reverse("doc_generate"),
                 {"action": "upload_itf_reference", "docs_cd": "DOC_ITF", "itf_references": [upload]},
@@ -395,13 +427,13 @@ class DocumentWorkflowViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertEqual(self.client.session["docs_initial_generation"]["itf_reference_files"], [])
-        self.assertTrue(reference["path"].endswith(".png"))
+        self.assertTrue(reference["storage_key"].endswith(".png"))
 
     def test_itf_draft_generation_uses_uploaded_reference_names(self):
         self._set_generation_state(confirmed_documents={"DOC_SRS": 1})
         upload = SimpleUploadedFile("screen.png", b"png-bytes", content_type="image/png")
 
-        with self.settings(ALPLED_ITF_REFERENCE_ROOT=self.temp_dir):
+        with self.settings(ALPLED_LOCAL_STORAGE_ROOT=self.temp_dir):
             self.client.post(
                 reverse("doc_generate"),
                 {"action": "upload_itf_reference", "docs_cd": "DOC_ITF", "itf_references": [upload]},
@@ -413,7 +445,7 @@ class DocumentWorkflowViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         draft = Document.objects.get(document_type=self.itf_code, version="0")
-        content_text = extract_text_from_docx(DocumentDetail.objects.get(document=draft).content)
+        content_text = extract_text_from_docx(get_document_detail_bytes(DocumentDetail.objects.get(document=draft)))
         self.assertIn("screen.png", content_text)
 
     def test_architecture_form_add_creates_project_net_with_requested_mapping(self):
@@ -506,7 +538,7 @@ class DocumentWorkflowViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         draft = Document.objects.get(document_type=self.arch_code, version="0")
-        content_text = extract_text_from_docx(DocumentDetail.objects.get(document=draft).content)
+        content_text = extract_text_from_docx(get_document_detail_bytes(DocumentDetail.objects.get(document=draft)))
         self.assertIn("업무망", content_text)
         self.assertIn("내부 시스템", content_text)
 
@@ -522,7 +554,7 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(DocumentDetail.objects.filter(document=document).count(), 2)
         document.refresh_from_db()
-        self.assertIsNone(document.user)
+        self.assertIsNone(document.possession_user)
 
     def test_document_save_waits_for_onlyoffice_revision_when_form_has_no_text(self):
         document = self._create_document(sn=1, version="1.0", user=self.user)
@@ -580,7 +612,7 @@ class DocumentWorkflowViewTests(TestCase):
 
         self.assertEqual(response.status_code, 409)
         document.refresh_from_db()
-        self.assertEqual(document.user_id, self.user.sn)
+        self.assertEqual(document.possession_user_id, self.user.sn)
 
     def test_document_save_ajax_redirects_when_onlyoffice_reports_no_changes(self):
         document = self._create_document(sn=1, version="1.0", user=self.user)
@@ -608,6 +640,20 @@ class DocumentWorkflowViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('filename="DOC_SRS_v1.0.docx"', response["Content-Disposition"])
+
+    def test_document_download_rejects_legacy_detail_without_docs_path(self):
+        document = self._create_document(sn=1, version="1.0", user=None)
+        DocumentDetail.objects.create(
+            sn=1,
+            document=document,
+            path="legacy.docx",
+            is_deleted="N",
+            created_by=self.user,
+        )
+
+        response = self.client.get(f"{reverse('doc_content', args=[document.sn])}?download=1")
+
+        self.assertEqual(response.status_code, 409)
 
     def test_history_preview_link_uses_modal_preview_endpoint(self):
         document = self._create_document(sn=1, version="1.0", user=self.user)
@@ -678,7 +724,7 @@ class DocumentWorkflowViewTests(TestCase):
         document = self._create_document(sn=1, version="1.0", user=None)
         detail = self._create_detail(sn=1, document=document)
         DocumentApproval.objects.create(
-            sn=1,
+            approval_sn=1,
             detail=detail,
             approval_status=self.approval_requested,
             request_content="승인 요청입니다.",
@@ -727,7 +773,7 @@ class DocumentWorkflowViewTests(TestCase):
         document = self._create_document(sn=1, version="1.0", user=None)
         detail = self._create_detail(sn=1, document=document)
         approval = DocumentApproval.objects.create(
-            sn=1,
+            approval_sn=1,
             detail=detail,
             approval_status=self.approval_requested,
             request_content="승인 요청입니다.",
@@ -736,7 +782,7 @@ class DocumentWorkflowViewTests(TestCase):
             updated_by=self.user,
         )
 
-        response = self.client.get(reverse("doc_approval_detail", args=[approval.sn]))
+        response = self.client.get(reverse("doc_approval_detail", args=[approval.approval_sn]))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'data-modal-target="approval-approve-modal"', html=False)
@@ -746,7 +792,7 @@ class DocumentWorkflowViewTests(TestCase):
         document = self._create_document(sn=1, version="1.0", user=None)
         detail = self._create_detail(sn=1, document=document)
         approval = DocumentApproval.objects.create(
-            sn=1,
+            approval_sn=1,
             detail=detail,
             approval_status=self.approval_requested,
             request_content="승인 요청입니다.",
@@ -757,7 +803,7 @@ class DocumentWorkflowViewTests(TestCase):
         self._create_document(sn=2, version="1.1", user=None, document_type=self.srs_code)
 
         response = self.client.post(
-            reverse("doc_approval_approve", args=[approval.sn]),
+            reverse("doc_approval_approve", args=[approval.approval_sn]),
             {"new_version": "1.1"},
         )
 
@@ -770,7 +816,7 @@ class DocumentWorkflowViewTests(TestCase):
         document = self._create_document(sn=1, version="1.0", user=None)
         detail = self._create_detail(sn=1, document=document)
         approval = DocumentApproval.objects.create(
-            sn=1,
+            approval_sn=1,
             detail=detail,
             approval_status=self.approval_requested,
             request_content="승인 요청입니다.",
@@ -780,7 +826,7 @@ class DocumentWorkflowViewTests(TestCase):
         )
 
         response = self.client.post(
-            reverse("doc_approval_approve", args=[approval.sn]),
+            reverse("doc_approval_approve", args=[approval.approval_sn]),
             {"new_version": "1.1"},
         )
 

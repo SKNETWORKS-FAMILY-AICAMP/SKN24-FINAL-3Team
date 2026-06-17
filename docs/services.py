@@ -1,7 +1,6 @@
 import io
 import json
 import os
-import tempfile
 import time
 from pathlib import Path
 from urllib.parse import urlencode
@@ -10,14 +9,16 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F, Max, Window
+from django.db.models import F, Window
 from django.db.models.functions import RowNumber
 from django.urls import reverse
 from docx import Document as DocxDocument
 
-from common.models import Code, ProjectFile
+from common.models import Code
 from common.onlyoffice import decode_jwt, encode_jwt
 from common.project_selection import get_request_user
+from common.storage import build_s3_uri, delete_object, delete_object_at_uri, read_bytes_from_uri, save_bytes
+from files.models import ProjectFile
 from projects.models import ProjectNet, ProjectUserRole
 
 from .models import Document, DocumentApproval, DocumentDetail
@@ -32,13 +33,10 @@ INTERFACE_REFERENCE_DOCUMENT_CODE = "DOC_ITF"
 ARCHITECTURE_DOCUMENT_CODE = "DOC_ARCH"
 INTERFACE_REFERENCE_ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg"}
 INTERFACE_REFERENCE_MAX_FILE_SIZE = 3 * 1024 * 1024
-
-
-def next_sn(model):
-    current_max = model.objects.aggregate(max_sn=Max("sn"))["max_sn"] or 0
-    return current_max + 1
-
-
+PROGRESS_PENDING = "PRGRS_PENDING"
+PROGRESS_PROCESSING = "PRGRS_PROCESSING"
+PROGRESS_COMPLETED = "PRGRS_COMPLETED"
+PROGRESS_FAILED = "PRGRS_FAILED"
 def _build_empty_generation_state(project):
     return {
         "project_sn": project.sn if project else None,
@@ -49,27 +47,18 @@ def _build_empty_generation_state(project):
     }
 
 
-def _get_itf_reference_root():
-    configured_root = getattr(settings, "ALPLED_ITF_REFERENCE_ROOT", None)
-    root = Path(configured_root) if configured_root else Path(tempfile.gettempdir()) / "alpled_web" / "itf_references"
-    root.mkdir(parents=True, exist_ok=True)
-    return root
-
-
-def _get_itf_reference_directory(project, actor):
-    project_key = getattr(project, "sn", "none")
-    actor_key = getattr(actor, "sn", "anonymous")
-    directory = _get_itf_reference_root() / f"project_{project_key}" / f"user_{actor_key}"
-    directory.mkdir(parents=True, exist_ok=True)
-    return directory
-
-
 def _normalize_reference_filename(filename):
     return Path(filename or "").name or "reference"
 
 
-def cleanup_generation_itf_reference(reference):
-    path_value = (reference or {}).get("path", "")
+def build_itf_reference_storage_key(project, actor, filename):
+    project_key = getattr(project, "sn", "none")
+    actor_key = getattr(actor, "sn", "anonymous")
+    extension = filename.rsplit(".", 1)[-1].lower() if "." in filename else "bin"
+    return f"itf-references/{project_key}/{actor_key}/{uuid4().hex}.{extension}"
+
+
+def _legacy_cleanup_path(path_value):
     if not path_value:
         return
     path = Path(path_value)
@@ -89,6 +78,14 @@ def cleanup_generation_itf_reference(reference):
             return
 
 
+def cleanup_generation_itf_reference(reference):
+    storage_key = (reference or {}).get("storage_key", "")
+    if storage_key:
+        delete_object(storage_key)
+        return
+    _legacy_cleanup_path((reference or {}).get("path", ""))
+
+
 def cleanup_generation_itf_references(state):
     for reference in state.get("itf_reference_files", []):
         cleanup_generation_itf_reference(reference)
@@ -100,7 +97,6 @@ def get_generation_itf_references(state):
 
 def add_generation_itf_references(project, actor, state, uploaded_files):
     references = state.setdefault("itf_reference_files", [])
-    upload_directory = _get_itf_reference_directory(project, actor)
     added_count = 0
     errors = []
 
@@ -118,10 +114,10 @@ def add_generation_itf_references(project, actor, state, uploaded_files):
             continue
 
         token = uuid4().hex
-        file_path = upload_directory / f"{token}.{extension}"
-        with file_path.open("wb") as destination:
-            for chunk in uploaded_file.chunks():
-                destination.write(chunk)
+        storage_key = build_itf_reference_storage_key(project, actor, filename)
+        content_bytes = b"".join(uploaded_file.chunks())
+        content_type = f"image/{'jpeg' if extension == 'jpg' else extension}"
+        save_bytes(storage_key, content_bytes, content_type=content_type)
 
         references.append(
             {
@@ -129,7 +125,7 @@ def add_generation_itf_references(project, actor, state, uploaded_files):
                 "name": filename,
                 "size": uploaded_file.size,
                 "extension": extension,
-                "path": str(file_path),
+                "storage_key": storage_key,
             }
         )
         added_count += 1
@@ -280,6 +276,23 @@ def extract_text_from_docx(binary_content):
     return "\n".join(paragraph.text for paragraph in document.paragraphs if paragraph.text).strip()
 
 
+def build_document_detail_storage_key(project, document_sn, detail_sn):
+    return f"document-details/{project.sn}/{document_sn}/{detail_sn}.docx"
+
+
+def build_document_detail_path(project, document_sn, detail_sn):
+    return build_s3_uri(build_document_detail_storage_key(project, document_sn, detail_sn))
+
+
+def get_document_detail_bytes(detail):
+    if detail is None:
+        return b""
+    detail_path = str(getattr(detail, "path", "") or "").strip()
+    if not detail_path:
+        raise ValueError("Document detail is missing docs_path.")
+    return read_bytes_from_uri(detail_path)
+
+
 def download_remote_content(url):
     if not url:
         return None
@@ -333,7 +346,7 @@ def get_latest_pending_approval(document):
             approval_status_id="APRV_REQ",
         )
         .select_related("detail", "created_by", "approval_status")
-        .order_by("-created_at", "-sn")
+        .order_by("-created_at", "-approval_sn")
         .first()
     )
 
@@ -342,7 +355,7 @@ def latest_confirmed_document(project, document_code):
     return (
         Document.objects.filter(project=project, document_type_id=document_code)
         .exclude(version="0")
-        .select_related("document_type", "created_by", "user")
+        .select_related("document_type", "created_by", "possession_user")
         .order_by("-created_at", "-sn")
         .first()
     )
@@ -363,7 +376,7 @@ def get_document_history_queryset(project, document_code):
             )
         )
         .filter(version_rank=1)
-        .select_related("document_type", "created_by", "user")
+        .select_related("document_type", "created_by", "possession_user")
         .order_by("-created_at", "-sn")
     )
 
@@ -445,24 +458,37 @@ def create_document_with_detail(
     modification_content,
     content_bytes,
     locked_user=None,
+    progress_status_id=PROGRESS_COMPLETED,
 ):
-    document = Document.objects.create(
-        sn=next_sn(Document),
-        project=project,
-        user=locked_user,
-        document_type_id=document_code,
-        version=version,
-        modification_content=modification_content,
-        created_by=actor,
-        updated_by=actor,
-    )
-    detail = DocumentDetail.objects.create(
-        sn=next_sn(DocumentDetail),
-        document=document,
-        content=content_bytes,
-        is_deleted="N",
-        created_by=actor,
-    )
+    try:
+        document = Document.objects.create(
+            project=project,
+            possession_user=locked_user,
+            document_type_id=document_code,
+            progress_status_id=progress_status_id,
+            version=version,
+            modification_content=modification_content,
+            created_by=actor,
+            updated_by=actor,
+        )
+        detail = DocumentDetail.objects.create(
+            document=document,
+            path="",
+            is_deleted="N",
+            created_by=actor,
+        )
+        detail_path = build_document_detail_path(project, document.sn, detail.sn)
+        save_bytes(
+            build_document_detail_storage_key(project, document.sn, detail.sn),
+            content_bytes or b"",
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        detail.path = detail_path
+        detail.save(update_fields=["path"])
+    except Exception:
+        if "detail_path" in locals():
+            delete_object_at_uri(detail_path)
+        raise
     return document, detail
 
 
@@ -477,6 +503,7 @@ def create_draft_document(project, document_code, actor, source_inputs):
         modification_content="최초 생성",
         content_bytes=content_bytes,
         locked_user=None,
+        progress_status_id=PROGRESS_PROCESSING,
     )
 
 
@@ -489,33 +516,35 @@ def confirm_document(document, actor):
         actor=actor,
         version="1",
         modification_content="파일 확정",
-        content_bytes=(latest_detail.content if latest_detail else None),
+        content_bytes=get_document_detail_bytes(latest_detail),
         locked_user=None,
+        progress_status_id=PROGRESS_COMPLETED,
     )
-    document.user = None
+    document.possession_user = None
+    document.progress_status_id = PROGRESS_COMPLETED
     document.updated_by = actor
-    document.save(update_fields=["user", "updated_by", "updated_at"])
+    document.save(update_fields=["possession_user", "progress_status", "updated_by"])
     return confirmed_document, confirmed_detail
 
 
 @transaction.atomic
 def acquire_document_lock(document, actor):
-    if document.user_id and document.user_id != actor.sn:
+    if document.possession_user_id and document.possession_user_id != actor.sn:
         return False
-    document.user = actor
+    document.possession_user = actor
     document.updated_by = actor
-    document.save(update_fields=["user", "updated_by", "updated_at"])
+    document.save(update_fields=["possession_user", "updated_by"])
     return True
 
 
 @transaction.atomic
 def release_document_lock(document, actor=None):
-    document.user = None
+    document.possession_user = None
     if actor is not None:
         document.updated_by = actor
-        document.save(update_fields=["user", "updated_by", "updated_at"])
+        document.save(update_fields=["possession_user", "updated_by"])
     else:
-        document.save(update_fields=["user", "updated_at"])
+        document.save(update_fields=["possession_user"])
 
 
 @transaction.atomic
@@ -528,23 +557,35 @@ def save_revision(document, actor, *, text_content=None, content_bytes=None, mod
                 text_content.splitlines(),
             )
         elif latest_detail is not None:
-            content_bytes = latest_detail.content
+            content_bytes = get_document_detail_bytes(latest_detail)
 
-    detail = DocumentDetail.objects.create(
-        sn=next_sn(DocumentDetail),
-        document=document,
-        content=content_bytes,
-        is_deleted="N",
-        created_by=actor,
-    )
+    try:
+        detail = DocumentDetail.objects.create(
+            document=document,
+            path="",
+            is_deleted="N",
+            created_by=actor,
+        )
+        detail_path = build_document_detail_path(document.project, document.sn, detail.sn)
+        save_bytes(
+            build_document_detail_storage_key(document.project, document.sn, detail.sn),
+            content_bytes or b"",
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        detail.path = detail_path
+        detail.save(update_fields=["path"])
+    except Exception:
+        if "detail_path" in locals():
+            delete_object_at_uri(detail_path)
+        raise
     document.updated_by = actor
     document.modification_content = modification_content
-    document.save(update_fields=["updated_by", "modification_content", "updated_at"])
+    document.save(update_fields=["updated_by", "modification_content"])
     return detail
 
 
 def apply_meeting_notes(document, actor, selected_files):
-    base_text = extract_text_from_docx(get_latest_detail(document).content)
+    base_text = extract_text_from_docx(get_document_detail_bytes(get_latest_detail(document)))
     new_text = [
         base_text,
         "",
@@ -566,7 +607,7 @@ def restore_revision(document, actor, source_detail):
     return save_revision(
         document,
         actor,
-        content_bytes=source_detail.content,
+        content_bytes=get_document_detail_bytes(source_detail),
         modification_content="이전 버전 복원",
     )
 
@@ -581,7 +622,6 @@ def can_request_approval(document, actor, *, pending_approval=None, is_generatio
 def create_approval_request(document, actor, request_content):
     latest_detail = get_latest_detail(document)
     approval = DocumentApproval.objects.create(
-        sn=next_sn(DocumentApproval),
         detail=latest_detail,
         approval_status_id="APRV_REQ",
         request_content=request_content,
@@ -616,12 +656,12 @@ def approve_request(approval, actor, new_version):
         actor=actor,
         version=new_version,
         modification_content=approval.request_content or "승인 반영",
-        content_bytes=source_detail.content,
+        content_bytes=get_document_detail_bytes(source_detail),
         locked_user=None,
     )
     approval.approval_status_id = "APRV_COM"
     approval.updated_by = actor
-    approval.save(update_fields=["approval_status", "updated_by", "updated_at"])
+    approval.save(update_fields=["approval_status", "updated_by"])
     return document, detail
 
 
@@ -630,7 +670,7 @@ def reject_request(approval, actor, reason):
     approval.approval_status_id = "APRV_RJT"
     approval.rejection_reason = reason
     approval.updated_by = actor
-    approval.save(update_fields=["approval_status", "rejection_reason", "updated_by", "updated_at"])
+    approval.save(update_fields=["approval_status", "rejection_reason", "updated_by"])
 
 
 def get_generation_state(session, project):
@@ -757,7 +797,7 @@ def ensure_generation_draft(project, actor, state):
                 document_type_id=document_code,
                 version="0",
             )
-            .select_related("project", "document_type", "created_by", "updated_by", "user")
+            .select_related("project", "document_type", "created_by", "updated_by", "possession_user")
             .first()
         )
         if existing_document is not None:
@@ -841,7 +881,6 @@ def create_project_net(
     remarks="",
 ):
     return ProjectNet.objects.create(
-        sn=next_sn(ProjectNet),
         project=project,
         name=name,
         purpose=purpose or None,
@@ -862,9 +901,9 @@ def get_document_view_state(document, actor, preferred_mode="view"):
     if pending_approval and pending_approval.created_by_id == actor.sn:
         return "waiting", pending_approval
 
-    if document.user_id and document.user_id != actor.sn:
+    if document.possession_user_id and document.possession_user_id != actor.sn:
         return "readonly", pending_approval
-    if document.user_id and document.user_id == actor.sn and preferred_mode == "edit":
+    if document.possession_user_id and document.possession_user_id == actor.sn and preferred_mode == "edit":
         return "edit", pending_approval
     return "view", pending_approval
 
@@ -992,7 +1031,7 @@ def build_document_rows(queryset):
                 "modification_content": document.modification_content or "-",
                 "created_at": document.created_at,
                 "detail_url": reverse("doc_detail", args=[document.sn]),
-                "locked_by_name": getattr(document.user, "name", ""),
+                "locked_by_name": getattr(document.possession_user, "name", ""),
             }
         )
     return rows
@@ -1003,7 +1042,7 @@ def build_approval_rows(queryset):
     for approval in queryset:
         rows.append(
             {
-                "sn": approval.sn,
+                "sn": approval.approval_sn,
                 "document_sn": approval.detail.document.sn,
                 "document_label": approval.detail.document.document_type.name,
                 "version": approval.detail.document.version,
@@ -1011,7 +1050,7 @@ def build_approval_rows(queryset):
                 "status_name": approval.approval_status.name,
                 "request_content": approval.request_content,
                 "created_at": approval.created_at,
-                "detail_url": reverse("doc_approval_detail", args=[approval.sn]),
+                "detail_url": reverse("doc_approval_detail", args=[approval.approval_sn]),
             }
         )
     return rows
@@ -1026,7 +1065,7 @@ def build_approval_queryset(project, actor):
             "created_by",
             "detail__document__project",
         )
-        .order_by("-created_at", "-sn")
+        .order_by("-created_at", "-approval_sn")
     )
     if not is_project_manager(project, actor):
         queryset = queryset.filter(created_by=actor)

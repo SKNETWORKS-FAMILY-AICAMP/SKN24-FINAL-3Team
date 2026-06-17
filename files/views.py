@@ -1,5 +1,4 @@
 import io
-import mimetypes
 import os
 import zipfile
 from urllib.parse import quote
@@ -7,21 +6,24 @@ from urllib.parse import quote
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
-from django.db.models import Max
 from django.http import HttpResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
-from common.models import ProjectFile
 from common.project_selection import resolve_current_project
 from common.signals import ensure_initial_reference_data
 from users.models import User
 
+from .models import ProjectFile
 from .services import (
     SEARCH_FIELD_CHOICES,
     apply_file_filters,
     build_project_file_rows,
+    delete_project_file_bytes,
     get_file_type_choices,
+    get_project_file_bytes,
+    guess_file_content_type,
+    save_project_file_bytes,
 )
 
 
@@ -32,13 +34,6 @@ FILE_TYPE_MAP = {
     "rfp_files": "FILE_RFP",
     "meeting_files": "FILE_MEETING",
 }
-
-
-def _next_sn(model):
-    current_max = model.objects.aggregate(max_sn=Max("sn"))["max_sn"] or 0
-    return current_max + 1
-
-
 def _get_actor():
     return User.objects.filter(user_id="admin").first() or User.objects.order_by("sn").first()
 
@@ -81,23 +76,21 @@ def _upload_files(request, project):
         messages.error(request, validation_error)
         return redirect(_build_file_list_redirect_url())
 
-    next_sn = _next_sn(ProjectFile)
     for field_name, files in (("rfp_files", rfp_files), ("meeting_files", meeting_files)):
         for uploaded_file in files:
             extension = os.path.splitext(uploaded_file.name)[1].lower().lstrip(".")
+            content_bytes = uploaded_file.read()
+            storage_path = save_project_file_bytes(project, uploaded_file.name, content_bytes)
             ProjectFile.objects.create(
-                sn=next_sn,
                 project=project,
                 file_type_id=FILE_TYPE_MAP[field_name],
                 name=os.path.basename(uploaded_file.name),
-                path=uploaded_file.name[:300],
-                content=uploaded_file.read(),
+                path=storage_path,
                 size=uploaded_file.size,
                 extension=extension[:4],
                 created_by=actor,
                 updated_by=actor,
             )
-            next_sn += 1
 
     messages.success(request, "파일을 등록했습니다.")
     return redirect(_build_file_list_redirect_url())
@@ -108,6 +101,14 @@ def _delete_files(request, project):
     selected_ids = request.POST.getlist("selected_files")
     if not selected_ids:
         messages.error(request, "파일을 하나 이상 선택해 주세요.")
+        return redirect(_build_file_list_redirect_url())
+
+    files = list(ProjectFile.objects.filter(project=project, sn__in=selected_ids))
+    try:
+        for project_file in files:
+            delete_project_file_bytes(project_file)
+    except ValueError:
+        messages.error(request, "S3 경로가 없는 기존 파일은 삭제 전에 정리해 주세요.")
         return redirect(_build_file_list_redirect_url())
 
     deleted_count, _ = ProjectFile.objects.filter(project=project, sn__in=selected_ids).delete()
@@ -132,15 +133,23 @@ def _download_files(request, project):
 
     if len(files) == 1:
         project_file = files[0]
-        mime_type = mimetypes.guess_type(project_file.name)[0] or "application/octet-stream"
-        response = HttpResponse(project_file.content, content_type=mime_type)
+        try:
+            file_bytes = get_project_file_bytes(project_file)
+        except ValueError:
+            messages.error(request, "S3 경로가 없는 기존 파일은 다운로드할 수 없습니다.")
+            return redirect(_build_file_list_redirect_url())
+        response = HttpResponse(file_bytes, content_type=guess_file_content_type(project_file.name))
         response["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(project_file.name)}"
         return response
 
     buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
-        for project_file in files:
-            archive.writestr(project_file.name, project_file.content)
+    try:
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            for project_file in files:
+                archive.writestr(project_file.name, get_project_file_bytes(project_file))
+    except ValueError:
+        messages.error(request, "S3 경로가 없는 기존 파일은 다운로드할 수 없습니다.")
+        return redirect(_build_file_list_redirect_url())
     buffer.seek(0)
 
     response = HttpResponse(buffer.getvalue(), content_type="application/zip")

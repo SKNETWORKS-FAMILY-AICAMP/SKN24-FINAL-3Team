@@ -9,6 +9,19 @@ class UserManager(BaseUserManager):
         if not user_id:
             raise ValueError("The user_id must be set")
 
+        if "created_by" not in extra_fields and "created_by_id" not in extra_fields:
+            admin = self.filter(user_id="admin").only("sn").first()
+            if admin is not None:
+                extra_fields["created_by"] = admin
+            elif extra_fields.get("sn") is not None:
+                extra_fields["created_by_id"] = extra_fields["sn"]
+        if "updated_by" not in extra_fields and "updated_by_id" not in extra_fields:
+            admin = self.filter(user_id="admin").only("sn").first()
+            if admin is not None:
+                extra_fields["updated_by"] = admin
+            elif extra_fields.get("sn") is not None:
+                extra_fields["updated_by_id"] = extra_fields["sn"]
+
         user = self.model(user_id=user_id, **extra_fields)
         if password:
             user.set_password(password)
@@ -27,7 +40,7 @@ class UserManager(BaseUserManager):
 class User(AbstractBaseUser, CreatedAtMixin, CreatedByMixin, UpdatedAtMixin, UpdatedByMixin):
     last_login = None
 
-    sn = models.IntegerField(primary_key=True, db_column="user_sn")
+    sn = models.AutoField(primary_key=True, db_column="user_sn")
     user_id = models.CharField(max_length=20, unique=True, db_column="user_id")
     password = models.CharField(max_length=256, db_column="user_pswd")
     name = models.CharField(max_length=100, db_column="user_nm")

@@ -1,7 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Q
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
@@ -13,13 +13,6 @@ from .models import Project, ProjectUserRole
 
 
 DEFAULT_DOCUMENT_CODE = "DOC_SRS"
-
-
-def _next_sn(model):
-    current_max = model.objects.aggregate(max_sn=Max("sn"))["max_sn"] or 0
-    return current_max + 1
-
-
 def _get_admin_user():
     return User.objects.filter(user_id="admin").first()
 
@@ -125,40 +118,43 @@ def _create_project(request):
         return False
 
     try:
-        role_manager, _ = Code.objects.get_or_create(code="ROLE_MANAGER", defaults={"name": "관리자"})
-        role_member, _ = Code.objects.get_or_create(code="ROLE_MEMBER", defaults={"name": "멤버"})
         admin_user = _get_admin_user()
+        if admin_user is None:
+            messages.error(request, "관리자 계정을 찾을 수 없습니다.")
+            return False
+        role_manager, _ = Code.objects.get_or_create(
+            code="ROLE_MANAGER",
+            defaults={"name": "관리자", "created_by": admin_user, "updated_by": admin_user},
+        )
+        role_member, _ = Code.objects.get_or_create(
+            code="ROLE_MEMBER",
+            defaults={"name": "멤버", "created_by": admin_user, "updated_by": admin_user},
+        )
 
         project = Project.objects.create(
-            sn=_next_sn(Project),
             name=project_name,
             is_deleted=YesNoChoices.NO,
             created_by=admin_user,
             updated_by=admin_user,
         )
 
-        next_role_sn = _next_sn(ProjectUserRole)
         for user_id in manager_user_ids:
             ProjectUserRole.objects.create(
-                sn=next_role_sn,
                 project=project,
                 user=users_by_id[user_id],
                 role=role_manager,
                 created_by=admin_user,
                 updated_by=admin_user,
             )
-            next_role_sn += 1
 
         for user_id in member_user_ids:
             ProjectUserRole.objects.create(
-                sn=next_role_sn,
                 project=project,
                 user=users_by_id[user_id],
                 role=role_member,
                 created_by=admin_user,
                 updated_by=admin_user,
             )
-            next_role_sn += 1
     except Exception:
         messages.error(request, "프로젝트를 저장할 수 없습니다.")
         return False

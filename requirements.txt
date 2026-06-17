@@ -1,0 +1,4 @@
+Django==5.2.15
+python-docx
+boto3
+PyMySQL
