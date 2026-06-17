@@ -1,6 +1,7 @@
 import unittest
 
 from agents.data_structure_design.agent import DataStructureDesignAgent
+from agents.data_structure_design.processors import apply_public_standard_results
 from agents.validation.agent import ValidationAgent
 from tools.result import success_result
 
@@ -120,6 +121,159 @@ class FakeBadNamingDataLLM:
 
 
 class DataStructureDesignAgentTest(unittest.TestCase):
+    def test_public_standard_rag_results_are_applied_to_erd_columns(self) -> None:
+        tables = [
+            {
+                "table_id": "TABLE-001",
+                "entity_id": "ENT-001",
+                "logical_name": "거래",
+                "physical_name": "tbl_trade",
+                "columns": [
+                    {
+                        "logical_name": "거래일자",
+                        "physical_name": "trade_date",
+                        "data_type": "VARCHAR(255)",
+                        "nullable": False,
+                        "constraints": [],
+                    },
+                    {
+                        "logical_name": "비밀번호",
+                        "physical_name": "password",
+                        "data_type": "VARCHAR(255)",
+                        "nullable": False,
+                        "constraints": [],
+                    },
+                ],
+            }
+        ]
+        rag_results = [
+            {
+                "table_id": "TABLE-001",
+                "normalized_results": [
+                    {
+                        "content": (
+                            "번호: 450 | 공통표준용어명: 거래일자 | 공통표준용어영문약어명: DLNG_YMD | "
+                            "공통표준도메인명: 연월일C8 | 저장 형식: YYYYMMDD"
+                        ),
+                        "metadata": {"doc_type": "standard_term", "title": "공통표준용어_450"},
+                    },
+                    {
+                        "content": (
+                            "번호: 1185 | 공통표준단어명: 비밀번호 | 공통표준단어영문약어명: PSWD | "
+                            "공통표준도메인분류명: 번호"
+                        ),
+                        "metadata": {"doc_type": "standard_word", "title": "공통표준단어_1185"},
+                    },
+                ],
+            }
+        ]
+
+        result = apply_public_standard_results(tables, rag_results)
+        columns = {column["logical_name"]: column for column in result[0]["columns"]}
+
+        self.assertEqual(columns["거래일자"]["physical_name"], "dlng_ymd")
+        self.assertEqual(columns["거래일자"]["data_type"], "CHAR")
+        self.assertEqual(columns["거래일자"]["length"], "8")
+        self.assertEqual(columns["비밀번호"]["physical_name"], "pswd")
+        self.assertIn("standard_source", columns["비밀번호"])
+
+    def test_erd_column_defaults_and_constraints_are_inferred_like_reference_doc(self) -> None:
+        tables = [
+            {
+                "table_id": "TABLE-001",
+                "entity_id": "ENT-001",
+                "logical_name": "사용자 그룹 구성원",
+                "physical_name": "tbl_user_group_member",
+                "columns": [
+                    {
+                        "logical_name": "구성원 ID",
+                        "physical_name": "member_id",
+                        "data_type": "BIGINT",
+                        "nullable": False,
+                        "constraints": ["PK"],
+                    },
+                    {
+                        "logical_name": "그룹 ID",
+                        "physical_name": "group_id",
+                        "data_type": "BIGINT",
+                        "nullable": False,
+                        "constraints": ["FK"],
+                    },
+                    {
+                        "logical_name": "사용 여부",
+                        "physical_name": "use_yn",
+                        "data_type": "CHAR(1)",
+                        "nullable": False,
+                        "constraints": [],
+                    },
+                    {
+                        "logical_name": "생성 일시",
+                        "physical_name": "created_at",
+                        "data_type": "TIMESTAMP",
+                        "nullable": False,
+                        "constraints": [],
+                    },
+                    {
+                        "logical_name": "이메일",
+                        "physical_name": "email",
+                        "data_type": "VARCHAR(200)",
+                        "nullable": False,
+                        "constraints": [],
+                    },
+                ],
+            }
+        ]
+
+        result = apply_public_standard_results(tables, [])
+        columns = {column["physical_name"]: column for column in result[0]["columns"]}
+
+        self.assertEqual(columns["member_id"]["default"], "")
+        self.assertIn("AUTO_INCREMENT", columns["member_id"]["constraints"])
+        self.assertIn("FK tbl_group", columns["group_id"]["constraints"])
+        self.assertEqual(columns["use_yn"]["default"], "Y")
+        self.assertIn("Y/N", columns["use_yn"]["constraints"])
+        self.assertEqual(columns["created_at"]["default"], "CURRENT_TIMESTAMP")
+        self.assertIn("UNIQUE", columns["email"]["constraints"])
+
+    def test_erd_entity_logical_name_prefers_korean_name_over_physical_name(self) -> None:
+        from agents.data_structure_design.processors.table_builder import normalize_erd_tables
+
+        tables = normalize_erd_tables(
+            [
+                {
+                    "entity_name": "사용자 그룹",
+                    "logical_name": "tbl_user_group",
+                    "physical_name": "tbl_user_group",
+                    "columns": [
+                        {
+                            "logical_name": "그룹 ID",
+                            "physical_name": "group_id",
+                            "data_type": "BIGINT",
+                            "nullable": False,
+                            "constraints": ["PK"],
+                        }
+                    ],
+                }
+            ]
+        )
+
+        self.assertEqual(tables[0]["logical_name"], "사용자 그룹")
+        self.assertEqual(tables[0]["physical_name"], "tbl_user_group")
+
+    def test_display_column_name_rejects_dash_and_long_sentence(self) -> None:
+        from agents.data_structure_design.processors.table_builder import display_column_name
+
+        self.assertEqual(display_column_name("-", "rag_ops_nm", "tbl_rag_ops"), "명")
+        self.assertEqual(
+            display_column_name(
+                "검색증강생성 기본사항 RAG RAGOps 정보를 관리하는 테이블입니다",
+                "rag_ops_cn",
+                "tbl_rag_ops",
+            ),
+            "내용",
+        )
+        self.assertEqual(display_column_name("상태 코드", "rag_ops_stts_cd", "tbl_rag_ops"), "상태코드")
+
     def test_erd_create_builds_tables_relationships_mermaid_and_uses_rag(self) -> None:
         calls = []
 
@@ -207,6 +361,45 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         names = {table["physical_name"] for table in result["erd_entity_json"]["tables"]}
 
         self.assertEqual(names, {"tbl_user", "tbl_docs"})
+        self.assertTrue(result["erd_mermaid_json"]["entities"])
+
+    def test_erd_update_extracts_tables_from_nested_existing_docx_parse_result(self) -> None:
+        state = {
+            "docs_cd": "ERD",
+            "udt_yn": "Y",
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "existing_output_raw_json": {
+                        "file_path": "existing.docx",
+                        "raw_json": {
+                            "erd_entity_json": {
+                                "tables": [
+                                    {
+                                        "logical_name": "사용자",
+                                        "physical_name": "tbl_user",
+                                        "columns": [
+                                            {
+                                                "logical_name": "사용자 ID",
+                                                "physical_name": "user_id",
+                                                "data_type": "BIGINT",
+                                                "nullable": False,
+                                                "constraints": ["PK"],
+                                            }
+                                        ],
+                                    }
+                                ]
+                            }
+                        },
+                    },
+                    "meeting_change_items": [],
+                }
+            },
+        }
+
+        result = DataStructureDesignAgent().execute(state)
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(result["erd_mermaid_json"]["entities"][0]["name"], "tbl_user")
 
     def test_erd_create_uses_parallel_llm_domain_entity_table_and_column_stages(self) -> None:
         state = {
@@ -422,6 +615,17 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         validation = ValidationAgent().execute(state)
 
         self.assertEqual(result["db_design_json"]["tables"][0]["table_name"], "tbl_user")
+        table = result["db_design_json"]["tables"][0]
+        self.assertEqual(table["table_id"], "tbl_user")
+        self.assertEqual(table["table_logical_name"], "사용자")
+        self.assertEqual(table["initial_count"], "0")
+        self.assertEqual(table["daily_growth"], "산정 필요")
+        self.assertEqual(table["retention_period"], "업무 기준에 따름")
+        self.assertEqual(table["max_count"], "산정 필요")
+        self.assertEqual(table["capacity"], "산정 필요")
+        self.assertEqual(table["columns"][0]["column_id"], "user_sn")
+        self.assertEqual(table["columns"][0]["column_logical_name"], "ID")
+        self.assertEqual(table["columns"][0]["pk"], "Y")
         self.assertEqual(validation["validation_result"]["validation_status"], "PASS")
 
     def test_db_update_normalizes_nested_artifact_and_debug_is_optional(self) -> None:

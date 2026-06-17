@@ -87,12 +87,16 @@ class ArchitectureAnalysisAgentTest(unittest.TestCase):
         ).execute(state)
 
         structure = result["architecture_structure_json"]
+        document = result["architecture_document_json"]
         self.assertEqual(result["status"], "SUCCESS")
         self.assertTrue(structure["components"])
         self.assertTrue(structure["relations"])
         self.assertTrue(structure["layers"])
         self.assertEqual(structure["deployment_environment"]["dbms"], "PostgreSQL")
         self.assertTrue(structure["architecture_config_reflected"])
+        self.assertTrue(document["requirement_implementations"])
+        self.assertIn("보안 성능 운영 연계 배포 요구사항", document["requirement_implementations"][0]["description"])
+        self.assertIn("RAG로 확인한 비기능 근거", document["requirement_implementations"][0]["implementation"])
         self.assertEqual(len(search_calls), 7)
         self.assertIs(state["agent_outputs"]["architecture_analysis_agent"], result)
         self.assertNotIn("architecture_structure_json", state)

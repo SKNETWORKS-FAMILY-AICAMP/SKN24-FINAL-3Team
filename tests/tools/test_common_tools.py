@@ -11,6 +11,7 @@ from tools.llm.llm_client import LLMClient
 from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
 from tools.parser.docx_parser import parse_docx
+from tools.parser.erd_docx_parser import parse_erd_docx
 from tools.parser.pdf_parser import parse_pdf
 from tools.parser.rfp_rule_parser import parse_rfp_requirements
 from tools.parser.table_parser import parse_tables
@@ -26,6 +27,39 @@ import tools.mermaid.mermaid_renderer as mermaid_renderer
 
 
 class CommonToolsTest(unittest.TestCase):
+    def test_erd_docx_parser_extracts_exported_entity_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            docx_path = Path(root) / "erd.docx"
+            document = Document()
+            table = document.add_table(rows=5, cols=10)
+            table.cell(0, 2).text = "ENT-001"
+            table.cell(0, 7).text = "사용자"
+            table.cell(1, 4).text = "사용자 정보를 관리하는 테이블입니다."
+            table.rows[2].cells[0].text = "속성명"
+            table.rows[2].cells[1].text = "동의어"
+            table.rows[2].cells[2].text = "데이터타입"
+            table.rows[3].cells[0].text = "USER_SN"
+            table.rows[3].cells[1].text = "사용자 번호"
+            table.rows[3].cells[2].text = "BIGINT"
+            table.rows[3].cells[4].text = "Y"
+            table.rows[3].cells[5].text = "Y"
+            table.rows[4].cells[0].text = "USER_NM"
+            table.rows[4].cells[1].text = "사용자 명"
+            table.rows[4].cells[2].text = "VARCHAR"
+            table.rows[4].cells[3].text = "200"
+            document.save(docx_path)
+
+            result = parse_erd_docx(str(docx_path))
+
+            self.assertTrue(result["success"])
+            tables = result["data"]["tables"]
+            self.assertEqual(tables[0]["logical_name"], "사용자")
+            self.assertEqual(tables[0]["description"], "사용자 정보를 관리하는 테이블입니다.")
+            self.assertEqual(tables[0]["columns"][0]["physical_name"], "USER_SN")
+            self.assertEqual(tables[0]["columns"][0]["constraints"], ["PK"])
+            self.assertFalse(tables[0]["columns"][0]["nullable"])
+            self.assertEqual(tables[0]["columns"][1]["data_type"], "VARCHAR(200)")
+
     def test_srs_template_maps_task3_fields_to_cbd_columns(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             output_path = Path(root) / "task3-srs.docx"
@@ -57,6 +91,217 @@ class CommonToolsTest(unittest.TestCase):
             self.assertEqual(row.cells[3].text, "CXL 메모리 프레임워크를 설계한다.")
             self.assertEqual(row.cells[4].text, "SFR-001\nSFR-003")
             self.assertEqual(row.cells[7].text, "중복 기능을 통합함.")
+
+    def test_db_template_uses_logical_and_physical_column_fields(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            output_path = Path(root) / "db.docx"
+            result = export_docx(
+                {
+                    "docs_cd": "DB",
+                    "content": {
+                        "db_design_json": {
+                            "database_id": "DB-001",
+                            "database_name": "업무 DB",
+                            "tables": [
+                                {
+                                    "table_id": "tbl_user",
+                                    "table_name": "tbl_user",
+                                    "table_logical_name": "사용자",
+                                    "database_name": "업무 DB",
+                                    "tablespace_name": "TS_USER",
+                                    "trigger_config": "해당 없음",
+                                    "table_description": "사용자 정보를 관리하는 테이블입니다.",
+                                    "columns": [
+                                        {
+                                            "column_name": "user_sn",
+                                            "column_id": "user_sn",
+                                            "column_logical_name": "사용자 번호",
+                                            "type_and_length": "BIGINT",
+                                            "nullable": False,
+                                            "pk": "Y",
+                                            "fk": "",
+                                            "idx": "Y",
+                                            "default": "",
+                                            "constraint": "",
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    },
+                },
+                str(output_path),
+                template_path="templates/db_template.docx",
+            )
+
+            self.assertTrue(result["success"])
+            spec = Document(output_path).tables[3]
+            self.assertEqual(spec.cell(0, 1).text, "tbl_user")
+            self.assertEqual(spec.cell(0, 5).text, "테이블명")
+            self.assertEqual(spec.cell(0, 6).text, "사용자")
+            self.assertEqual(spec.cell(1, 5).text, "TS명")
+            self.assertEqual(spec.cell(1, 6).text, "TS_USER")
+            self.assertEqual(spec.cell(5, 0).text, "0")
+            self.assertEqual(spec.cell(5, 1).text, "산정 필요")
+            self.assertEqual(spec.cell(5, 2).text, "업무 기준에 따름")
+            self.assertEqual(spec.cell(5, 3).text, "산정 필요")
+            self.assertEqual(spec.cell(5, 4).text, "산정 필요")
+            self.assertEqual(spec.cell(7, 0).text, "사용자 번호")
+            self.assertEqual(spec.cell(7, 1).text, "user_sn")
+            self.assertEqual(spec.cell(7, 8).text, "")
+
+    def test_erd_template_uses_logical_attribute_name_and_split_type_length(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            output_path = Path(root) / "erd.docx"
+            result = export_docx(
+                {
+                    "docs_cd": "ERD",
+                    "content": {
+                        "erd_entity_json": {
+                            "erd_id": "JJ_ERD_040",
+                            "erd_name": "거래중계",
+                            "tables": [
+                                {
+                                    "entity_id": "JJ_EN_110",
+                                    "logical_name": "기관거래",
+                                    "description": "기관거래 정보를 저장합니다.",
+                                    "columns": [
+                                        {
+                                            "logical_name": "거래일자",
+                                            "physical_name": "dlng_ymd",
+                                            "synonym": "",
+                                            "data_type": "CHAR",
+                                            "length": "8",
+                                            "nullable": False,
+                                            "constraints": ["PK", "AUTO_INCREMENT"],
+                                            "default": "",
+                                        }
+                                    ],
+                                }
+                            ],
+                        }
+                    },
+                },
+                str(output_path),
+                template_path="templates/erd_template.docx",
+            )
+
+            self.assertTrue(result["success"])
+            entity = Document(output_path).tables[2]
+            self.assertEqual(entity.cell(3, 0).text, "거래일자")
+            self.assertEqual(entity.cell(3, 1).text, "")
+            self.assertEqual(entity.cell(3, 2).text, "CHAR")
+            self.assertEqual(entity.cell(3, 3).text, "8")
+            self.assertEqual(entity.cell(3, 4).text, "Y")
+            self.assertEqual(entity.cell(3, 5).text, "PK")
+            self.assertEqual(entity.cell(3, 9).text, "AUTO_INCREMENT")
+
+    def test_erd_template_entity_name_uses_korean_logical_name(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            output_path = Path(root) / "erd.docx"
+            result = export_docx(
+                {
+                    "docs_cd": "ERD",
+                    "content": {
+                        "erd_entity_json": {
+                            "tables": [
+                                {
+                                    "entity_id": "ENT-001",
+                                    "entity_name": "사용자 그룹",
+                                    "logical_name": "tbl_user_group",
+                                    "physical_name": "tbl_user_group",
+                                    "description": "사용자 그룹 정보를 관리합니다.",
+                                    "columns": [],
+                                }
+                            ],
+                        }
+                    },
+                },
+                str(output_path),
+                template_path="templates/erd_template.docx",
+            )
+
+            self.assertTrue(result["success"])
+            entity = Document(output_path).tables[2]
+            self.assertEqual(entity.cell(0, 7).text, "사용자 그룹")
+
+    def test_erd_column_to_row_uses_short_intuitive_attribute_name(self) -> None:
+        dash_row = docx_exporter._erd_column_to_row(
+            {
+                "logical_name": "-",
+                "physical_name": "rag_ops_nm",
+                "data_type": "VARCHAR(100)",
+                "nullable": False,
+                "constraints": [],
+            }
+        )
+        long_row = docx_exporter._erd_column_to_row(
+            {
+                "logical_name": "검색증강생성 기본사항 RAG RAGOps 정보를 관리하는 테이블입니다",
+                "physical_name": "rag_ops_cn",
+                "data_type": "VARCHAR(200)",
+                "nullable": False,
+                "constraints": [],
+            }
+        )
+
+        self.assertEqual(dash_row[0], "명")
+        self.assertEqual(long_row[0], "내용")
+
+    def test_arch_implementation_text_focuses_on_component_context(self) -> None:
+        arch_doc = {
+            "components": [
+                {
+                    "component_id": "WEB",
+                    "name": "Web Client",
+                    "layer": "Presentation Layer",
+                    "description": "사용자 화면과 입력 흐름을 제공",
+                },
+                {
+                    "component_id": "API",
+                    "name": "API Server",
+                    "layer": "Application Layer",
+                    "description": "업무 API 처리",
+                },
+            ],
+            "relations": [
+                {"source": "WEB", "target": "API", "description": "HTTP/API 요청"},
+                {"source": "API", "target": "RDBMS", "description": "메타데이터 조회"},
+            ],
+            "deployment_environment": {
+                "environment": "운영/검증 분리",
+                "web_was": "WEB/WAS 분리",
+            },
+        }
+
+        text = docx_exporter._arch_implementation_text(arch_doc["components"][0], arch_doc)
+
+        self.assertIn("Web Client는 Presentation Layer에 배치", text)
+        self.assertIn("사용자 화면과 입력 흐름을 제공하도록 설계", text)
+        self.assertIn("WEB -> API: HTTP/API 요청", text)
+        self.assertIn("운영/검증 분리", text)
+        self.assertNotIn("구성요소: Web Client, API Server", text)
+
+    def test_arch_template_does_not_require_requirement_id_row(self) -> None:
+        table = Document().add_table(rows=4, cols=2)
+        table.cell(0, 0).text = "요구사항 내용"
+        table.cell(2, 0).text = "구현방안"
+        requirement = {
+            "component_id": "API",
+            "name": "API Server",
+            "layer": "Application Layer",
+            "description": "업무 API를 처리",
+        }
+        arch_doc = {
+            "relations": [{"source": "API", "target": "RDBMS", "description": "메타데이터 저장"}],
+            "deployment_environment": {"environment": "운영/검증 분리"},
+        }
+
+        docx_exporter._fill_arch_requirement_table(table, requirement, arch_doc)
+
+        self.assertEqual(table.cell(0, 1).text, "")
+        self.assertEqual(table.cell(1, 0).text, "업무 API를 처리")
+        self.assertIn("API Server는 Application Layer에 배치", table.cell(3, 0).text)
 
     def test_search_router_normalizes_rag_web_both_and_none(self) -> None:
         class FakeQdrant:

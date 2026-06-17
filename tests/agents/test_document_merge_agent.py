@@ -3,6 +3,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from docx import Document
+
 from agents.document_merge.agent import DocumentMergeAgent
 from tools.result import success_result
 
@@ -190,6 +192,43 @@ class DocumentMergeAgentTest(unittest.TestCase):
             self.assertEqual(db["reference_erd_json_list"], [{"table_id": "T1"}])
             self.assertEqual(ts["reference_interface_json_list"], [{"screen_id": "SCR-1"}])
 
+    def test_db_create_loads_reference_erd_from_docx_entity_tables(self) -> None:
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            requirements = root_path / "requirements.json"
+            erd = root_path / "erd.docx"
+            requirements.write_text(
+                json.dumps({"requirement_json_list": [{"req_id": "REQ-001"}]}),
+                encoding="utf-8",
+            )
+            document = Document()
+            table = document.add_table(rows=4, cols=10)
+            table.cell(0, 2).text = "ENT-001"
+            table.cell(0, 7).text = "사용자"
+            table.cell(1, 4).text = "사용자 정보를 관리하는 테이블입니다."
+            table.rows[2].cells[0].text = "속성명"
+            table.rows[2].cells[1].text = "동의어"
+            table.rows[2].cells[2].text = "데이터타입"
+            table.rows[3].cells[0].text = "USER_SN"
+            table.rows[3].cells[1].text = "사용자 번호"
+            table.rows[3].cells[2].text = "BIGINT"
+            table.rows[3].cells[4].text = "Y"
+            table.rows[3].cells[5].text = "Y"
+            document.save(erd)
+
+            result = DocumentMergeAgent().execute(
+                {
+                    "docs_cd": "DB",
+                    "udt_yn": "N",
+                    "base_requirement_json_path": str(requirements),
+                    "erd_file_path": str(erd),
+                }
+            )
+
+            self.assertEqual(result["status"], "SUCCESS")
+            self.assertEqual(result["reference_erd_json_list"][0]["logical_name"], "사용자")
+            self.assertEqual(result["reference_erd_json_list"][0]["columns"][0]["physical_name"], "USER_SN")
+
     def test_other_create_loads_requirement_json_from_final_document_wrapper(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             requirements = Path(root) / "requirements.json"
@@ -284,6 +323,41 @@ class DocumentMergeAgentTest(unittest.TestCase):
             self.assertIn("integrated_artifact_json_list", document)
             self.assertNotIn("existing_output_raw_json", document)
             self.assertNotIn("integrated_artifact_json_list", document_state)
+
+    def test_erd_update_docx_uses_erd_parser_for_existing_output(self) -> None:
+        from docx import Document
+
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            existing = root_path / "existing_erd.docx"
+            meeting = root_path / "meeting.txt"
+            document = Document()
+            table = document.add_table(rows=4, cols=10)
+            table.cell(0, 2).text = "ENT-001"
+            table.cell(0, 7).text = "사용자"
+            table.cell(1, 4).text = "사용자 정보를 관리합니다."
+            table.rows[2].cells[0].text = "속성명"
+            table.rows[2].cells[1].text = "동의어"
+            table.rows[2].cells[2].text = "타입"
+            table.rows[3].cells[0].text = "user_id"
+            table.rows[3].cells[1].text = "사용자 ID"
+            table.rows[3].cells[2].text = "BIGINT"
+            table.rows[3].cells[4].text = "Y"
+            table.rows[3].cells[5].text = "PK"
+            document.save(existing)
+            meeting.write_text("사용자 엔티티 설명을 보완한다.", encoding="utf-8")
+
+            result = DocumentMergeAgent().execute(
+                {
+                    "docs_cd": "ERD",
+                    "udt_yn": "Y",
+                    "existing_output_path": str(existing),
+                    "input_file_paths": [str(meeting)],
+                }
+            )
+
+            self.assertEqual(result["status"], "SUCCESS")
+            self.assertEqual(result["existing_output_raw_json"]["tables"][0]["logical_name"], "사용자")
 
     def test_update_fallback_meeting_text_is_not_appended_as_artifact_item(self) -> None:
         with tempfile.TemporaryDirectory() as root:
