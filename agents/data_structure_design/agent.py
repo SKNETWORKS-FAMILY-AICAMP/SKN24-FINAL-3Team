@@ -6,12 +6,15 @@ from copy import deepcopy
 from typing import Any
 
 from agents.data_structure_design.processors import (
+    apply_public_standard_results,
     build_db_design,
     build_domain_groups,
     build_entity_candidates,
     build_erd_tables,
     build_relationships,
+    display_column_name,
     filter_data_requirements,
+    format_type_and_length,
     normalize_db_design,
     normalize_erd_tables,
 )
@@ -65,10 +68,13 @@ class DataStructureDesignAgent:
         tables, table_warnings = self._build_table_candidates(entities)
         warnings, rag_results = self._standard_search(tables, state)
         tables, column_warnings = self._build_column_candidates(tables, rag_results)
+        column_standard_warnings, column_standard_results = self._column_standard_search(tables, state)
+        rag_results = _merge_rag_results(rag_results, column_standard_results)
+        tables = apply_public_standard_results(tables, rag_results)
         relationships, relationship_warnings = self._build_relationships(tables)
         erd_entity_json, erd_warnings = self._build_final_erd_json(tables, relationships)
         erd_mermaid_json, mermaid_warnings = self._build_erd_mermaid_json(erd_entity_json)
-        warnings.extend([*group_warnings, *entity_warnings, *table_warnings, *column_warnings, *relationship_warnings, *erd_warnings, *mermaid_warnings])
+        warnings.extend([*group_warnings, *entity_warnings, *table_warnings, *column_warnings, *column_standard_warnings, *relationship_warnings, *erd_warnings, *mermaid_warnings])
         return self._erd_success(
             state,
             erd_entity_json,
@@ -79,6 +85,7 @@ class DataStructureDesignAgent:
                 "entity_candidate_list": entities,
                 "table_candidate_list": tables,
                 "rag_results": rag_results,
+                "standardized_tables": tables,
             },
         )
 
@@ -116,11 +123,25 @@ class DataStructureDesignAgent:
         if not isinstance(reference, list) or not reference:
             return self._failed("DB_REFERENCE_ERD_MISSING", "reference_erd_json_list가 필요합니다.")
         tables = normalize_erd_tables(reference)
+        column_standard_warnings, column_standard_results = [], []
+        if state.get("project_sn") is not None:
+            column_standard_warnings, column_standard_results = self._column_standard_search(tables, state)
+            tables = apply_public_standard_results(tables, column_standard_results)
         erd_analysis = self._llm_dict("ERD 구조를 분석하세요. 테이블, 컬럼, PK, FK, 관계를 JSON으로 반환하세요.", {"tables": tables}, "DB_ERD_ANALYSIS_LLM_FAILED")
         design, warnings = self._build_db_specifications(tables)
         final_design, final_warnings = self._finalize_db_design(design)
-        warnings.extend(final_warnings)
-        return self._db_success(state, final_design, warnings, {"reference_erd_json_list": reference, "llm_analysis": erd_analysis})
+        warnings.extend([*column_standard_warnings, *final_warnings])
+        return self._db_success(
+            state,
+            final_design,
+            warnings,
+            {
+                "reference_erd_json_list": reference,
+                "standardized_tables": tables,
+                "column_standard_results": column_standard_results,
+                "llm_analysis": erd_analysis,
+            },
+        )
 
     def _update_db(self, document_merge: dict[str, Any], state: WorkflowState) -> dict[str, Any]:
         artifacts = document_merge.get("integrated_artifact_json_list")
@@ -331,7 +352,10 @@ class DataStructureDesignAgent:
         )
         if not generated:
             return fallback, warnings
-        return {"tables": [_normalize_db_table(item, index) for index, item in enumerate(generated)]}, warnings
+        generated_design = {
+            "tables": [_normalize_db_table(item, index) for index, item in enumerate(generated)]
+        }
+        return _merge_db_design(fallback, generated_design), warnings
 
     def _finalize_db_design(
         self,
@@ -341,7 +365,14 @@ class DataStructureDesignAgent:
         if isinstance(value, dict):
             candidate = value.get("db_design_json") or value
             if isinstance(candidate, dict) and isinstance(candidate.get("tables"), list):
-                return {"tables": [_normalize_db_table(item, index) for index, item in enumerate(candidate["tables"])]}, []
+                normalized_candidate = {
+                    **candidate,
+                    "tables": [
+                        _normalize_db_table(item, index)
+                        for index, item in enumerate(candidate["tables"])
+                    ],
+                }
+                return _merge_db_design(design, normalized_candidate), []
         return design, []
 
     def _parallel_llm_list(
@@ -483,6 +514,54 @@ class DataStructureDesignAgent:
         ]
         return warnings, results
 
+    def _column_standard_search(
+        self,
+        tables: list[dict[str, Any]],
+        state: WorkflowState,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        warnings = []
+        results_by_table: dict[str, list[dict[str, Any]]] = {}
+        settings = get_settings()
+        filters = {
+            "domain": "public_data",
+            "doc_type": ["standard_term", "standard_word", "standard_domain"],
+        }
+        with ThreadPoolExecutor(max_workers=self.max_parallel_workers) as executor:
+            future_map = {}
+            for table in tables:
+                for column in table.get("columns", []):
+                    if not isinstance(column, dict):
+                        continue
+                    query = (
+                        f"{column.get('logical_name') or column.get('physical_name')} "
+                        "공통표준용어 공통표준단어 공통표준도메인 영문약어 데이터타입 저장 형식 길이"
+                    )
+                    future_map[
+                        executor.submit(
+                            self.search_tool,
+                            query,
+                            search_targets="RAG",
+                            filters=filters,
+                            top_k=5,
+                            collection=settings.alpled_reference_collection,
+                        )
+                    ] = table
+            for future in as_completed(future_map):
+                table = future_map[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    warnings.append({"code": "COLUMN_STANDARD_RAG_FAILED", "message": str(exc), "table_id": table["table_id"]})
+                    continue
+                if result["success"]:
+                    results_by_table.setdefault(table["table_id"], []).extend(result["data"]["normalized_results"])
+                else:
+                    warnings.append({"code": "COLUMN_STANDARD_RAG_FAILED", "message": result["error"]["message"], "table_id": table["table_id"]})
+        return warnings, [
+            {"table_id": table_id, "normalized_results": _dedupe_results(items)}
+            for table_id, items in results_by_table.items()
+        ]
+
     @staticmethod
     def _erd_success(state, erd_entity_json, erd_mermaid_json, warnings, debug):
         output = {
@@ -517,6 +596,17 @@ def _extract_tables(document: dict[str, Any]) -> list[Any]:
     for key in ("tables", "entities", "erd_entity_json_list"):
         if isinstance(document.get(key), list):
             return document[key]
+    for key in ("raw_json", "final_document_json", "erd_entity_json", "result", "data", "content"):
+        value = document.get(key)
+        if isinstance(value, dict):
+            nested = _extract_tables(value)
+            if nested:
+                return nested
+    for value in document.values():
+        if isinstance(value, dict):
+            nested = _extract_tables(value)
+            if nested:
+                return nested
     return []
 
 
@@ -597,39 +687,167 @@ def _normalize_entities(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _normalize_db_table(item: dict[str, Any], index: int) -> dict[str, Any]:
     table_name = str(item.get("table_name") or item.get("physical_name") or f"table_{index + 1}")
+    table_id = str(item.get("table_id") or item.get("physical_name") or table_name)
+    table_logical_name = str(item.get("table_logical_name") or item.get("logical_name") or table_name)
     columns = item.get("columns") if isinstance(item.get("columns"), list) else []
     normalized_columns = []
     for column_index, column in enumerate(columns):
         if not isinstance(column, dict):
             continue
+        column_name = str(column.get("column_name") or column.get("physical_name") or column.get("column_id") or f"column_{column_index + 1}")
+        column_id = str(column.get("column_id") or column.get("physical_name") or column_name)
+        constraints = column.get("constraints") if isinstance(column.get("constraints"), list) else []
+        pk = str(column.get("pk") or ("Y" if "PK" in constraints else ""))
+        fk = str(column.get("fk") or ("Y" if "FK" in constraints else ""))
+        nullable = column.get("nullable", False if pk == "Y" else True)
         normalized_columns.append(
             {
                 **column,
-                "column_name": str(column.get("column_name") or column.get("physical_name") or f"column_{column_index + 1}"),
+                "column_name": column_name,
+                "column_id": column_id,
+                "column_logical_name": display_column_name(
+                    column.get("column_logical_name") or column.get("logical_name") or column.get("description"),
+                    column_name,
+                    table_name,
+                    pk == "Y",
+                ),
                 "data_type": str(column.get("data_type") or "VARCHAR(255)"),
-                "nullable": column.get("nullable", True),
-                "default": column.get("default"),
+                "type_and_length": format_type_and_length(
+                    column.get("type_and_length") or column.get("data_type") or "VARCHAR(255)",
+                    column.get("length"),
+                ),
+                "nullable": nullable,
+                "not_null": str(column.get("not_null") or ("Y" if not bool(nullable) else "")),
+                "pk": pk,
+                "fk": fk,
+                "idx": str(column.get("idx") or column.get("inx") or ("Y" if pk == "Y" or fk == "Y" else "")),
+                "default": column.get("default", ""),
                 "description": str(column.get("description") or column.get("logical_name") or ""),
+                "constraint": _db_column_constraint(column),
+                "constraints": constraints,
             }
         )
     if not normalized_columns:
         normalized_columns = [
             {
                 "column_name": f"{table_name.removeprefix('tbl_')}_sn",
+                "column_id": f"{table_name.removeprefix('tbl_')}_sn",
+                "column_logical_name": "일련번호",
                 "data_type": "BIGINT",
+                "type_and_length": "BIGINT",
                 "nullable": False,
-                "default": None,
+                "not_null": "Y",
+                "pk": "Y",
+                "fk": "",
+                "idx": "Y",
+                "default": "",
                 "description": "기본키",
+                "constraint": "",
+                "constraints": ["PK"],
             }
         ]
     return {
         **item,
+        "table_id": table_id,
         "table_name": table_name,
+        "table_logical_name": table_logical_name,
+        "database_name": str(item.get("database_name") or "업무 DB"),
+        "tablespace_name": str(item.get("tablespace_name") or f"TS_{table_name.removeprefix('tbl_').upper()}"[:30]),
+        "trigger_config": str(item.get("trigger_config") or "해당 없음"),
         "table_description": str(item.get("table_description") or item.get("description") or item.get("logical_name") or table_name),
+        "initial_count": str(item.get("initial_count") or "0"),
+        "daily_growth": str(item.get("daily_growth") or "산정 필요"),
+        "retention_period": str(item.get("retention_period") or "업무 기준에 따름"),
+        "max_count": str(item.get("max_count") or "산정 필요"),
+        "capacity": str(item.get("capacity") or "산정 필요"),
+        "note": str(item.get("note") or ""),
         "columns": normalized_columns,
         "constraints": item.get("constraints") if isinstance(item.get("constraints"), list) else _db_constraints(normalized_columns),
         "indexes": item.get("indexes") if isinstance(item.get("indexes"), list) else [],
     }
+
+
+def _merge_db_design(base: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    """LLM 보강 결과를 반영하되 ERD에서 온 컬럼명/ID/타입/키 구조는 보존합니다."""
+
+    base_tables = [_normalize_db_table(item, index) for index, item in enumerate(base.get("tables") or []) if isinstance(item, dict)]
+    candidate_tables = [
+        _normalize_db_table(item, index)
+        for index, item in enumerate(candidate.get("tables") or [])
+        if isinstance(item, dict)
+    ]
+    candidate_by_key = {
+        _db_table_key(table): table
+        for table in candidate_tables
+        if _db_table_key(table)
+    }
+
+    merged_tables = []
+    for base_table in base_tables:
+        candidate_table = candidate_by_key.get(_db_table_key(base_table), {})
+        merged_table = dict(base_table)
+        for key in (
+            "database_name",
+            "tablespace_name",
+            "trigger_config",
+            "table_description",
+            "initial_count",
+            "daily_growth",
+            "retention_period",
+            "max_count",
+            "capacity",
+            "note",
+        ):
+            value = candidate_table.get(key)
+            if value not in (None, "", []):
+                merged_table[key] = value
+
+        candidate_columns = {
+            _db_column_key(column): column
+            for column in candidate_table.get("columns", [])
+            if isinstance(column, dict) and _db_column_key(column)
+        }
+        merged_columns = []
+        for base_column in merged_table.get("columns", []):
+            candidate_column = candidate_columns.get(_db_column_key(base_column), {})
+            merged_columns.append(_merge_db_column(base_column, candidate_column))
+        merged_table["columns"] = merged_columns
+        if isinstance(candidate_table.get("indexes"), list):
+            merged_table["indexes"] = candidate_table["indexes"]
+        if isinstance(candidate_table.get("constraints"), list):
+            merged_table["constraints"] = candidate_table["constraints"]
+        merged_tables.append(merged_table)
+
+    return {
+        **base,
+        **{key: value for key, value in candidate.items() if key != "tables" and value not in (None, "", [])},
+        "tables": merged_tables,
+    }
+
+
+def _merge_db_column(base_column: dict[str, Any], candidate_column: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(base_column)
+    for key in ("description", "default", "constraint"):
+        value = candidate_column.get(key)
+        if value not in (None, "", []):
+            merged[key] = value
+
+    base_constraints = base_column.get("constraints") if isinstance(base_column.get("constraints"), list) else []
+    candidate_constraints = candidate_column.get("constraints") if isinstance(candidate_column.get("constraints"), list) else []
+    merged["constraints"] = list(dict.fromkeys([*base_constraints, *candidate_constraints]))
+    merged["type_and_length"] = format_type_and_length(
+        base_column.get("type_and_length") or base_column.get("data_type"),
+        base_column.get("length"),
+    )
+    return merged
+
+
+def _db_table_key(table: dict[str, Any]) -> str:
+    return str(table.get("table_name") or table.get("physical_name") or table.get("table_id") or "").lower()
+
+
+def _db_column_key(column: dict[str, Any]) -> str:
+    return str(column.get("column_name") or column.get("physical_name") or column.get("column_id") or "").lower()
 
 
 def _db_constraints(columns: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -639,6 +857,19 @@ def _db_constraints(columns: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if "PK" in column.get("constraints", []) or column["column_name"].endswith("_sn")
     ]
     return [{"type": "PK", "columns": [pk_columns[0]]}] if pk_columns else []
+
+
+def _db_column_constraint(column: dict[str, Any]) -> str:
+    explicit = column.get("constraint")
+    if explicit not in (None, "", []):
+        return str(explicit)
+    constraints = column.get("constraints") if isinstance(column.get("constraints"), list) else []
+    filtered = [
+        str(item)
+        for item in constraints
+        if str(item).upper() not in {"PK", "FK", "INDEX", "IDX", "NOT NULL"}
+    ]
+    return "; ".join(filtered)
 
 
 def _dedupe_results(results: list[Any]) -> list[dict[str, Any]]:
@@ -656,6 +887,24 @@ def _dedupe_results(results: list[Any]) -> list[dict[str, Any]]:
         seen.add(key)
         deduped.append(result)
     return deduped
+
+
+def _merge_rag_results(
+    base_results: list[dict[str, Any]],
+    extra_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    merged: dict[str, list[dict[str, Any]]] = {}
+    for group in [*base_results, *extra_results]:
+        if not isinstance(group, dict):
+            continue
+        table_id = str(group.get("table_id") or "")
+        if not table_id:
+            continue
+        merged.setdefault(table_id, []).extend(group.get("normalized_results") or [])
+    return [
+        {"table_id": table_id, "normalized_results": _dedupe_results(items)}
+        for table_id, items in merged.items()
+    ]
 
 
 def _short_text(value: Any, max_length: int) -> str:

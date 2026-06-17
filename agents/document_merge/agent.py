@@ -8,6 +8,7 @@ from agents.document_merge.processors import analyze_meetings, artifact_items, m
 from tools.llm.llm_client import LLMClient
 from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
+from tools.parser.erd_docx_parser import parse_erd_docx
 from tools.parser.image_extractor import extract_images
 from tools.parser.rfp_rule_parser import parse_rfp_requirements
 from tools.result import ToolResult
@@ -103,7 +104,7 @@ class DocumentMergeAgent:
             return self._failed("EXISTING_OUTPUT_MISSING", "existing_output_path가 필요합니다.")
         if not meeting_paths:
             return self._failed("MEETING_FILE_MISSING", "수정 모드에는 회의록 파일이 필요합니다.")
-        parsed = parse_artifact(existing_path)
+        parsed = self._parse_existing_artifact(existing_path, docs_cd)
         if not parsed["success"]:
             return self._tool_failed("EXISTING_OUTPUT_PARSE_FAILED", parsed)
         image_result = extract_images(existing_path)
@@ -128,6 +129,13 @@ class DocumentMergeAgent:
             ),
             existing_output_image_paths=image_paths,
         )
+
+    def _parse_existing_artifact(self, existing_path: str, docs_cd: str) -> ToolResult:
+        if docs_cd == "ERD" and str(existing_path).lower().endswith(".docx"):
+            parsed_erd = parse_erd_docx(str(existing_path))
+            if parsed_erd["success"]:
+                return parsed_erd
+        return parse_artifact(existing_path)
 
     def _meeting_changes(self, state: WorkflowState) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         excluded_paths = {
@@ -175,6 +183,17 @@ class DocumentMergeAgent:
                     f"REFERENCE_{reference_type}_MISSING",
                     f"{reference_type} 참조 파일 경로가 필요합니다.",
                 ),
+            }
+        if reference_type == "ERD" and str(path).lower().endswith(".docx"):
+            parsed_erd = parse_erd_docx(str(path))
+            if not parsed_erd["success"]:
+                return {
+                    "success": False,
+                    "output": self._tool_failed("REFERENCE_ERD_PARSE_FAILED", parsed_erd),
+                }
+            return {
+                "success": True,
+                "items": parsed_erd["data"].get("tables", []),
             }
         parsed = parse_artifact(path)
         if not parsed["success"]:

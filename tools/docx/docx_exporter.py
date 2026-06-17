@@ -15,6 +15,10 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.shared import Inches, Pt
 from docx.table import Table
 
+from agents.data_structure_design.processors.table_builder import (
+    display_column_name,
+    format_type_and_length,
+)
 from tools.result import ToolResult, error_result, success_result
 
 
@@ -192,8 +196,7 @@ def _fill_erd_template(document: Any, erd: dict[str, Any], image_path: str | Non
     if not entities:
         _fill_erd_entity_table(template_table, {})
         return
-    for _ in entities[1:]:
-        _clone_table_after(template_table._tbl, template_table)
+    _clone_repeating_tables_with_spacing(document, template_table, len(entities) - 1)
     for table, entity in zip(document.tables[2 : 2 + len(entities)], entities):
         _fill_erd_entity_table(table, entity)
 
@@ -252,8 +255,7 @@ def _fill_db_template(document: Any, design: dict[str, Any]) -> None:
     if not tables:
         _fill_db_table_spec(template_table, {})
         return
-    for _ in tables[1:]:
-        _clone_table_after(template_table._tbl, template_table)
+    _clone_repeating_tables_with_spacing(document, template_table, len(tables) - 1)
     for table, item in zip(document.tables[3 : 3 + len(tables)], tables):
         _fill_db_table_spec(table, item)
 
@@ -277,8 +279,12 @@ def _fill_arch_template(document: Any, arch_doc: dict[str, Any], image_path: str
     if not requirements:
         _fill_arch_requirement_table(template_table, {}, arch_doc)
         return
+    anchor = template_table._tbl
     for _ in requirements[1:]:
-        _clone_table_after(template_table._tbl, template_table)
+        spacer = _insert_paragraph_after(document, anchor)
+        spacer.paragraph_format.space_after = Pt(8)
+        cloned_table = _clone_table_after(spacer._p, template_table)
+        anchor = cloned_table._tbl
     for table, requirement in zip(document.tables[2 : 2 + len(requirements)], requirements):
         _fill_arch_requirement_table(table, requirement, arch_doc)
 
@@ -360,7 +366,7 @@ def _fill_interface_process_table(table: Table, items: list[dict[str, Any]]) -> 
 
 def _fill_erd_entity_table(table: Table, entity: dict[str, Any]) -> None:
     _set_cell_safe(table, 0, 2, _pick(entity, "entity_id", "table_id", default=""))
-    _set_cell_safe(table, 0, 7, _pick(entity, "entity_name", "logical_name", "physical_name", "table_name"))
+    _set_cell_safe(table, 0, 7, _entity_display_name(entity))
     _set_cell_safe(table, 1, 4, _pick(entity, "entity_description", "table_comment", "description"))
     rows = [_erd_column_to_row(column) for column in _entity_columns(entity)]
     _fill_repeating_table(table, rows, base_row_idx=3)
@@ -369,20 +375,20 @@ def _fill_erd_entity_table(table: Table, entity: dict[str, Any]) -> None:
 def _fill_db_table_spec(table: Table, item: dict[str, Any]) -> None:
     table_name = _pick(item, "table_name", "physical_name")
     _set_cell_safe(table, 0, 1, _pick(item, "table_id", default=table_name))
-    _set_cell_safe(table, 0, 5, table_name)
+    _set_cell_safe(table, 0, 6, _pick(item, "table_logical_name", "logical_name", default=table_name))
     _set_cell_safe(table, 1, 1, _pick(item, "database_name", default="업무 DB"))
-    _set_cell_safe(table, 1, 5, _pick(item, "tablespace_name", default=""))
+    _set_cell_safe(table, 1, 6, _pick(item, "tablespace_name", default=""))
     _set_cell_safe(table, 2, 1, _pick(item, "trigger_config", default=""))
     _set_cell_safe(table, 3, 1, _pick(item, "table_description", "description", "table_comment"))
     _fill_repeating_table(
         table,
         [
             [
-                _pick(item, "initial_count", default=""),
-                _pick(item, "daily_growth", default=""),
-                _pick(item, "retention_period", default=""),
-                _pick(item, "max_count", default=""),
-                _pick(item, "capacity", default=""),
+                _pick(item, "initial_count", default="0"),
+                _pick(item, "daily_growth", default="산정 필요"),
+                _pick(item, "retention_period", default="업무 기준에 따름"),
+                _pick(item, "max_count", default="산정 필요"),
+                _pick(item, "capacity", default="산정 필요"),
                 _pick(item, "note", default=""),
             ]
         ],
@@ -396,9 +402,13 @@ def _fill_db_table_spec(table: Table, item: dict[str, Any]) -> None:
 
 
 def _fill_arch_requirement_table(table: Table, requirement: dict[str, Any], arch_doc: dict[str, Any]) -> None:
-    _set_cell_safe(table, 0, 1, _pick(requirement, "requirement_id", "req_id", "id"))
-    _set_cell_safe(table, 2, 0, _pick(requirement, "description", "detail_text", "content"))
-    _set_cell_safe(table, 4, 0, _arch_implementation_text(requirement, arch_doc))
+    content = _pick(requirement, "description", "detail_text", "content")
+    implementation = _arch_implementation_text(requirement, arch_doc)
+    if _set_arch_labeled_row(table, "요구사항 내용", content):
+        _set_arch_labeled_row(table, "구현방안", implementation)
+        return
+    _set_cell_safe(table, 1, 0, content)
+    _set_cell_safe(table, 3, 0, implementation)
 
 
 def _append_value(document: Any, value: Any) -> None:
@@ -500,6 +510,15 @@ def _clone_table_after(block: Any, table: Table) -> Table:
     new_tbl = copy.deepcopy(table._tbl)
     block.addnext(new_tbl)
     return Table(new_tbl, table._parent)
+
+
+def _clone_repeating_tables_with_spacing(document: Any, template_table: Table, clone_count: int) -> None:
+    anchor = template_table._tbl
+    for _ in range(max(0, clone_count)):
+        spacer = _insert_paragraph_after(document, anchor)
+        spacer.paragraph_format.space_after = Pt(8)
+        cloned_table = _clone_table_after(spacer._p, template_table)
+        anchor = cloned_table._tbl
 
 
 def _insert_paragraph_after(document: Any, block: Any, text: str = "", page_break: bool = False) -> Any:
@@ -620,14 +639,21 @@ def _entity_columns(item: dict[str, Any]) -> list[dict[str, Any]]:
 
 def _erd_column_to_row(column: dict[str, Any]) -> list[Any]:
     constraints = column.get("constraints")
+    data_type, length = _split_data_type(_pick(column, "type", "data_type"))
+    physical_name = _pick(column, "physical_name", "column_name", "name")
     return [
-        _column_display_name(column),
-        _short_text(_pick(column, "synonym", "logical_name", "description", "comment"), 30),
-        _pick(column, "type", "data_type"),
-        _pick(column, "length", default=""),
+        display_column_name(
+            _pick(column, "logical_name", "column_logical_name", "description", "comment"),
+            physical_name,
+            "",
+            bool(column.get("is_pk")) or "PK" in [str(item).upper() for item in constraints or []],
+        ),
+        _short_text(_clean_optional_text(_pick(column, "synonym", default="")), 30),
+        data_type,
+        _pick(column, "length", default=length),
         _yes_no(not bool(column.get("nullable", True))) or _pick(column, "not_null"),
-        _yes_no(column.get("is_pk")) or _pick(column, "pk") or _contains_constraint(constraints, "PK"),
-        _yes_no(column.get("is_fk")) or _pick(column, "fk") or _contains_constraint(constraints, "FK"),
+        _erd_key_marker(column, constraints, "PK"),
+        _erd_key_marker(column, constraints, "FK"),
         _yes_no(column.get("is_pk") or column.get("is_fk")) or _pick(column, "inx") or _contains_constraint(constraints, "PK", "FK"),
         _pick(column, "default", default=""),
         _short_text(_column_constraint_text(column), 60),
@@ -635,13 +661,11 @@ def _erd_column_to_row(column: dict[str, Any]) -> list[Any]:
 
 
 def _entity_display_name(table: dict[str, Any]) -> str:
-    explicit = _pick(table, "entity_name")
-    if explicit:
-        return _short_text(explicit, 40).upper()
-    physical = _pick(table, "physical_name", "table_name")
-    if physical:
-        return str(physical).removeprefix("tbl_").upper()
-    return _short_text(_pick(table, "logical_name"), 40).upper()
+    for key in ("entity_name", "logical_name", "table_logical_name"):
+        value = _pick(table, key)
+        if value and not _looks_like_physical_name(value):
+            return _short_text(value, 40)
+    return _short_text(_humanize_physical_name(_pick(table, "physical_name", "table_name")), 40)
 
 
 def _column_display_name(column: dict[str, Any]) -> str:
@@ -649,6 +673,29 @@ def _column_display_name(column: dict[str, Any]) -> str:
     if physical:
         return str(physical).upper()
     return _short_text(_pick(column, "logical_name"), 40).upper()
+
+
+def _looks_like_physical_name(value: Any) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    return bool(re.fullmatch(r"(tbl_)?[A-Za-z][A-Za-z0-9_]*", text) or re.fullmatch(r"TABLE-\d+", text, re.IGNORECASE))
+
+
+def _humanize_physical_name(value: Any) -> str:
+    text = str(value or "").strip().removeprefix("tbl_")
+    if not text:
+        return "엔티티"
+    tokens = [token for token in re.split(r"[_\s]+", text) if token]
+    return " ".join(token.upper() if len(token) <= 3 else token for token in tokens) or "엔티티"
+
+
+def _split_data_type(value: Any) -> tuple[str, str]:
+    text = _to_plain_text(value).strip()
+    match = re.match(r"^([A-Za-z가-힣_]+)\s*\(([^)]+)\)$", text)
+    if match:
+        return match.group(1).upper(), match.group(2).strip()
+    return text.upper(), ""
 
 
 def _short_text(value: Any, max_length: int) -> str:
@@ -667,15 +714,18 @@ def _db_tables(design: dict[str, Any]) -> list[dict[str, Any]]:
 def _db_column_to_row(column: dict[str, Any]) -> list[Any]:
     constraints = column.get("constraints")
     return [
-        _pick(column, "column_name", "physical_name", "name"),
-        _pick(column, "column_id", "logical_name", "name"),
-        _pick(column, "type_and_length", "data_type", "type"),
+        _pick(column, "column_logical_name", "logical_name", "description", "column_name", "name"),
+        _pick(column, "column_id", "physical_name", "column_name", "name"),
+        format_type_and_length(
+            _pick(column, "type_and_length", "data_type", "type"),
+            _pick(column, "length"),
+        ),
         _yes_no(not bool(column.get("nullable", True))) or _pick(column, "not_null"),
-        _yes_no(column.get("is_pk")) or _contains_constraint(constraints, "PK"),
-        _yes_no(column.get("is_fk")) or _contains_constraint(constraints, "FK"),
-        _yes_no(column.get("is_pk") or column.get("is_fk")),
+        _pick(column, "pk") or _yes_no(column.get("is_pk")) or _contains_constraint(constraints, "PK"),
+        _pick(column, "fk") or _yes_no(column.get("is_fk")) or _contains_constraint(constraints, "FK"),
+        _pick(column, "idx", "inx") or _yes_no(column.get("is_pk") or column.get("is_fk")) or _contains_constraint(constraints, "PK", "FK", "INDEX", "IDX"),
         _pick(column, "default", default=""),
-        _pick(column, "constraint", "constraints", "description", "comment"),
+        _column_constraint_text(column),
     ]
 
 
@@ -693,6 +743,17 @@ def _contains_constraint(value: Any, *needles: str) -> str:
     return "Y" if any(needle.upper() in str(value).upper() for needle in needles) else ""
 
 
+def _erd_key_marker(column: dict[str, Any], constraints: Any, marker: str) -> str:
+    explicit = _pick(column, marker.lower())
+    if explicit:
+        return marker if str(explicit).upper() == "Y" else str(explicit)
+    if marker == "PK" and column.get("is_pk"):
+        return "PK"
+    if marker == "FK" and column.get("is_fk"):
+        return "FK"
+    return marker if _contains_constraint(constraints, marker) else ""
+
+
 def _column_constraint_text(column: dict[str, Any]) -> str:
     explicit = _pick(column, "constraint")
     if explicit:
@@ -705,22 +766,150 @@ def _column_constraint_text(column: dict[str, Any]) -> str:
     return ""
 
 
+def _clean_optional_text(value: Any) -> str:
+    text = _to_plain_text(value)
+    if text in {"", "-", "–", "—", "N/A", "n/a", "없음", "해당 없음", "null", "None"}:
+        return ""
+    return text
+
+
 def _arch_requirement_items(arch_doc: dict[str, Any]) -> list[dict[str, Any]]:
     for key in ("requirements", "requirement_implementations", "drivers", "components"):
         value = arch_doc.get(key)
         if isinstance(value, list):
             return [item for item in value if isinstance(item, dict)]
     overview = _pick(arch_doc, "overview")
-    return [{"requirement_id": "ARCH-001", "description": overview}] if overview else []
+    return [{"description": overview}] if overview else []
+
+
+def _set_arch_labeled_row(table: Table, label: str, value: Any) -> bool:
+    for row_idx, row in enumerate(table.rows):
+        first_cell_text = row.cells[0].text.replace(" ", "")
+        if label.replace(" ", "") in first_cell_text:
+            target_row = row_idx + 1
+            if target_row < len(table.rows):
+                _set_cell_safe(table, target_row, 0, value)
+                return True
+    return False
 
 
 def _arch_implementation_text(requirement: dict[str, Any], arch_doc: dict[str, Any]) -> str:
-    direct = _pick(requirement, "implementation", "implementation_strategy", "description")
+    explicit = _pick(requirement, "implementation", "implementation_strategy")
+    if explicit:
+        return explicit
+
+    component_text = _arch_component_implementation_text(requirement, arch_doc)
+    if component_text:
+        return component_text
+
+    driver_text = _arch_driver_implementation_text(requirement, arch_doc)
+    if driver_text:
+        return driver_text
+
+    direct = _pick(requirement, "description", "detail_text", "content")
     components = arch_doc.get("components") or arch_doc.get("component_descriptions") or []
     relations = arch_doc.get("relations") or arch_doc.get("edges") or []
     parts = [direct] if direct else []
     if isinstance(components, list) and components:
-        parts.append("구성요소: " + ", ".join(_pick(item, "name", "component_name", "id") for item in components if isinstance(item, dict)))
+        component_names = [
+            _pick(item, "name", "component_name", "id")
+            for item in components
+            if isinstance(item, dict)
+        ]
+        parts.append("구성요소는 " + ", ".join(component_names[:6]) + " 중심으로 구성합니다.")
     if isinstance(relations, list) and relations:
-        parts.append("관계: " + "; ".join(_relationship_text(item) for item in relations if isinstance(item, dict)))
+        relation_summary = [_arch_relation_text(item) for item in relations if isinstance(item, dict)]
+        parts.append("주요 연계는 " + "; ".join(relation_summary[:4]) + " 방식으로 설계합니다.")
     return "\n".join(part for part in parts if part)
+
+
+def _arch_component_implementation_text(requirement: dict[str, Any], arch_doc: dict[str, Any]) -> str:
+    component_id = _pick(requirement, "component_id", "id")
+    component_name = _pick(requirement, "name", "component_name")
+    if not component_id and not component_name:
+        return ""
+
+    layer = _pick(requirement, "layer", default="Application Layer")
+    description = _pick(requirement, "description", "role")
+    relations = _arch_related_relations(component_id, component_name, arch_doc)
+    deployment = arch_doc.get("deployment_environment") if isinstance(arch_doc.get("deployment_environment"), dict) else {}
+
+    sentences = [
+        f"{component_name or component_id}는 {layer}에 배치하여 {description or '담당 기능을 독립적으로 처리'}하도록 설계합니다.",
+    ]
+    if relations:
+        sentences.append(
+            "주요 연계는 "
+            + "; ".join(_arch_relation_text(item) for item in relations[:4])
+            + " 흐름으로 정의합니다."
+        )
+    if deployment:
+        env_bits = [
+            _pick(deployment, "environment"),
+            _pick(deployment, "web_was"),
+            _pick(deployment, "dbms"),
+            _pick(deployment, "storage"),
+            _pick(deployment, "vector_db"),
+            _pick(deployment, "llm_server"),
+        ]
+        env_text = ", ".join(bit for bit in env_bits if bit)
+        if env_text:
+            sentences.append(f"배포 및 운영 기준은 {env_text} 구성을 적용합니다.")
+    return " ".join(sentences)
+
+
+def _arch_driver_implementation_text(requirement: dict[str, Any], arch_doc: dict[str, Any]) -> str:
+    driver_id = _pick(requirement, "driver_id")
+    category = _pick(requirement, "category")
+    name = _pick(requirement, "name")
+    description = _pick(requirement, "description")
+    if not driver_id and not category:
+        return ""
+
+    components = arch_doc.get("components") or []
+    component_names = [
+        _pick(item, "name", "component_name", "component_id")
+        for item in components
+        if isinstance(item, dict)
+        and (
+            not category
+            or category in item.get("driver_categories", [])
+            or category.lower() in str(item).lower()
+        )
+    ]
+    target_text = ", ".join(component_names[:5]) if component_names else "관련 구성요소"
+    return (
+        f"{name or category}는 {target_text}에 반영합니다. "
+        f"{description or '품질 속성 요구사항을 설계 기준으로 적용합니다.'}"
+    )
+
+
+def _arch_related_relations(
+    component_id: str,
+    component_name: str,
+    arch_doc: dict[str, Any],
+) -> list[dict[str, Any]]:
+    relations = arch_doc.get("relations") or arch_doc.get("edges") or []
+    if not isinstance(relations, list):
+        return []
+    keys = {value for value in (component_id, component_name) if value}
+    return [
+        item
+        for item in relations
+        if isinstance(item, dict)
+        and (
+            _pick(item, "source", "from", "from_component") in keys
+            or _pick(item, "target", "to", "to_component") in keys
+        )
+    ]
+
+
+def _arch_relation_text(item: dict[str, Any]) -> str:
+    source = _pick(item, "source", "from", "from_component", "from_entity", "from_table")
+    target = _pick(item, "target", "to", "to_component", "to_entity", "to_table")
+    description = _pick(item, "description", "label", "type")
+    if source and target and description:
+        return f"{source} -> {target}: {description}"
+    if source and target:
+        return f"{source} -> {target}: 연계"
+    return _relationship_text(item)

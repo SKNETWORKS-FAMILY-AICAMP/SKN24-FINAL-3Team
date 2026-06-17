@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from agents.data_structure_design.processors.table_builder import normalize_erd_tables
 from agents.validation.schemas import first_list, is_empty, make_check, missing_fields, missing_keys
 from workflow.state import WorkflowState
 
@@ -67,7 +68,7 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
 def _reference_names(state: WorkflowState) -> tuple[set[str], set[tuple[str, str]]]:
     references = state.get("agent_outputs", {}).get("document_merge_agent", {}).get("reference_erd_json_list") or []
     tables, columns = set(), set()
-    for table in references:
+    for table in normalize_erd_tables(references):
         if not isinstance(table, dict):
             continue
         table_name = str(table.get("physical_name") or table.get("table_name") or "")
