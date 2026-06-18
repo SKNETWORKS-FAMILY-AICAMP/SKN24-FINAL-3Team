@@ -56,6 +56,94 @@ def find_missing_group_coverage(input_candidates: list[dict], finals: list[dict]
     covered_ids = covered_group_lineage_ids(finals)
     return sorted(expected_ids - covered_ids)
 
+def repair_duplicate_final_task2_assignment(group_doc_id: str, finals: list[dict], relations: list[dict], raw_log_path: Path) -> tuple[list[dict], list[dict], list[dict]]:
+    assignment = defaultdict(list)
+    for final_index, final in enumerate(finals):
+        gold_id = str(final.get('gold_id', '')).strip()
+        task2_ids = dedupe_preserve(final.get('source_task2_ids', []))
+        for task2_id in task2_ids:
+            assignment[task2_id].append({'final_index': final_index, 'gold_id': gold_id, 'source_count': len(task2_ids)})
+
+    duplicate_owners = {
+        task2_id: owners
+        for task2_id, owners in assignment.items()
+        if len({owner['gold_id'] for owner in owners}) > 1
+    }
+    if not duplicate_owners:
+        return (finals, relations, [])
+
+    keep_owner_by_task2 = {}
+    for task2_id, owners in duplicate_owners.items():
+        valid_owners = [owner for owner in owners if owner['gold_id']]
+        selected = sorted(valid_owners or owners, key=lambda owner: (owner['source_count'], owner['final_index']))[0]
+        keep_owner_by_task2[task2_id] = selected['gold_id']
+
+    repaired_finals = []
+    dropped_gold_ids = set()
+    repair_records = []
+
+    for final in finals:
+        gold_id = str(final.get('gold_id', '')).strip()
+        original_task2_ids = dedupe_preserve(final.get('source_task2_ids', []))
+        kept_task2_ids = [
+            task2_id
+            for task2_id in original_task2_ids
+            if task2_id not in keep_owner_by_task2 or keep_owner_by_task2[task2_id] == gold_id
+        ]
+        removed_task2_ids = [
+            task2_id
+            for task2_id in original_task2_ids
+            if task2_id in keep_owner_by_task2 and keep_owner_by_task2[task2_id] != gold_id
+        ]
+        if removed_task2_ids:
+            repair_records.append({
+                'gold_id': gold_id,
+                'removed_task2_ids': removed_task2_ids,
+                'kept_owner_by_task2': {task2_id: keep_owner_by_task2[task2_id] for task2_id in removed_task2_ids},
+                'reason': 'TASK3 output assigned the same TASK2 IDs to multiple final requirements.',
+            })
+        if kept_task2_ids:
+            repaired_final = dict(final)
+            repaired_final['source_task2_ids'] = kept_task2_ids
+            repaired_finals.append(repaired_final)
+        else:
+            dropped_gold_ids.add(gold_id)
+            repair_records.append({
+                'gold_id': gold_id,
+                'dropped': True,
+                'reason': 'All source_task2_ids were already assigned to more specific final requirements.',
+            })
+
+    repaired_gold_ids = {str(final.get('gold_id', '')).strip() for final in repaired_finals}
+    repaired_relations = []
+    for relation in relations:
+        if not isinstance(relation, dict):
+            continue
+        relation_gold_id = str(relation.get('gold_id', '')).strip()
+        if relation_gold_id in dropped_gold_ids or relation_gold_id not in repaired_gold_ids:
+            continue
+        repaired_relation = dict(relation)
+        for key in ('comparison_ids', 'excluded_or_absorbed_ids'):
+            repaired_relation[key] = [
+                task2_id
+                for task2_id in dedupe_preserve(repaired_relation.get(key, []))
+                if task2_id not in keep_owner_by_task2 or keep_owner_by_task2[task2_id] == relation_gold_id
+            ]
+        repaired_relations.append(repaired_relation)
+
+    repair_path = raw_log_path.with_name(f'{raw_log_path.stem}_duplicate_assignment_repair.json')
+    dump_json(repair_path, {
+        'group_document_id': group_doc_id,
+        'duplicate_owners': duplicate_owners,
+        'keep_owner_by_task2': keep_owner_by_task2,
+        'repair_records': repair_records,
+        'final_count_before': len(finals),
+        'final_count_after': len(repaired_finals),
+    })
+    print(f'[TASK3 중복 배정 보정] group={group_doc_id}, duplicates={len(duplicate_owners)}, final_count={len(finals)}->{len(repaired_finals)}', flush=True)
+
+    return (repaired_finals, repaired_relations, repair_records)
+
 def validate_final_task2_assignment(candidates: list[dict], finals: list[dict], relations: list[dict]) -> dict:
     expected_ids = {item['task2_id'] for item in candidates}
     final_gold_ids = {str(item.get('gold_id', '')).strip() for item in finals}
@@ -158,6 +246,8 @@ def run_stage3_group(group_doc_id: str, group_candidates: list[dict], selected_s
 
     finals, relations = resolve_stage3_lineage(finals, relations, group_candidates)
     finals, relations, coverage_fallback_records = restore_missing_group_coverage(group_doc_id, group_candidates, finals, relations, raw_log_path)
+    finals, relations, duplicate_repair_records = repair_duplicate_final_task2_assignment(group_doc_id, finals, relations, raw_log_path)
+    coverage_fallback_records.extend({'duplicate_assignment_repair': item} for item in duplicate_repair_records)
     validate_group_coverage(group_candidates, finals, relations)
     validate_final_task2_assignment([{**candidate, 'task2_id': lineage_id} for candidate in group_candidates for lineage_id in dedupe_preserve(candidate.get('lineage_task2_ids', [candidate['task2_id']]))], finals, relations)
 
