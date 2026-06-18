@@ -339,6 +339,80 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         self.assertIs(state["agent_outputs"]["data_structure_design_agent"], result)
         self.assertNotIn("erd_entity_json", state)
 
+    def test_erd_create_uses_stepwise_requirement_to_table_pipeline(self) -> None:
+        state = {
+            "project_sn": 1,
+            "docs_cd": "ERD",
+            "udt_yn": "N",
+            "etc": {"debug": True},
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "integrated_requirement_json_list": [
+                        {
+                            "requirement_id": "DAR-002",
+                            "requirement_type": "데이터 요구사항",
+                            "requirement_name": "문서 승인 기반 RAG 학습 자동화",
+                            "detail": "사용자 문서 등록 신청, 운영자 승인/반려, chunking, embedding, 처리상태 관리",
+                        }
+                    ]
+                }
+            },
+        }
+
+        result = DataStructureDesignAgent(
+            search_tool=lambda query, **kwargs: success_result({"normalized_results": []})
+        ).execute(state)
+        tables = {table["table_name"]: table for table in result["erd_entity_json"]["tables"]}
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertIn("tbl_document", tables)
+        self.assertIn("tbl_document_file", tables)
+        self.assertIn("tbl_approval", tables)
+        self.assertIn("tbl_document_chunk", tables)
+        self.assertIn("tbl_embedding_index", tables)
+        self.assertIn("tbl_rag_job", tables)
+        self.assertIn("tbl_rag_job_step", tables)
+        self.assertTrue(all(table["source_requirement_ids"] for table in tables.values()))
+        self.assertTrue(any(rel["to_table"] == "tbl_document" for rel in result["erd_entity_json"]["relationships"]))
+        self.assertEqual(result["debug"]["validation_result"]["is_valid"], True)
+        self.assertEqual(
+            result["debug"]["data_structure_intermediate"][0]["requirement_id"],
+            "DAR-002",
+        )
+
+    def test_erd_create_does_not_add_ai_platform_tables_without_domain_keywords(self) -> None:
+        state = {
+            "project_sn": 1,
+            "docs_cd": "ERD",
+            "udt_yn": "N",
+            "etc": {"debug": True},
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "integrated_requirement_json_list": [
+                        {
+                            "requirement_id": "REQ-PORTAL-001",
+                            "requirement_type": "기능 요구사항",
+                            "requirement_name": "문서 신청 승인 관리",
+                            "detail": "사용자는 문서를 등록 신청하고 관리자는 승인 또는 반려할 수 있어야 한다.",
+                        }
+                    ]
+                }
+            },
+        }
+
+        result = DataStructureDesignAgent(
+            search_tool=lambda query, **kwargs: success_result({"normalized_results": []})
+        ).execute(state)
+        table_names = {table["table_name"] for table in result["erd_entity_json"]["tables"]}
+
+        self.assertIn("tbl_document", table_names)
+        self.assertIn("tbl_approval", table_names)
+        self.assertNotIn("tbl_ai_model", table_names)
+        self.assertNotIn("tbl_agent", table_names)
+        self.assertNotIn("tbl_prompt_template", table_names)
+        self.assertNotIn("tbl_rag_job", table_names)
+        self.assertEqual(result["debug"]["domain_info"]["primary_domain"], "GENERAL")
+
     def test_erd_update_preserves_existing_and_adds_meeting_entity(self) -> None:
         state = {
             "docs_cd": "ERD",
@@ -626,6 +700,75 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         self.assertEqual(table["columns"][0]["column_id"], "user_sn")
         self.assertEqual(table["columns"][0]["column_logical_name"], "ID")
         self.assertEqual(table["columns"][0]["pk"], "Y")
+        self.assertEqual(validation["validation_result"]["validation_status"], "PASS")
+
+    def test_db_create_preserves_reference_erd_column_names_after_standard_rag(self) -> None:
+        def fake_search(*args, **kwargs):
+            return {
+                "success": True,
+                "data": {
+                    "normalized_results": [
+                        {
+                            "source_kind": "RAG",
+                            "title": "표준용어",
+                            "content": (
+                                "공통표준용어명: 사용자 번호 | "
+                                "공통표준용어영문약어명: usr_no | "
+                                "데이터타입: VARCHAR | "
+                                "저장 형식: 20자리"
+                            ),
+                            "score": 0.99,
+                            "metadata": {"doc_type": "standard_term"},
+                            "citation": "standard:user_no",
+                        }
+                    ]
+                },
+            }
+
+        state = {
+            "project_sn": 1,
+            "docs_cd": "DB",
+            "udt_yn": "N",
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "reference_erd_json_list": [
+                        {
+                            "table_id": "T1",
+                            "logical_name": "사용자",
+                            "physical_name": "tbl_user",
+                            "columns": [
+                                {
+                                    "column_id": "C1",
+                                    "logical_name": "사용자 번호",
+                                    "physical_name": "user_sn",
+                                    "data_type": "BIGINT",
+                                    "nullable": False,
+                                    "constraints": ["PK"],
+                                },
+                                {
+                                    "column_id": "C2",
+                                    "logical_name": "사용자 명",
+                                    "physical_name": "user_nm",
+                                    "data_type": "VARCHAR(100)",
+                                    "nullable": False,
+                                    "constraints": [],
+                                },
+                            ],
+                        }
+                    ]
+                }
+            },
+        }
+
+        result = DataStructureDesignAgent(search_tool=fake_search).execute(state)
+        validation = ValidationAgent().execute(state)
+        columns = {
+            column["column_name"]
+            for column in result["db_design_json"]["tables"][0]["columns"]
+        }
+
+        self.assertIn("user_sn", columns)
+        self.assertIn("user_nm", columns)
         self.assertEqual(validation["validation_result"]["validation_status"], "PASS")
 
     def test_db_update_normalizes_nested_artifact_and_debug_is_optional(self) -> None:

@@ -68,9 +68,9 @@ class Settings(BaseSettings):
     extract_image_dir: Path = Path("./storage/extracted_images")
     mermaid_dir: Path = Path("./storage/mermaid")
     mermaid_cli_path: str = "mmdc"
-    mermaid_render_width: int = Field(default=1600, gt=0)
-    mermaid_render_height: int = Field(default=1200, gt=0)
-    mermaid_render_scale: int = Field(default=2, gt=0)
+    mermaid_render_width: int = Field(default=2600, gt=0)
+    mermaid_render_height: int = Field(default=1800, gt=0)
+    mermaid_render_scale: int = Field(default=3, gt=0)
 
     # Log
     log_level: str = "INFO"

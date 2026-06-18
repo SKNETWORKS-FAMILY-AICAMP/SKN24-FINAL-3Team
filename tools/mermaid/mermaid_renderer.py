@@ -11,6 +11,9 @@ def render_mermaid(
     file_stem: str = "diagram",
     output_dir: str | Path | None = None,
     settings: Settings | None = None,
+    render_width: int | None = None,
+    render_height: int | None = None,
+    render_scale: int | None = None,
 ) -> ToolResult:
     settings = settings or get_settings()
     destination = Path(output_dir or settings.mermaid_dir).resolve()
@@ -19,9 +22,9 @@ def render_mermaid(
     image_path = destination / f"{file_stem}.png"
     mermaid_path.write_text(mermaid_code, encoding="utf-8")
     cli_path = settings.mermaid_cli_path
-    render_width = settings.mermaid_render_width
-    render_height = settings.mermaid_render_height
-    render_scale = settings.mermaid_render_scale
+    render_width = int(render_width or settings.mermaid_render_width)
+    render_height = int(render_height or settings.mermaid_render_height)
+    render_scale = int(render_scale or settings.mermaid_render_scale)
     try:
         completed = subprocess.run(
             [

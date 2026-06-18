@@ -39,6 +39,26 @@ class DocsDetailRepositoryStub:
         self.failed.append((project_sn, docs_cd, error_message))
 
 
+class ProjectRepositoryStub:
+    def __init__(self, project: dict[str, Any] | None = None) -> None:
+        self.project = project or {"prj_nm": "테스트 시스템"}
+
+    def find_project_by_sn(self, project_sn: int) -> dict[str, Any] | None:
+        return self.project
+
+
+class DocsRepositoryStub:
+    def __init__(self, docs: dict[str, Any] | None = None) -> None:
+        self.docs = docs or {"docs_ver": "2.5"}
+
+    def find_project_docs_by_code(
+        self,
+        project_sn: int,
+        docs_cd: str,
+    ) -> dict[str, Any] | None:
+        return self.docs
+
+
 def exporter_stub(payload: dict[str, Any], output_path: str, **_: Any):
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -140,6 +160,47 @@ class ExportNodeTest(unittest.TestCase):
                 self.assertEqual(docs.inserted[0]["docs_cd"], docs_cd)
                 self.assertTrue(docs.inserted[0]["docs_path"].startswith("s3://bucket/"))
                 self.assertIsNone(docs.inserted[0]["file_sn"])
+
+    def test_enriches_docx_payload_with_project_name_and_docs_version(self) -> None:
+        captured_payloads: list[dict[str, Any]] = []
+
+        def capturing_exporter(payload: dict[str, Any], output_path: str, **_: Any):
+            captured_payloads.append(payload)
+            return exporter_stub(payload, output_path)
+
+        with tempfile.TemporaryDirectory() as root:
+            dependencies, _, _ = self.dependencies(root)
+            dependencies = ExportDependencies(
+                file_repository=dependencies.file_repository,
+                docs_detail_repository=dependencies.docs_detail_repository,
+                project_repository=ProjectRepositoryStub({"prj_nm": "ALPLED 통합 플랫폼"}),
+                docs_repository=DocsRepositoryStub({"docs_ver": "v2.7"}),
+                docx_exporter=capturing_exporter,
+                uploader=dependencies.uploader,
+                settings=dependencies.settings,
+            )
+            result = export_node(
+                {
+                    "project_sn": 10,
+                    "docs_cd": "DB",
+                    "udt_yn": "N",
+                    "final_document_json": {
+                        "docs_cd": "DB",
+                        "db_design_json": {"tables": []},
+                    },
+                },
+                dependencies,
+            )
+
+            self.assertEqual(result["status"], "DONE")
+            payload = captured_payloads[0]
+            self.assertEqual(payload["metadata"]["system_name"], "ALPLED 통합 플랫폼")
+            self.assertEqual(payload["metadata"]["version"], "v2.7")
+            self.assertEqual(
+                payload["content"]["db_design_json"]["system_name"],
+                "ALPLED 통합 플랫폼",
+            )
+            self.assertEqual(payload["content"]["db_design_json"]["version"], "v2.7")
 
     def test_update_inserts_new_detail_without_deactivating_previous_version(self) -> None:
         with tempfile.TemporaryDirectory() as root:

@@ -121,7 +121,7 @@ class GenerationSupervisorTest(unittest.TestCase):
             calls["count"] += 1
             if calls["count"] == 1:
                 return {
-                    "status": "SUCCESS",
+                    "status": "FAIL",
                     "validation_result": {
                         "validation_status": "FAIL",
                         "checks": [
@@ -161,6 +161,81 @@ class GenerationSupervisorTest(unittest.TestCase):
             ["mermaid_generation_agent", "validation_agent"],
         )
         self.assertEqual(result["execution_plan"]["steps"][0]["retry_scope"], ["all"])
+        self.assertEqual(result["next_action"], "EXPORT")
+
+    def test_validation_fail_replans_all_failed_target_agents(self) -> None:
+        calls = {"count": 0}
+        executed_agents: list[str] = []
+        registry = successful_registry()
+
+        def data_structure_agent(state) -> dict[str, Any]:
+            executed_agents.append("data_structure_design_agent")
+            return success_output(
+                erd_entity_json={"stub": True},
+                erd_mermaid_json={"stub": True},
+                db_design_json={"stub": True},
+            )
+
+        def mermaid_agent(state) -> dict[str, Any]:
+            executed_agents.append("mermaid_generation_agent")
+            return success_output(mermaid_code="stub", mermaid_image_path="/tmp/stub.png")
+
+        def validation_agent(state) -> dict[str, Any]:
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return {
+                    "status": "FAIL",
+                    "validation_result": {
+                        "validation_status": "FAIL",
+                        "checks": [
+                            {
+                                "status": "FAIL",
+                                "failure_type": "ERD_PK_MISSING",
+                                "target_agent": "data_structure_design_agent",
+                                "target_scope": ["TABLE-001"],
+                            },
+                            {
+                                "status": "FAIL",
+                                "failure_type": "ERD_MERMAID_RENDER_FAILED",
+                                "target_agent": "mermaid_generation_agent",
+                                "target_scope": ["all"],
+                            },
+                        ],
+                    },
+                    "warnings": [],
+                    "errors": [],
+                }
+            return {
+                "status": "PASS",
+                "validation_result": {"validation_status": "PASS", "checks": []},
+                "warnings": [],
+                "errors": [],
+            }
+
+        registry.register("data_structure_design_agent", data_structure_agent)
+        registry.register("mermaid_generation_agent", mermaid_agent)
+        registry.register("validation_agent", validation_agent)
+
+        result = run_generation_supervisor(
+            {"project_sn": 1, "docs_cd": "ERD", "udt_yn": "N", "max_round": 3},
+            registry,
+        )
+
+        self.assertEqual(result["current_round"], 2)
+        self.assertEqual(
+            [step["agent"] for step in result["execution_plan"]["steps"]],
+            [
+                "data_structure_design_agent",
+                "mermaid_generation_agent",
+                "validation_agent",
+            ],
+        )
+        self.assertEqual(result["execution_plan"]["steps"][0]["retry_scope"], ["TABLE-001"])
+        self.assertEqual(result["execution_plan"]["steps"][1]["retry_scope"], ["all"])
+        self.assertEqual(
+            executed_agents[-2:],
+            ["data_structure_design_agent", "mermaid_generation_agent"],
+        )
         self.assertEqual(result["next_action"], "EXPORT")
 
     def test_max_round_failure_ends_supervisor(self) -> None:

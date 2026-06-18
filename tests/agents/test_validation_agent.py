@@ -413,6 +413,196 @@ class ValidationAgentTest(unittest.TestCase):
         self.assertEqual(_failure(result, "DB_CONSTRAINT_INVALID")["target_scope"], ["tbl_user"])
         self.assertEqual(_failure(result, "DB_INDEX_INVALID")["target_scope"], ["tbl_user"])
 
+    def test_db_reference_validation_ignores_column_id_and_compares_erd_column_specs(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "DB",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "reference_erd_json_list": [
+                            {
+                                "physical_name": "tbl_user",
+                                "logical_name": "사용자",
+                                "columns": [
+                                    {
+                                        "logical_name": "사용자 명",
+                                        "physical_name": "user_nm",
+                                        "data_type": "VARCHAR",
+                                        "length": "100",
+                                        "nullable": False,
+                                        "constraints": [],
+                                        "default": "",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "data_structure_design_agent": {
+                        "db_design_json": {
+                            "tables": [
+                                {
+                                    "table_name": "tbl_user",
+                                    "table_description": "사용자",
+                                    "columns": [
+                                        {
+                                            "column_name": "user_nm",
+                                            "column_id": "JJ_COL_001",
+                                            "column_logical_name": "명",
+                                            "data_type": "VARCHAR",
+                                            "type_and_length": "VARCHAR(100)",
+                                            "nullable": False,
+                                            "not_null": "Y",
+                                            "pk": "",
+                                            "fk": "",
+                                            "idx": "",
+                                            "default": "",
+                                            "description": "사용자 명",
+                                            "constraint": "",
+                                        }
+                                    ],
+                                    "constraints": [],
+                                    "indexes": [],
+                                }
+                            ]
+                        }
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(result["validation_result"]["validation_status"], "PASS")
+
+    def test_db_reference_validation_detects_type_and_constraint_mismatches(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "DB",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "reference_erd_json_list": [
+                            {
+                                "physical_name": "tbl_file",
+                                "logical_name": "파일",
+                                "columns": [
+                                    {
+                                        "logical_name": "파일 크기",
+                                        "physical_name": "file_size",
+                                        "data_type": "NUMERIC",
+                                        "length": "10",
+                                        "nullable": False,
+                                        "constraints": ["0 이상"],
+                                        "default": "0",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "data_structure_design_agent": {
+                        "db_design_json": {
+                            "tables": [
+                                {
+                                    "table_name": "tbl_file",
+                                    "table_description": "파일",
+                                    "columns": [
+                                        {
+                                            "column_name": "file_size",
+                                            "column_id": "ANY_ID",
+                                            "column_logical_name": "파일크기",
+                                            "data_type": "VARCHAR",
+                                            "type_and_length": "VARCHAR(20)",
+                                            "nullable": True,
+                                            "default": "",
+                                            "description": "파일 크기",
+                                            "constraint": "",
+                                        }
+                                    ],
+                                    "constraints": [],
+                                    "indexes": [],
+                                }
+                            ]
+                        }
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(_failure(result, "DB_DATA_TYPE_MISSING")["target_scope"], ["tbl_file.file_size"])
+        self.assertIn("tbl_file.file_size", _failure(result, "DB_CONSTRAINT_INVALID")["target_scope"])
+
+    def test_db_reference_validation_normalizes_reference_pk_before_compare(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "DB",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "reference_erd_json_list": [
+                            {
+                                "logical_name": "생성형 기본사항 AI",
+                                "physical_name": "tbl_create_ai",
+                                "columns": [
+                                    {
+                                        "logical_name": "ID",
+                                        "physical_name": "id",
+                                        "data_type": "BIGINT",
+                                        "nullable": False,
+                                        "constraints": ["PK"],
+                                    },
+                                    {
+                                        "logical_name": "컬럼내용",
+                                        "physical_name": "cn",
+                                        "data_type": "VARCHAR(4000)",
+                                        "nullable": True,
+                                        "constraints": [],
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "data_structure_design_agent": {
+                        "db_design_json": {
+                            "tables": [
+                                {
+                                    "table_name": "tbl_create_ai",
+                                    "table_description": "생성형 기본사항 AI",
+                                    "columns": [
+                                        {
+                                            "column_name": "create_ai_sn",
+                                            "column_id": "ANY_ID",
+                                            "column_logical_name": "ID",
+                                            "data_type": "BIGINT",
+                                            "type_and_length": "BIGINT",
+                                            "nullable": False,
+                                            "not_null": "Y",
+                                            "pk": "Y",
+                                            "fk": "",
+                                            "idx": "Y",
+                                            "default": "",
+                                            "description": "ID",
+                                            "constraint": "",
+                                        },
+                                        {
+                                            "column_name": "cn",
+                                            "column_id": "ANY_ID_2",
+                                            "column_logical_name": "내용",
+                                            "data_type": "VARCHAR",
+                                            "type_and_length": "VARCHAR(4000)",
+                                            "nullable": True,
+                                            "default": "",
+                                            "description": "컬럼내용",
+                                            "constraint": "",
+                                        },
+                                    ],
+                                    "constraints": [{"type": "PK", "columns": ["create_ai_sn"]}],
+                                    "indexes": [],
+                                }
+                            ]
+                        }
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(result["validation_result"]["validation_status"], "PASS")
+
     def test_arch_detects_relations_referencing_missing_components(self) -> None:
         result = self.agent.execute(
             {

@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +11,9 @@ from typing import Any, Protocol
 from config.constants import DOCS_CODES, FILE_CODE_REQUIREMENT_JSON
 from config.settings import Settings, get_settings
 from database.repositories.docs_detail_repository import DocsDetailRepository
+from database.repositories.docs_repository import DocsRepository
 from database.repositories.file_repository import FileRepository
+from database.repositories.project_repository import ProjectRepository
 from database.session import SessionLocal
 from schemas.common.common_schema import DocsCode
 from tools.docx.docx_exporter import export_docx
@@ -53,10 +56,24 @@ class DocsDetailRepositoryProtocol(Protocol):
     ) -> None: ...
 
 
+class ProjectRepositoryProtocol(Protocol):
+    def find_project_by_sn(self, project_sn: int) -> Any | None: ...
+
+
+class DocsRepositoryProtocol(Protocol):
+    def find_project_docs_by_code(
+        self,
+        project_sn: int,
+        docs_cd: DocsCode,
+    ) -> Any | None: ...
+
+
 @dataclass(frozen=True)
 class ExportDependencies:
     file_repository: FileRepositoryProtocol
     docs_detail_repository: DocsDetailRepositoryProtocol
+    project_repository: ProjectRepositoryProtocol | None = None
+    docs_repository: DocsRepositoryProtocol | None = None
     template_mapper: Callable[[dict[str, Any], str], ToolResult] = map_document_to_template
     docx_exporter: Callable[..., ToolResult] = export_docx
     uploader: Callable[..., ToolResult] = upload_file
@@ -82,6 +99,8 @@ def export_node(
         dependencies = ExportDependencies(
             file_repository=FileRepository(session),
             docs_detail_repository=DocsDetailRepository(session),
+            project_repository=ProjectRepository(session),
+            docs_repository=DocsRepository(session),
         )
 
     settings = dependencies.settings or get_settings()
@@ -95,7 +114,13 @@ def export_node(
             dependencies=dependencies,
             settings=settings,
         )
-        mapped = dependencies.template_mapper(final_document_json, docs_cd)
+        export_document_json = _enrich_final_document_json_for_export(
+            final_document_json=final_document_json,
+            project_sn=project_sn,
+            docs_cd=docs_cd,
+            dependencies=dependencies,
+        )
+        mapped = dependencies.template_mapper(export_document_json, docs_cd)
         export_payload = _unwrap_tool_result(mapped, "EXPORT_MAPPING_FAILED")
 
         file_name = _build_file_name(project_sn, docs_cd)
@@ -217,6 +242,69 @@ def _export_requirement_json_if_needed(
         "file_name": file_name,
         "file_size": local_file_path.stat().st_size,
     }
+
+
+def _enrich_final_document_json_for_export(
+    *,
+    final_document_json: dict[str, Any],
+    project_sn: int,
+    docs_cd: DocsCode,
+    dependencies: ExportDependencies,
+) -> dict[str, Any]:
+    export_document_json = deepcopy(final_document_json)
+    metadata = _read_export_metadata(project_sn, docs_cd, dependencies)
+    if not metadata:
+        return export_document_json
+
+    export_document_json.setdefault("metadata", {})
+    if isinstance(export_document_json["metadata"], dict):
+        export_document_json["metadata"].update(metadata)
+
+    content_key_by_docs = {
+        "SRS": "requirement_json_list",
+        "INTERFACE": "interface_json_list",
+        "TS": "integrated_test_scenario_json",
+        "ERD": "erd_entity_json",
+        "DB": "db_design_json",
+        "ARCH": "architecture_document_json",
+    }
+    content_key = content_key_by_docs.get(docs_cd)
+    content = export_document_json.get(content_key) if content_key else None
+    if isinstance(content, dict):
+        for key, value in metadata.items():
+            content[key] = value
+    return export_document_json
+
+
+def _read_export_metadata(
+    project_sn: int,
+    docs_cd: DocsCode,
+    dependencies: ExportDependencies,
+) -> dict[str, str]:
+    metadata: dict[str, str] = {}
+    if dependencies.project_repository is not None:
+        project = dependencies.project_repository.find_project_by_sn(project_sn)
+        project_name = _pick_first(project, "prj_nm", "project_nm", "project_name", "system_name")
+        if project_name:
+            metadata["system_name"] = project_name
+            metadata["project_name"] = project_name
+
+    if dependencies.docs_repository is not None:
+        docs = dependencies.docs_repository.find_project_docs_by_code(project_sn, docs_cd)
+        docs_version = _pick_first(docs, "docs_ver", "version")
+        if docs_version is not None:
+            metadata["version"] = docs_version
+    return metadata
+
+
+def _pick_first(source: Any, *keys: str) -> str | None:
+    if source is None:
+        return None
+    for key in keys:
+        value = source.get(key) if isinstance(source, dict) else getattr(source, key, None)
+        if value is not None:
+            return str(value)
+    return None
 
 
 def _unwrap_tool_result(result: ToolResult, default_code: str) -> Any:

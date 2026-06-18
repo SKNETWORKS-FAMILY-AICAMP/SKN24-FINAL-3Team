@@ -26,6 +26,8 @@ from tools.result import ToolResult
 from tools.search.search_router import search
 from workflow.state import WorkflowState
 from agents.data_structure_design.processors.column_standardizer import table_name
+from agents.data_structure_design.pipeline import build_erd_from_requirements
+from agents.data_structure_design.pipeline.metadata_enricher import enrich_table_metadata
 
 
 class DataStructureDesignAgent:
@@ -60,29 +62,30 @@ class DataStructureDesignAgent:
         requirements = document_merge.get("integrated_requirement_json_list")
         if not isinstance(requirements, list) or not requirements:
             return self._failed("ERD_REQUIREMENT_MISSING", "integrated_requirement_json_list가 필요합니다.")
-        selected = filter_data_requirements(requirements)
-        if not selected:
-            return self._failed("ERD_DATA_REQUIREMENT_MISSING", "데이터 구조 설계 대상 요구사항이 없습니다.")
-        groups, group_warnings = self._build_domain_groups(selected)
-        entities, entity_warnings = self._build_entity_candidates(groups)
-        tables, table_warnings = self._build_table_candidates(entities)
+        selected = filter_data_requirements(requirements) or requirements
+        pipeline_result = build_erd_from_requirements(selected)
+        erd_entity_json = pipeline_result["erd_schema"]
+        tables = erd_entity_json["tables"]
         warnings, rag_results = self._standard_search(tables, state)
-        tables, column_warnings = self._build_column_candidates(tables, rag_results)
         column_standard_warnings, column_standard_results = self._column_standard_search(tables, state)
         rag_results = _merge_rag_results(rag_results, column_standard_results)
-        tables = apply_public_standard_results(tables, rag_results)
-        relationships, relationship_warnings = self._build_relationships(tables)
-        erd_entity_json, erd_warnings = self._build_final_erd_json(tables, relationships)
-        erd_mermaid_json, mermaid_warnings = self._build_erd_mermaid_json(erd_entity_json)
-        warnings.extend([*group_warnings, *entity_warnings, *table_warnings, *column_warnings, *column_standard_warnings, *relationship_warnings, *erd_warnings, *mermaid_warnings])
+        validation_result = pipeline_result["validation_result"]
+        warnings.extend([*column_standard_warnings, *validation_result.get("warnings", [])])
+        for error in validation_result.get("errors", []):
+            warnings.append({"code": "ERD_PIPELINE_VALIDATION_WARNING", "message": str(error)})
         return self._erd_success(
             state,
             erd_entity_json,
-            erd_mermaid_json,
+            pipeline_result["erd_mermaid_json"],
             warnings,
             {
-                "domain_group_list": groups,
-                "entity_candidate_list": entities,
+                "domain_info": pipeline_result["domain_info"],
+                "data_structure_intermediate": pipeline_result["data_structure_intermediate"],
+                "erd_schema": erd_entity_json,
+                "erd_mermaid_json": pipeline_result["erd_mermaid_json"],
+                "validation_result": validation_result,
+                "domain_group_list": [],
+                "entity_candidate_list": [],
                 "table_candidate_list": tables,
                 "rag_results": rag_results,
                 "standardized_tables": tables,
@@ -124,9 +127,10 @@ class DataStructureDesignAgent:
             return self._failed("DB_REFERENCE_ERD_MISSING", "reference_erd_json_list가 필요합니다.")
         tables = normalize_erd_tables(reference)
         column_standard_warnings, column_standard_results = [], []
+        standardized_tables = deepcopy(tables)
         if state.get("project_sn") is not None:
             column_standard_warnings, column_standard_results = self._column_standard_search(tables, state)
-            tables = apply_public_standard_results(tables, column_standard_results)
+            standardized_tables = apply_public_standard_results(deepcopy(tables), column_standard_results)
         erd_analysis = self._llm_dict("ERD 구조를 분석하세요. 테이블, 컬럼, PK, FK, 관계를 JSON으로 반환하세요.", {"tables": tables}, "DB_ERD_ANALYSIS_LLM_FAILED")
         design, warnings = self._build_db_specifications(tables)
         final_design, final_warnings = self._finalize_db_design(design)
@@ -137,7 +141,7 @@ class DataStructureDesignAgent:
             warnings,
             {
                 "reference_erd_json_list": reference,
-                "standardized_tables": tables,
+                "standardized_tables": standardized_tables,
                 "column_standard_results": column_standard_results,
                 "llm_analysis": erd_analysis,
             },
@@ -304,16 +308,21 @@ class DataStructureDesignAgent:
             relationships_value = value.get("relationships") or value.get("relationship_list")
             if tables_value:
                 normalized_tables = normalize_erd_tables(tables_value)
+                normalized_relationships = _normalize_relationship_names(
+                    relationships_value if isinstance(relationships_value, list) else relationships,
+                    normalized_tables,
+                )
+                normalized_tables = enrich_table_metadata(normalized_tables, normalized_relationships)
                 return {
                     "tables": normalized_tables,
-                    "relationships": _normalize_relationship_names(
-                        relationships_value if isinstance(relationships_value, list) else relationships,
-                        normalized_tables,
-                    ),
+                    "relationships": normalized_relationships,
                 }, []
+        fallback_tables = normalize_erd_tables(fallback["tables"])
+        fallback_relationships = _normalize_relationship_names(fallback["relationships"], fallback_tables)
+        fallback_tables = enrich_table_metadata(fallback_tables, fallback_relationships)
         return {
-            "tables": normalize_erd_tables(fallback["tables"]),
-            "relationships": _normalize_relationship_names(fallback["relationships"], normalize_erd_tables(fallback["tables"])),
+            "tables": fallback_tables,
+            "relationships": fallback_relationships,
         }, []
 
     def _build_erd_mermaid_json(
@@ -322,7 +331,7 @@ class DataStructureDesignAgent:
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         fallback = {
             "entities": [
-                {"name": table["physical_name"], "columns": table["columns"]}
+                _mermaid_entity_from_table(table)
                 for table in erd_entity_json.get("tables", [])
             ],
             "relationships": erd_entity_json.get("relationships", []),
@@ -331,7 +340,7 @@ class DataStructureDesignAgent:
         if isinstance(value, dict) and (value.get("entities") or value.get("tables")):
             return {
                 "entities": value.get("entities") or [
-                    {"name": table["physical_name"], "columns": table["columns"]}
+                    _mermaid_entity_from_table(table)
                     for table in normalize_erd_tables(value.get("tables") or [])
                 ],
                 "relationships": value.get("relationships") or fallback["relationships"],
@@ -608,6 +617,19 @@ def _extract_tables(document: dict[str, Any]) -> list[Any]:
             if nested:
                 return nested
     return []
+
+
+def _mermaid_entity_from_table(table: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": table.get("physical_name") or table.get("table_name"),
+        "table_name": table.get("table_name") or table.get("physical_name"),
+        "physical_name": table.get("physical_name") or table.get("table_name"),
+        "logical_name": table.get("logical_name") or table.get("table_korean_name"),
+        "domain_group": table.get("domain_group", ""),
+        "importance_score": table.get("importance_score", 0),
+        "relation_count": table.get("relation_count", 0),
+        "columns": table.get("columns", []),
+    }
 
 
 def _flatten_tables(items: list[Any]) -> list[Any]:

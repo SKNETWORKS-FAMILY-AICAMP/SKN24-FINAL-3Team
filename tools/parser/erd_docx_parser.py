@@ -4,6 +4,10 @@ from pathlib import Path
 import re
 from typing import Any
 
+from agents.data_structure_design.processors.column_standardizer import (
+    standardize_name,
+    table_name,
+)
 from tools.parser.docx_parser import parse_docx
 from tools.result import ToolResult, error_result, success_result
 
@@ -62,12 +66,16 @@ def _parse_alpled_entity_table(rows: list[list[str]]) -> dict[str, Any] | None:
     if max(len(row) for row in rows) < 8:
         return None
 
-    entity_id = _cell(rows, 0, 2)
-    entity_name = _cell(rows, 0, 7)
-    description = _cell(rows, 1, 4)
+    if _cell(rows, 0, 0) != "엔티티 ID" or _cell(rows, 0, 5) != "엔티티명":
+        return None
+
+    entity_id = _first_distinct_after_label(rows[0], "엔티티 ID")
+    entity_name = _first_distinct_after_label(rows[0], "엔티티명")
+    description = _first_distinct_after_label(rows[1], "엔티티 설명")
     if not (entity_id or entity_name or description):
         return None
 
+    logical_name = entity_name or _description_subject(description) or entity_id
     columns = [
         column
         for row_index, row in enumerate(rows[3:], start=1)
@@ -76,8 +84,8 @@ def _parse_alpled_entity_table(rows: list[list[str]]) -> dict[str, Any] | None:
     return {
         "entity_id": entity_id,
         "table_id": entity_id if _looks_like_table_id(entity_id) else "",
-        "logical_name": entity_name,
-        "physical_name": "",
+        "logical_name": logical_name,
+        "physical_name": table_name(logical_name),
         "description": description,
         "table_description": description,
         "columns": columns,
@@ -91,17 +99,18 @@ def _parse_alpled_column_row(row: list[str], row_index: int) -> dict[str, Any] |
     if _is_headerish(" ".join(values)):
         return None
 
-    physical_name = values[0] if len(values) > 0 else ""
-    logical_name = values[1] if len(values) > 1 else physical_name
+    logical_name = values[0] if len(values) > 0 else ""
+    synonym = values[1] if len(values) > 1 else ""
     data_type = values[2] if len(values) > 2 else ""
     length = values[3] if len(values) > 3 else ""
     not_null = values[4] if len(values) > 4 else ""
     pk = values[5] if len(values) > 5 else ""
     fk = values[6] if len(values) > 6 else ""
+    idx = values[7] if len(values) > 7 else ""
     default = values[8] if len(values) > 8 else ""
     constraint = values[9] if len(values) > 9 else ""
 
-    if not (physical_name or logical_name or data_type):
+    if not (logical_name or data_type):
         return None
 
     constraints = []
@@ -109,13 +118,17 @@ def _parse_alpled_column_row(row: list[str], row_index: int) -> dict[str, Any] |
         constraints.append("PK")
     if _is_yes(fk) or "FK" in fk.upper():
         constraints.append("FK")
+    if _is_yes(idx) or "IN" in idx.upper():
+        constraints.append("IDX")
     if constraint and constraint not in constraints:
         constraints.append(constraint)
 
     data_type = _merge_type_and_length(data_type, length)
+    physical_name = standardize_name(logical_name, fallback=f"column_{row_index}")
     return {
         "column_id": f"COL-{row_index:03d}",
         "logical_name": logical_name or physical_name,
+        "synonym": "" if synonym in {"-", "–", "—", "없음", "해당 없음"} else synonym,
         "physical_name": physical_name,
         "data_type": data_type or "VARCHAR(255)",
         "nullable": not _is_yes(not_null),
@@ -285,6 +298,23 @@ def _cell(rows: list[list[str]], row_idx: int, col_idx: int) -> str:
     if row_idx >= len(rows) or col_idx >= len(rows[row_idx]):
         return ""
     return rows[row_idx][col_idx].strip()
+
+
+def _first_distinct_after_label(row: list[str], label: str) -> str:
+    if label not in row:
+        return ""
+    start = row.index(label) + 1
+    for value in row[start:]:
+        text = str(value or "").strip()
+        if text and text != label:
+            return text
+    return ""
+
+
+def _description_subject(value: Any) -> str:
+    text = re.sub(r"\s+", " ", str(value or "").strip())
+    text = re.sub(r"(정보를\s*)?관리하는\s*(테이블|엔티티)입니다\.?$", "", text).strip()
+    return text
 
 
 def _find_header_index(rows: list[list[str]], *groups: tuple[str, ...]) -> int | None:

@@ -42,6 +42,12 @@ def build_final_document_json(state: WorkflowState) -> dict[str, Any]:
         final_document_json["mermaid_image_path"] = agent_outputs.get(
             "mermaid_generation_agent", {}
         ).get("mermaid_image_path", "")
+        final_document_json["mermaid_image_paths"] = agent_outputs.get(
+            "mermaid_generation_agent", {}
+        ).get("mermaid_image_paths", [])
+        final_document_json["mermaid_groups"] = agent_outputs.get(
+            "mermaid_generation_agent", {}
+        ).get("mermaid_groups", [])
     elif docs_cd == "DB":
         final_document_json["db_design_json"] = agent_outputs.get(
             "data_structure_design_agent", {}

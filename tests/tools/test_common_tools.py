@@ -32,19 +32,23 @@ class CommonToolsTest(unittest.TestCase):
             docx_path = Path(root) / "erd.docx"
             document = Document()
             table = document.add_table(rows=5, cols=10)
-            table.cell(0, 2).text = "ENT-001"
-            table.cell(0, 7).text = "사용자"
-            table.cell(1, 4).text = "사용자 정보를 관리하는 테이블입니다."
+            table.cell(0, 0).text = "엔티티 ID"
+            table.cell(0, 1).text = "ENT-001"
+            table.cell(0, 5).text = "엔티티명"
+            table.cell(0, 6).text = "사용자"
+            table.cell(1, 0).text = "엔티티 설명"
+            table.cell(1, 1).text = "사용자 정보를 관리하는 테이블입니다."
             table.rows[2].cells[0].text = "속성명"
             table.rows[2].cells[1].text = "동의어"
-            table.rows[2].cells[2].text = "데이터타입"
-            table.rows[3].cells[0].text = "USER_SN"
-            table.rows[3].cells[1].text = "사용자 번호"
+            table.rows[2].cells[2].text = "타입"
+            table.rows[2].cells[3].text = "길이"
+            table.rows[2].cells[4].text = "NOT NULL"
+            table.rows[2].cells[5].text = "PK"
+            table.rows[3].cells[0].text = "사용자 번호"
             table.rows[3].cells[2].text = "BIGINT"
             table.rows[3].cells[4].text = "Y"
             table.rows[3].cells[5].text = "Y"
-            table.rows[4].cells[0].text = "USER_NM"
-            table.rows[4].cells[1].text = "사용자 명"
+            table.rows[4].cells[0].text = "사용자 명"
             table.rows[4].cells[2].text = "VARCHAR"
             table.rows[4].cells[3].text = "200"
             document.save(docx_path)
@@ -54,8 +58,10 @@ class CommonToolsTest(unittest.TestCase):
             self.assertTrue(result["success"])
             tables = result["data"]["tables"]
             self.assertEqual(tables[0]["logical_name"], "사용자")
+            self.assertEqual(tables[0]["physical_name"], "tbl_user")
             self.assertEqual(tables[0]["description"], "사용자 정보를 관리하는 테이블입니다.")
-            self.assertEqual(tables[0]["columns"][0]["physical_name"], "USER_SN")
+            self.assertEqual(tables[0]["columns"][0]["logical_name"], "사용자 번호")
+            self.assertTrue(tables[0]["columns"][0]["physical_name"])
             self.assertEqual(tables[0]["columns"][0]["constraints"], ["PK"])
             self.assertFalse(tables[0]["columns"][0]["nullable"])
             self.assertEqual(tables[0]["columns"][1]["data_type"], "VARCHAR(200)")
@@ -629,9 +635,9 @@ class CommonToolsTest(unittest.TestCase):
             mermaid_renderer.subprocess.run = original_run
 
         self.assertTrue(result["success"])
-        self.assertEqual(captured["args"][captured["args"].index("-w") + 1], "1400")
-        self.assertEqual(captured["args"][captured["args"].index("-H") + 1], "2200")
-        self.assertEqual(captured["args"][captured["args"].index("-s") + 1], "2")
+        self.assertEqual(captured["args"][captured["args"].index("-w") + 1], "2600")
+        self.assertEqual(captured["args"][captured["args"].index("-H") + 1], "1800")
+        self.assertEqual(captured["args"][captured["args"].index("-s") + 1], "3")
         self.assertNotIn("dpi", result["data"]["render_options"])
 
     def test_llm_client_uses_injected_transport(self) -> None:

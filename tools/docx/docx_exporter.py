@@ -61,18 +61,30 @@ def export_docx(
 def _fill_template_document(document: Any, payload: dict[str, Any]) -> None:
     docs_cd = str(payload.get("docs_cd") or "").upper()
     if docs_cd == "SRS":
-        _fill_srs_template(document, _list_content(payload, "requirement_json_list"))
+        _fill_srs_template(
+            document,
+            _list_content(payload, "requirement_json_list"),
+            _payload_metadata(payload),
+        )
     elif docs_cd == "INTERFACE":
         _fill_interface_template(
             document,
             _list_content(payload, "interface_json_list"),
             _list_content(payload, "ui_structure"),
+            _payload_metadata(payload),
+        )
+    elif docs_cd == "TS":
+        _fill_ts_template(
+            document,
+            _dict_content(payload, "integrated_test_scenario_json"),
+            _payload_metadata(payload),
         )
     elif docs_cd == "ERD":
         _fill_erd_template(
             document,
             _dict_content(payload, "erd_entity_json"),
-            _first_image_path(payload),
+            _image_paths(payload),
+            _image_groups(payload),
         )
     elif docs_cd == "DB":
         _fill_db_template(document, _dict_content(payload, "db_design_json"))
@@ -98,14 +110,19 @@ def _fill_generic_document(document: Any, export_payload: dict[str, Any]) -> Non
             document.add_picture(str(_docx_safe_image_path(image)), width=Inches(6.0))
 
 
-def _fill_srs_template(document: Any, requirements: list[dict[str, Any]]) -> None:
+def _fill_srs_template(
+    document: Any,
+    requirements: list[dict[str, Any]],
+    metadata: dict[str, Any],
+) -> None:
     if len(document.tables) < 2:
         _fill_generic_document(document, {"title": "요구사항 정의서", "content": {"requirement_json_list": requirements}})
         return
 
     header = document.tables[0]
+    _set_cell_safe(header, 1, 1, _pick(metadata, "system_name", "project_name"))
     _set_cell_safe(header, 2, 3, str(date.today()))
-    _set_cell_safe(header, 2, 5, "v1.0")
+    _set_cell_safe(header, 2, 5, _pick(metadata, "version"))
 
     table = document.tables[1]
     base_row_idx = 1
@@ -131,12 +148,13 @@ def _fill_interface_template(
     document: Any,
     screens: list[dict[str, Any]],
     ui_structure: list[dict[str, Any]] | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     if len(document.tables) < 5:
         _fill_generic_document(document, {"title": "인터페이스 설계서", "content": {"interface_json_list": screens}})
         return
 
-    _fill_interface_header(document.tables[0])
+    _fill_interface_header(document.tables[0], metadata or {})
     _fill_interface_structure_table(document.tables[1], screens, ui_structure or [])
     _fill_repeating_table(
         document.tables[2],
@@ -173,31 +191,69 @@ def _fill_interface_template(
         _fill_interface_process_table(process_table, _process_contents(screen))
 
 
-def _fill_erd_template(document: Any, erd: dict[str, Any], image_path: str | None) -> None:
+def _fill_ts_template(
+    document: Any,
+    scenario: dict[str, Any],
+    metadata: dict[str, Any],
+) -> None:
+    if len(document.tables) < 1:
+        _fill_generic_document(
+            document,
+            {
+                "title": "통합시험 시나리오",
+                "content": {"integrated_test_scenario_json": scenario},
+            },
+        )
+        return
+
+    header = document.tables[0]
+    _set_cell_safe(header, 1, 1, _pick(metadata, "system_name", "project_name"))
+    _set_cell_safe(header, 2, 5, str(date.today()))
+    _set_cell_safe(header, 2, 7, _pick(metadata, "version"))
+    _fill_generic_document(
+        document,
+        {
+            "title": "통합시험 시나리오",
+            "content": {"integrated_test_scenario_json": scenario},
+        },
+    )
+
+
+def _fill_erd_template(
+    document: Any,
+    erd: dict[str, Any],
+    image_paths: list[str],
+    image_groups: list[dict[str, Any]],
+) -> None:
     entities = _erd_entities(erd)
     relationships = _erd_relationships(erd)
     if len(document.tables) < 3:
-        _fill_generic_document(document, {"title": "ERD 설계서", "content": {"erd_entity_json": erd}, "image_paths": [image_path] if image_path else []})
+        _fill_generic_document(document, {"title": "ERD 설계서", "content": {"erd_entity_json": erd}, "image_paths": image_paths})
         return
 
     header = document.tables[0]
     _set_cell_safe(header, 1, 1, erd.get("system_name", ""))
     _set_cell_safe(header, 2, 1, erd.get("stage_name", "설계"))
     _set_cell_safe(header, 2, 4, erd.get("created_date", str(date.today())))
-    _set_cell_safe(header, 2, 6, erd.get("version", "v1.0"))
+    _set_cell_safe(header, 2, 6, erd.get("version", ""))
 
     erd_table = document.tables[1]
-    _set_cell_safe(erd_table, 0, 1, erd.get("erd_id", "ERD-SYSTEM-ALL"))
-    _set_cell_safe(erd_table, 0, 3, erd.get("erd_name", "통합 ERD"))
-    _set_cell_safe(erd_table, 1, 0, "")
-    _insert_image_in_cell_safe(erd_table.cell(1, 0), image_path, width=9.5)
-
     template_table = document.tables[2]
+    _remove_table(erd_table)
+    _insert_erd_images_before_anchor(document, _erd_image_anchor(document, template_table), image_paths, image_groups)
+
     if not entities:
         _fill_erd_entity_table(template_table, {})
         return
-    _clone_repeating_tables_with_spacing(document, template_table, len(entities) - 1)
-    for table, entity in zip(document.tables[2 : 2 + len(entities)], entities):
+    entity_tables = [template_table]
+    anchor = template_table._tbl
+    for _ in entities[1:]:
+        spacer = _insert_paragraph_after(document, anchor)
+        spacer.paragraph_format.space_after = Pt(8)
+        cloned_table = _clone_table_after(spacer._p, template_table)
+        entity_tables.append(cloned_table)
+        anchor = cloned_table._tbl
+    for table, entity in zip(entity_tables, entities):
         _fill_erd_entity_table(table, entity)
 
 
@@ -212,7 +268,7 @@ def _fill_db_template(document: Any, design: dict[str, Any]) -> None:
     _set_cell_safe(header, 1, 4, design.get("subsystem_name", ""))
     _set_cell_safe(header, 2, 1, design.get("stage_name", "설계"))
     _set_cell_safe(header, 2, 4, design.get("created_date", str(date.today())))
-    _set_cell_safe(header, 2, 6, design.get("version", "v1.0"))
+    _set_cell_safe(header, 2, 6, design.get("version", ""))
 
     _fill_repeating_table(
         document.tables[1],
@@ -270,7 +326,7 @@ def _fill_arch_template(document: Any, arch_doc: dict[str, Any], image_path: str
     _set_cell_safe(header, 1, 4, _pick(arch_doc, "subsystem_name"))
     _set_cell_safe(header, 2, 1, _pick(arch_doc, "stage_name", default="설계"))
     _set_cell_safe(header, 2, 4, _pick(arch_doc, "created_date", default=str(date.today())))
-    _set_cell_safe(header, 2, 6, _pick(arch_doc, "version", default="v1.0"))
+    _set_cell_safe(header, 2, 6, _pick(arch_doc, "version"))
 
     _insert_image_in_cell_safe(document.tables[1].cell(0, 0), image_path, width=6.2)
 
@@ -289,9 +345,10 @@ def _fill_arch_template(document: Any, arch_doc: dict[str, Any], image_path: str
         _fill_arch_requirement_table(table, requirement, arch_doc)
 
 
-def _fill_interface_header(table: Table) -> None:
+def _fill_interface_header(table: Table, metadata: dict[str, Any]) -> None:
+    _set_cell_safe(table, 1, 1, _pick(metadata, "system_name", "project_name"))
     _set_cell_safe(table, 2, 3, str(date.today()))
-    _set_cell_safe(table, 2, 5, "v1.0")
+    _set_cell_safe(table, 2, 5, _pick(metadata, "version"))
 
 
 def _fill_interface_structure_table(
@@ -464,6 +521,76 @@ def _insert_image_in_cell_safe(
         cell.add_paragraph(trailing_text)
 
 
+def _insert_erd_images_before_anchor(
+    document: Any,
+    anchor: Any,
+    image_paths: list[str],
+    image_groups: list[dict[str, Any]],
+) -> None:
+    for index, image_path in reversed(list(enumerate(image_paths, start=1))):
+        image = Path(str(image_path)) if image_path else None
+        if not image or not image.is_file():
+            continue
+        group = image_groups[index - 1] if index - 1 < len(image_groups) else {}
+        image_width = _image_insert_width(document, image, str(group.get("group_type") or ""))
+        image_paragraph = _insert_paragraph_before(document, anchor)
+        image_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        image_paragraph.paragraph_format.keep_together = True
+        image_paragraph.paragraph_format.space_after = Pt(6)
+        image_paragraph.add_run().add_picture(str(_docx_safe_image_path(image)), width=Inches(image_width))
+        title_paragraph = _insert_paragraph_before(document, image_paragraph._p, _erd_diagram_caption(group, index))
+        title_paragraph.paragraph_format.keep_with_next = True
+        title_paragraph.paragraph_format.keep_together = True
+        title_paragraph.paragraph_format.space_before = Pt(8)
+        title_paragraph.paragraph_format.space_after = Pt(4)
+        anchor = title_paragraph._p
+
+
+def _erd_image_anchor(document: Any, fallback_table: Table) -> Any:
+    for paragraph in document.paragraphs:
+        if "엔티티명세서" in paragraph.text.replace(" ", ""):
+            return paragraph._p
+    return fallback_table._tbl
+
+
+def _image_insert_width(document: Any, image_path: Path, group_type: str = "") -> float:
+    width_ratio = 0.7 if group_type == "orphan" else 0.95
+    max_width = _usable_width_inches(document) * width_ratio
+    max_height = _usable_height_inches(document) * 0.8
+    try:
+        from PIL import Image
+
+        with Image.open(image_path) as image:
+            image.load()
+            width_px, height_px = image.size
+        if width_px <= 0 or height_px <= 0:
+            return max_width
+        rendered_height = max_width * height_px / width_px
+        if rendered_height <= max_height:
+            return max_width
+        return max(1.0, max_height * width_px / height_px)
+    except Exception:
+        return max_width
+
+
+def _usable_width_inches(document: Any) -> float:
+    try:
+        section = document.sections[0]
+        usable = section.page_width - section.left_margin - section.right_margin
+        return max(1.0, usable / 914400)
+    except Exception:
+        return 9.5
+
+
+def _usable_height_inches(document: Any) -> float:
+    try:
+        section = document.sections[0]
+        usable = section.page_height - section.top_margin - section.bottom_margin
+        return max(1.0, usable / 914400)
+    except Exception:
+        return 6.5
+
+
 def _docx_safe_image_path(image_path: Path) -> Path:
     """python-docx가 파싱하지 못하는 PNG 메타데이터를 제거한 삽입용 이미지를 반환합니다."""
 
@@ -512,6 +639,13 @@ def _clone_table_after(block: Any, table: Table) -> Table:
     return Table(new_tbl, table._parent)
 
 
+def _remove_table(table: Table) -> None:
+    element = table._tbl
+    parent = element.getparent()
+    if parent is not None:
+        parent.remove(element)
+
+
 def _clone_repeating_tables_with_spacing(document: Any, template_table: Table, clone_count: int) -> None:
     anchor = template_table._tbl
     for _ in range(max(0, clone_count)):
@@ -527,6 +661,17 @@ def _insert_paragraph_after(document: Any, block: Any, text: str = "", page_brea
     block.addnext(paragraph._p)
     if page_break:
         paragraph.add_run().add_break(WD_BREAK.PAGE)
+    if text:
+        run = paragraph.add_run(text)
+        run.bold = True
+        run.font.size = Pt(10)
+    return paragraph
+
+
+def _insert_paragraph_before(document: Any, block: Any, text: str = "") -> Any:
+    paragraph = document.add_paragraph()
+    paragraph._p.getparent().remove(paragraph._p)
+    block.addprevious(paragraph._p)
     if text:
         run = paragraph.add_run(text)
         run.bold = True
@@ -551,9 +696,44 @@ def _dict_content(payload: dict[str, Any], key: str) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _payload_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    value = payload.get("metadata")
+    return value if isinstance(value, dict) else {}
+
+
 def _first_image_path(payload: dict[str, Any]) -> str | None:
     images = payload.get("image_paths") or []
     return str(images[0]) if images else None
+
+
+def _image_paths(payload: dict[str, Any]) -> list[str]:
+    images = payload.get("image_paths") or []
+    return [str(image) for image in images if image]
+
+
+def _image_groups(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    groups = payload.get("image_groups") or []
+    return [group for group in groups if isinstance(group, dict)] if isinstance(groups, list) else []
+
+
+def _erd_diagram_caption(
+    group: dict[str, Any],
+    index: int,
+) -> str:
+    group_type = str(group.get("group_type") or "")
+    if group_type == "orphan":
+        suffix = _group_numeric_suffix(group, index)
+        return f"1.{index} 단독 엔티티 ERD - {suffix}"
+    group_name = str(group.get("group_name") or "").strip()
+    if group_name:
+        return f"1.{index} 관계 그룹 ERD - {group_name}"
+    return f"1.{index} 관계 그룹 ERD"
+
+
+def _group_numeric_suffix(group: dict[str, Any], fallback: int) -> int:
+    group_id = str(group.get("group_id") or "")
+    suffix = group_id.rsplit("-", 1)[-1]
+    return int(suffix) if suffix.isdigit() else fallback
 
 
 def _pick(data: dict[str, Any], *keys: str, default: Any = "") -> Any:
