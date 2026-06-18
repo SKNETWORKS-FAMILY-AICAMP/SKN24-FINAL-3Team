@@ -81,6 +81,58 @@ def repair_task2_primary_assignments(atomics: list[dict], normalized: list[dict]
     records.extend({'dropped_unanchored_task2': item} for item in dropped)
     return kept, records
 
+def repair_task2_missing_atomic_assignments(source_fur_id: str, atomics: list[dict], normalized: list[dict]) -> tuple[list[dict], list[dict]]:
+    expected_ids = {str(item['atomic_id']).strip() for item in atomics}
+    referenced_ids = set()
+    primary_ids = set()
+    existing_task2_ids = {str(item.get('task2_id', '')).strip() for item in normalized}
+
+    for item in normalized:
+        merged_from = dedupe_preserve(item.get('merged_from', []))
+        reference_ids = dedupe_preserve(item.get('reference_context_ids', []))
+        referenced_ids.update(merged_from)
+        referenced_ids.update(reference_ids)
+        primary_ids.update(merged_from)
+
+    missing_ids = sorted(expected_ids - primary_ids)
+    if not missing_ids:
+        return normalized, []
+
+    atomic_by_id = {str(item['atomic_id']).strip(): item for item in atomics}
+    repaired = [dict(item) for item in normalized]
+    records = []
+
+    for repair_index, atomic_id in enumerate(missing_ids, start=1):
+        atomic = atomic_by_id[atomic_id]
+        task2_id = f'AUTO-T2-{repair_index:03d}'
+        while task2_id in existing_task2_ids:
+            repair_index += 1
+            task2_id = f'AUTO-T2-{repair_index:03d}'
+        existing_task2_ids.add(task2_id)
+
+        requirement_name = str(atomic.get('output_name', '')).strip() or str(atomic.get('source_text', '')).strip()[:100] or atomic_id
+        requirement_detail = str(atomic.get('source_text', '')).strip() or str(atomic.get('requirement_detail', '')).strip() or requirement_name
+
+        fallback = {
+            'task2_id': task2_id,
+            'merge_decision': 'KEPT',
+            'merged_from': [atomic_id],
+            'reference_context_ids': [],
+            'action_type': str(atomic.get('action_type', '')).strip() or '미지정',
+            'requirement_name': requirement_name,
+            'requirement_detail': requirement_detail,
+            'source_requirement_ids': [source_fur_id],
+            'source_fur_id': source_fur_id,
+        }
+        repaired.append(fallback)
+        records.append({
+            'atomic_id': atomic_id,
+            'created_task2_id': task2_id,
+            'reason': 'TASK2 output omitted this atomic from merged_from; preserved as an independent candidate.',
+        })
+
+    return repaired, records
+
 def validate_task2_atomic_coverage(atomics: list[dict], normalized: list[dict]) -> None:
     expected_ids = {str(item['atomic_id']).strip() for item in atomics}
     referenced_ids = set()
@@ -115,6 +167,8 @@ def stage_task2(doc_id: str, source_requirement_id: str, atomics: list[dict], *,
     obj, _ = get_runtime().run_task(TASK2, user_obj, raw_log_path=raw_log_path)
     normalized = normalize_task2_local_output(source_requirement_id, obj['normalized_requirements'])
     normalized, repair_records = repair_task2_primary_assignments(atomics, normalized)
+    normalized, missing_repair_records = repair_task2_missing_atomic_assignments(source_requirement_id, atomics, normalized)
+    repair_records.extend({'missing_atomic_fallback': item} for item in missing_repair_records)
     if repair_records:
         repair_path = raw_log_path.with_name(f'{raw_log_path.stem}_lineage_repair.json')
         dump_json(repair_path, {'task_type': TASK2, 'document_id': doc_id, 'source_requirement_id': source_requirement_id, 'repair_count': len(repair_records), 'repairs': repair_records, 'normalized_requirements_after_repair': normalized})

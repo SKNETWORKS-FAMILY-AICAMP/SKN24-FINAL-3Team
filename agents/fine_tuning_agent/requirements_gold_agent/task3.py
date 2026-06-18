@@ -139,17 +139,28 @@ def run_stage3_group(group_doc_id: str, group_candidates: list[dict], selected_s
         raise ValueError('TASK3 유사 그룹 후보가 비어 있습니다.')
     if len(group_candidates) > TASK3_MAX_GROUP_SIZE:
         raise ValueError(f'TASK3 유사 그룹 크기 초과: {len(group_candidates)} > {TASK3_MAX_GROUP_SIZE}')
+
     user_obj = make_task3_user_obj(group_doc_id, group_candidates, selected_scope)
-    obj, _ = get_runtime().run_task(TASK3, user_obj, raw_log_path=raw_log_path)
-    finals = [dict(item) for item in obj['final_requirements']]
-    relations = [dict(item) for item in obj.get('relation_decisions', []) if isinstance(item, dict)]
-    local_gold_ids = [str(item.get('gold_id', '')).strip() for item in finals]
-    if not all(local_gold_ids) or len(local_gold_ids) != len(set(local_gold_ids)):
-        raise ValueError('TASK3 그룹 출력의 gold_id가 비어 있거나 중복되었습니다.')
+
+    try:
+        obj, _ = get_runtime().run_task(TASK3, user_obj, raw_log_path=raw_log_path)
+        finals = [dict(item) for item in obj['final_requirements']]
+        relations = [dict(item) for item in obj.get('relation_decisions', []) if isinstance(item, dict)]
+        local_gold_ids = [str(item.get('gold_id', '')).strip() for item in finals]
+        if not all(local_gold_ids) or len(local_gold_ids) != len(set(local_gold_ids)):
+            raise ValueError('TASK3 그룹 출력의 gold_id가 비어 있거나 중복되었습니다.')
+    except ValueError as e:
+        if 'final_requirements가 0건입니다' not in str(e):
+            raise
+        print(f'[TASK3 빈 출력 감지] group={group_doc_id}, candidates={len(group_candidates)} -> coverage fallback 수행', flush=True)
+        finals = []
+        relations = []
+
     finals, relations = resolve_stage3_lineage(finals, relations, group_candidates)
     finals, relations, coverage_fallback_records = restore_missing_group_coverage(group_doc_id, group_candidates, finals, relations, raw_log_path)
     validate_group_coverage(group_candidates, finals, relations)
     validate_final_task2_assignment([{**candidate, 'task2_id': lineage_id} for candidate in group_candidates for lineage_id in dedupe_preserve(candidate.get('lineage_task2_ids', [candidate['task2_id']]))], finals, relations)
+
     return (finals, relations, coverage_fallback_records)
 
 def final_to_local_candidate(final: dict, local_id: str) -> dict:

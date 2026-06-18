@@ -60,7 +60,7 @@ class CommonToolsTest(unittest.TestCase):
             self.assertFalse(tables[0]["columns"][0]["nullable"])
             self.assertEqual(tables[0]["columns"][1]["data_type"], "VARCHAR(200)")
 
-    def test_srs_template_maps_task3_fields_to_cbd_columns(self) -> None:
+    def test_srs_template_maps_standard_srs_fields_to_cbd_columns(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             output_path = Path(root) / "task3-srs.docx"
             result = export_docx(
@@ -69,12 +69,12 @@ class CommonToolsTest(unittest.TestCase):
                     "content": {
                         "requirement_json_list": [
                             {
-                                "gold_id": "GOLD-001",
-                                "action_type": "산출",
+                                "requirement_id": "GOLD-001",
+                                "requirement_type": "기능",
                                 "requirement_name": "CXL 메모리 프레임워크",
-                                "requirement_detail": "CXL 메모리 프레임워크를 설계한다.",
-                                "sources": ["SFR-001", "SFR-003"],
-                                "merge_basis": "중복 기능을 통합함.",
+                                "description": "CXL 메모리 프레임워크를 설계한다.",
+                                "source": ["SFR-001", "SFR-003"],
+                                "note": "중복 기능을 통합함.",
                             }
                         ]
                     },
@@ -87,10 +87,11 @@ class CommonToolsTest(unittest.TestCase):
             self.assertTrue(result["success"])
             row = Document(output_path).tables[1].rows[1]
             self.assertEqual(row.cells[0].text, "GOLD-001")
-            self.assertEqual(row.cells[2].text, "산출")
+            self.assertEqual(row.cells[2].text, "기능")
             self.assertEqual(row.cells[3].text, "CXL 메모리 프레임워크를 설계한다.")
             self.assertEqual(row.cells[4].text, "SFR-001\nSFR-003")
-            self.assertEqual(row.cells[7].text, "중복 기능을 통합함.")
+            self.assertEqual(row.cells[7].text, "")
+            self.assertEqual(row.cells[9].text, "중복 기능을 통합함.")
 
     def test_db_template_uses_logical_and_physical_column_fields(self) -> None:
         with tempfile.TemporaryDirectory() as root:

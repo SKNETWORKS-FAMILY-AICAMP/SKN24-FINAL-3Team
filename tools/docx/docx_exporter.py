@@ -112,16 +112,16 @@ def _fill_srs_template(document: Any, requirements: list[dict[str, Any]]) -> Non
     for index, requirement in enumerate(requirements):
         row = table.rows[base_row_idx + index] if base_row_idx + index < len(table.rows) else table.add_row()
         values = [
-            _pick(requirement, "requirement_id", "gold_id", "req_id", "id"),
-            _pick(requirement, "requirement_name", "req_name", "name"),
-            _pick(requirement, "action_type", "requirement_type", "type"),
-            _pick(requirement, "requirement_detail", "description", "detail_text", "content"),
-            _join(_pick(requirement, "sources", "source", "source_req_ids", "source_refs")),
+            _pick(requirement, "requirement_id"),
+            _pick(requirement, "requirement_name"),
+            _pick(requirement, "requirement_type"),
+            _pick(requirement, "description"),
+            _join(_pick(requirement, "source")),
             _join(requirement.get("constraints")),
             _pick(requirement, "priority", default="미지정"),
-            _pick(requirement, "merge_basis", "note"),
+            _pick(requirement, "solution", "resolution", "mitigation", "handling_plan", default=""),
             _join(requirement.get("validation_criteria")),
-            _pick(requirement, "status", default=""),
+            _pick(requirement, "note"),
         ]
         for cell, value in zip(row.cells, values):
             _set_cell(cell, value)

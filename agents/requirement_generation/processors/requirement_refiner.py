@@ -28,24 +28,18 @@ def build_final_requirement(
     constraints: list[str],
 ) -> dict[str, Any]:
     item = deepcopy(split_item)
-    requirement_id = str(item.get("requirement_id") or item.get("req_id"))
-    requirement_name = str(item.get("requirement_name") or item.get("req_name"))
+    requirement_id = str(item.get("requirement_id") or item.get("req_id") or "")
+    requirement_name = str(item.get("requirement_name") or item.get("req_name") or "")
     description = str(
-        item.get("requirement_detail")
-        or item.get("description")
+        item.get("description")
+        or item.get("requirement_detail")
         or item.get("detail_text")
         or ""
     )
-    source = item.get("source") or item.get("source_req_ids") or []
-    if not isinstance(source, list):
-        source = [source]
-    existing_constraints = item.get("constraints") or []
-    if not isinstance(existing_constraints, list):
-        existing_constraints = [str(existing_constraints)]
+    source = _as_list(item.get("source") or item.get("source_req_ids") or [])
+    existing_constraints = _as_list(item.get("constraints"))
     all_constraints = list(dict.fromkeys([*existing_constraints, *constraints]))
-    existing_criteria = item.get("validation_criteria") or []
-    if not isinstance(existing_criteria, list):
-        existing_criteria = [str(existing_criteria)]
+    existing_criteria = _as_list(item.get("validation_criteria"))
     criteria = list(
         dict.fromkeys(
             [
@@ -57,22 +51,18 @@ def build_final_requirement(
     return {
         "requirement_id": requirement_id,
         "requirement_name": requirement_name,
-        "requirement_type": "기능",
+        "requirement_type": str(item.get("requirement_type") or "기능"),
         "description": description,
         "source": source,
         "constraints": all_constraints,
-        "priority": item.get("priority", "미지정"),
+        "priority": item.get("priority") or "미지정",
         "validation_criteria": criteria,
-        "note": item.get("note") or ("비기능 요구사항 RAG 검색 결과를 반영함" if constraints else None),
-        "req_id": requirement_id,
-        "req_name": requirement_name,
-        "detail_text": description,
-        "source_req_ids": source,
+        "note": item.get("note") or ("비기능 요구사항 RAG 검색 결과를 반영함" if constraints else ""),
     }
 
 
 def normalize_task3_requirement(item: dict[str, Any]) -> dict[str, Any]:
-    """Task3 최종 항목을 사용자 요구사항 정의서의 표준 필드로 변환합니다."""
+    """Task3 GOLD 항목을 기존 SRS 산출물 계약 필드로 변환합니다."""
 
     requirement_id = str(
         item.get("requirement_id")
@@ -80,59 +70,99 @@ def normalize_task3_requirement(item: dict[str, Any]) -> dict[str, Any]:
         or item.get("req_id")
         or ""
     )
-    requirement_name = str(
-        item.get("requirement_name")
-        or item.get("req_name")
-        or ""
-    )
+    requirement_name = str(item.get("requirement_name") or item.get("req_name") or "")
     description = str(
-        item.get("requirement_detail")
-        or item.get("description")
+        item.get("description")
+        or item.get("requirement_detail")
         or item.get("detail_text")
         or ""
     )
-    source = item.get("sources") or item.get("source") or item.get("source_req_ids") or []
-    if not isinstance(source, list):
-        source = [source]
-    constraints = item.get("constraints") or []
-    if not isinstance(constraints, list):
-        constraints = [str(constraints)]
-    validation_criteria = item.get("validation_criteria") or []
-    if not isinstance(validation_criteria, list):
-        validation_criteria = [str(validation_criteria)]
-
+    source = _as_list(item.get("source") or item.get("sources") or item.get("source_req_ids"))
     return {
         "requirement_id": requirement_id,
         "requirement_name": requirement_name,
         "requirement_type": str(item.get("requirement_type") or "기능"),
-        "action_type": str(item.get("action_type") or ""),
         "description": description,
-        "source": [str(value) for value in source if value],
-        "constraints": [str(value) for value in constraints if value],
-        "priority": item.get("priority", "미지정"),
-        "validation_criteria": [str(value) for value in validation_criteria if value],
-        "note": item.get("merge_basis") or item.get("note"),
-        "processing_type": item.get("processing_type"),
-        "req_id": requirement_id,
-        "req_name": requirement_name,
-        "detail_text": description,
-        "source_req_ids": [str(value) for value in source if value],
+        "source": source,
+        "constraints": _as_list(item.get("constraints")),
+        "priority": item.get("priority") or "미지정",
+        "validation_criteria": _as_list(item.get("validation_criteria")),
+        "note": item.get("note") or item.get("merge_basis") or "",
     }
 
 
 def normalize_task3_output(value: Any) -> Any:
-    """Task3 문서 래퍼 또는 항목 목록만 표준 요구사항 목록으로 변환합니다."""
+    """Task3 문서 래퍼 또는 항목 목록을 기존 SRS 요구사항 목록으로 변환합니다."""
 
     items = value.get("final_requirements") if isinstance(value, dict) else value
     if not isinstance(items, list):
         return value
-    if not any(isinstance(item, dict) and item.get("gold_id") for item in items):
-        return items
-    return [
-        normalize_task3_requirement(item)
+    if not any(
+        isinstance(item, dict)
+        and (item.get("gold_id") or item.get("merge_basis") or item.get("source_task2_ids"))
         for item in items
-        if isinstance(item, dict)
+    ):
+        return items
+    return [normalize_task3_requirement(item) for item in items if isinstance(item, dict)]
+
+
+def enrich_gold_requirements_parallel(
+    gold_items: list[dict[str, Any]],
+    rag_results_by_item: list[list[dict[str, Any]]],
+    *,
+    llm_client: LLMClient | None = None,
+    max_workers: int = 4,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """GOLD 결과를 표준 SRS 필드로 변환하고 빈 보강 컬럼만 RAG로 채웁니다."""
+
+    warnings: list[dict[str, Any]] = []
+    fallback_items = [
+        _merge_supplement(normalize_task3_requirement(item), _supplement_from_rag(results))
+        for item, results in zip(gold_items, rag_results_by_item, strict=False)
     ]
+    if llm_client is None or not gold_items:
+        return fallback_items, warnings
+
+    requests = [
+        {
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "Return JSON with only supplemental SRS columns based on RAG evidence. "
+                        "Do not rewrite requirement_id, requirement_name, requirement_type, "
+                        "description, source, or note. Allowed keys: constraints, priority, "
+                        "validation_criteria, rag_validation."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": str(
+                        {
+                            "requirement": normalize_task3_requirement(item),
+                            "rag_results": rag_results,
+                            "fallback_supplement": _supplement_from_rag(rag_results),
+                        }
+                    ),
+                },
+            ]
+        }
+        for item, rag_results in zip(gold_items, rag_results_by_item, strict=False)
+    ]
+    result = send_parallel(requests, client=llm_client, max_workers=max_workers)
+    if not result["success"]:
+        warnings.append({"code": "REQUIREMENT_RAG_SUPPLEMENT_LLM_FAILED", "message": result["error"]["message"]})
+        return fallback_items, warnings
+
+    enriched: list[dict[str, Any]] = []
+    for index, item_result in enumerate(result["data"]):
+        supplement = _supplement_from_rag(rag_results_by_item[index])
+        if item_result and item_result["success"]:
+            parsed = parse_json_response(item_result["data"])
+            if parsed["success"] and isinstance(parsed["data"], dict):
+                supplement = _normalize_supplement(parsed["data"], supplement)
+        enriched.append(_merge_supplement(normalize_task3_requirement(gold_items[index]), supplement))
+    return enriched, warnings
 
 
 def refine_requirements_parallel(
@@ -197,37 +227,68 @@ def refine_requirements_parallel(
     return refined, warnings
 
 
+def _supplement_from_rag(search_results: list[dict[str, Any]]) -> dict[str, Any]:
+    constraints = extract_constraints(search_results)
+    return {
+        "constraints": constraints,
+        "priority": "미지정",
+        "validation_criteria": constraints_to_validation_criteria(constraints),
+        "rag_validation": {
+            "status": "APPLIED" if constraints else "NO_EVIDENCE",
+            "evidence": search_results,
+            "notes": "RAG evidence applied to supplemental SRS columns." if constraints else "No RAG evidence found.",
+        },
+    }
+
+
+def _normalize_supplement(raw: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
+    constraints = _as_list(raw.get("constraints", fallback.get("constraints", [])))
+    validation_criteria = _as_list(raw.get("validation_criteria", fallback.get("validation_criteria", [])))
+    rag_validation = raw.get("rag_validation", fallback.get("rag_validation", {}))
+    if not isinstance(rag_validation, dict):
+        rag_validation = fallback.get("rag_validation", {})
+    return {
+        "constraints": constraints,
+        "priority": raw.get("priority") or fallback.get("priority") or "미지정",
+        "validation_criteria": validation_criteria,
+        "rag_validation": rag_validation,
+    }
+
+
+def _merge_supplement(item: dict[str, Any], supplement: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(item)
+    for key in ("constraints", "validation_criteria"):
+        if not merged.get(key):
+            merged[key] = supplement.get(key, [])
+    if merged.get("priority") in (None, "", "미지정"):
+        merged["priority"] = supplement.get("priority") or "미지정"
+    return merged
+
+
 def _normalize_final_requirement(item: dict[str, Any], fallback: dict[str, Any]) -> dict[str, Any]:
     if item.get("gold_id") or item.get("sources") or item.get("merge_basis"):
         return normalize_task3_requirement(item)
 
     merged = {**fallback, **item}
-    source = merged.get("source") or merged.get("source_req_ids") or fallback.get("source", [])
-    if not isinstance(source, list):
-        source = [source]
-    constraints = merged.get("constraints") or []
-    if not isinstance(constraints, list):
-        constraints = [str(constraints)]
-    validation_criteria = merged.get("validation_criteria") or constraints_to_validation_criteria(constraints)
-    if not isinstance(validation_criteria, list):
-        validation_criteria = [str(validation_criteria)]
-    requirement_id = str(merged.get("requirement_id") or merged.get("req_id") or fallback["requirement_id"])
-    requirement_name = str(merged.get("requirement_name") or merged.get("req_name") or fallback["requirement_name"])
-    description = str(merged.get("description") or merged.get("detail_text") or fallback["description"])
-    normalized_source = [str(value) for value in source if value]
+    source = _as_list(merged.get("source") or merged.get("source_req_ids") or fallback.get("source", []))
+    constraints = _as_list(merged.get("constraints"))
+    validation_criteria = _as_list(merged.get("validation_criteria")) or constraints_to_validation_criteria(constraints)
     return {
-        **merged,
-        "requirement_id": requirement_id,
-        "requirement_name": requirement_name,
-        "requirement_type": "기능",
-        "description": description,
-        "source": normalized_source,
+        "requirement_id": str(merged.get("requirement_id") or merged.get("req_id") or fallback["requirement_id"]),
+        "requirement_name": str(merged.get("requirement_name") or merged.get("req_name") or fallback["requirement_name"]),
+        "requirement_type": str(merged.get("requirement_type") or fallback.get("requirement_type") or "기능"),
+        "description": str(merged.get("description") or merged.get("detail_text") or fallback["description"]),
+        "source": source,
         "constraints": constraints,
-        "priority": merged.get("priority", "미지정"),
+        "priority": merged.get("priority") or "미지정",
         "validation_criteria": validation_criteria,
-        "note": merged.get("note") or fallback.get("note"),
-        "req_id": requirement_id,
-        "req_name": requirement_name,
-        "detail_text": description,
-        "source_req_ids": normalized_source,
+        "note": merged.get("note") or fallback.get("note") or "",
     }
+
+
+def _as_list(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if item not in (None, "")]
+    return [str(value)]
