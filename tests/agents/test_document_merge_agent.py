@@ -156,6 +156,9 @@ class DocumentMergeAgentTest(unittest.TestCase):
             self.assertEqual(names["REQ-NEW"], "신규")
             self.assertGreaterEqual(len(llm.calls), 3)
             self.assertTrue(embedding_calls)
+            embedded_ids = {item.get("req_id") for item in embedding_calls[0][0]}
+            self.assertIn("NFR-001", embedded_ids)
+            self.assertEqual(embedding_calls[0][1]["project_sn"], 1)
 
     def test_other_create_loads_requirements_and_reference_documents(self) -> None:
         with tempfile.TemporaryDirectory() as root:

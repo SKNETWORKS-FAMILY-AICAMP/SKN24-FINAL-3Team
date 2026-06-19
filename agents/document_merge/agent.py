@@ -55,12 +55,17 @@ class DocumentMergeAgent:
         parsed = self.rfp_parser(base_rfp_path)
         if not parsed["success"]:
             return self._tool_failed("SRS_RFP_PARSE_FAILED", parsed)
-        requirements = list(parsed["data"].get("requirements") or parsed["data"].get("functional_requirements", []))
+        parsed_data = parsed["data"]
+        requirements = list(parsed_data.get("requirements") or parsed_data.get("functional_requirements", []))
+        non_functional_requirements = list(
+            parsed_data.get("non_functional_requirements")
+            or _non_functional_items(requirements)
+        )
         changes, warnings = self._meeting_changes(state)
         changes = self._enrich_changes_with_search(changes, warnings)
         changes = self._merge_search_results_with_llm(changes, warnings)
         integrated = self._apply_changes_to_items(requirements, changes, warnings)
-        self._write_non_functional_embeddings(integrated, state, warnings)
+        self._write_non_functional_embeddings(non_functional_requirements, state, warnings)
         return self._success(
             warnings=warnings,
             integrated_requirement_json_list=integrated,
@@ -408,3 +413,21 @@ def _matches_type_or_text(item: dict[str, Any], keywords: set[str]) -> bool:
         )
     ).lower()
     return any(keyword.lower() in requirement_type or keyword.lower() in text for keyword in keywords)
+
+
+def _non_functional_items(items: list[Any]) -> list[dict[str, Any]]:
+    return [
+        item
+        for item in items
+        if isinstance(item, dict)
+        and not _is_functional_type(item.get("requirement_type") or item.get("type"))
+    ]
+
+
+def _is_functional_type(value: Any) -> bool:
+    requirement_type = str(value or "").strip().lower()
+    return (
+        requirement_type.startswith("기능")
+        or requirement_type.startswith("functional")
+        or requirement_type == "function"
+    )

@@ -135,8 +135,8 @@ def _fill_srs_template(
             _pick(requirement, "description"),
             _join(_pick(requirement, "source")),
             _join(requirement.get("constraints")),
-            _pick(requirement, "priority", default="미지정"),
-            _pick(requirement, "solution", "resolution", "mitigation", "handling_plan", default=""),
+            _join(_pick(requirement, "priority", default=[])),
+            _join(_pick(requirement, "solution", "resolution", "mitigation", "handling_plan", default=[])),
             _join(requirement.get("validation_criteria")),
             _pick(requirement, "note"),
         ]
@@ -746,7 +746,7 @@ def _pick(data: dict[str, Any], *keys: str, default: Any = "") -> Any:
 
 def _join(value: Any) -> str:
     if isinstance(value, list):
-        return "\n".join(_to_plain_text(item) for item in value)
+        return _xml_safe_text("\n".join(_to_plain_text(item) for item in value))
     return _to_plain_text(value)
 
 
@@ -754,16 +754,21 @@ def _to_plain_text(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, list):
-        return "\n".join(_to_plain_text(item) for item in value)
+        return _xml_safe_text("\n".join(_to_plain_text(item) for item in value))
     if isinstance(value, dict):
-        return json.dumps(value, ensure_ascii=False)
-    return str(value).strip()
+        return _xml_safe_text(json.dumps(value, ensure_ascii=False))
+    return _xml_safe_text(str(value).strip())
 
 
 def _to_text(value: Any) -> str:
     if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, indent=2)
-    return "" if value is None else str(value)
+        return _xml_safe_text(json.dumps(value, ensure_ascii=False, indent=2))
+    return "" if value is None else _xml_safe_text(str(value))
+
+
+def _xml_safe_text(value: str) -> str:
+    """Remove characters that cannot be written into WordprocessingML XML."""
+    return re.sub(r"[\x00-\x08\x0B\x0C\x0E-\x1F\uD800-\uDFFF\uFFFE\uFFFF]", "", value)
 
 
 def _process_contents(screen: dict[str, Any]) -> list[dict[str, Any]]:

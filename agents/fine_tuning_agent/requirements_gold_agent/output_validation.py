@@ -78,6 +78,15 @@ def _default_relation_rationale(processing_result: str) -> str:
     }
     return messages.get(processing_result, '후보 요구사항과 최종 GOLD의 관계를 기준으로 처리하였다.')
 
+def _is_task3_final_like(item: dict) -> bool:
+    return (
+        isinstance(item, dict)
+        and str(item.get('gold_id', '')).strip()
+        and str(item.get('requirement_name', '')).strip()
+        and str(item.get('requirement_detail', '')).strip()
+        and isinstance(item.get('source_task2_ids'), list)
+    )
+
 def repair_task3_relation_metadata(obj: dict, repairs: list[str]) -> None:
     """기존 TASK3 학습 출력의 축약 relation_decisions를 결정적으로 보완한다.
 
@@ -182,6 +191,18 @@ def normalize_task_output_shape(task_type: str, candidate: dict) -> tuple[dict, 
             repairs.append('relation_decisions:dict->list')
         elif isinstance(relations, list):
             obj['relation_decisions'] = [dict(item) if isinstance(item, dict) else item for item in relations]
+        if not isinstance(obj.get('final_requirements'), list) or not obj.get('final_requirements'):
+            maybe_finals = obj.get('relation_decisions', [])
+            if isinstance(maybe_finals, list) and maybe_finals:
+                final_like = [item for item in maybe_finals if _is_task3_final_like(item)]
+                relation_like = [item for item in maybe_finals if not _is_task3_final_like(item)]
+                if final_like:
+                    obj['final_requirements'] = [dict(item) for item in final_like]
+                    obj['relation_decisions'] = [dict(item) if isinstance(item, dict) else item for item in relation_like]
+                    if relation_like:
+                        repairs.append('relation_decisions:mixed_final_like->final_requirements')
+                    else:
+                        repairs.append('relation_decisions:final_like->final_requirements')
         finals = obj.get('final_requirements')
         relations = obj.get('relation_decisions', [])
         if isinstance(finals, list) and len(finals) == 1 and isinstance(finals[0], dict):

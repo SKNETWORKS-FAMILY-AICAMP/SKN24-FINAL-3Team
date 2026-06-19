@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from agents.requirement_generation.processors import (
-    build_rag_queries_parallel,
+    build_rag_query_sets_parallel,
     enrich_gold_requirements_parallel,
     filter_function_requirements,
 )
@@ -86,7 +86,7 @@ class RequirementGenerationAgent:
                 self._failed("REQUIREMENT_GOLD_EMPTY", "GOLD final_requirements is empty."),
             )
 
-        queries, query_warnings = build_rag_queries_parallel(
+        query_sets, query_warnings = build_rag_query_sets_parallel(
             gold_items,
             llm_client=self.llm_client,
             max_workers=self.max_parallel_workers,
@@ -95,9 +95,8 @@ class RequirementGenerationAgent:
 
         rag_results_by_item, rag_warnings, search_debug = self._search_rag_parallel(
             gold_items,
-            queries,
+            query_sets,
             state,
-            non_functional_context,
         )
         warnings.extend(rag_warnings)
 
@@ -151,56 +150,63 @@ class RequirementGenerationAgent:
     def _search_rag_parallel(
         self,
         gold_items: list[dict[str, Any]],
-        queries: list[str],
+        query_sets: list[dict[str, str]],
         state: WorkflowState,
-        non_functional_context: list[dict[str, Any]],
-    ) -> tuple[list[list[dict[str, Any]]], list[dict[str, Any]], list[dict[str, Any]]]:
+    ) -> tuple[list[dict[str, list[dict[str, Any]]]], list[dict[str, Any]], list[dict[str, Any]]]:
         warnings: list[dict[str, Any]] = []
-        results: list[list[dict[str, Any]]] = [[] for _ in gold_items]
+        results: list[dict[str, list[dict[str, Any]]]] = [
+            {"constraints": [], "validation_criteria": []} for _ in gold_items
+        ]
         debug: list[dict[str, Any]] = [{} for _ in gold_items]
 
-        def invoke(index: int) -> tuple[int, ToolResult, dict[str, Any], str]:
-            gold_item = gold_items[index]
-            query = queries[index]
-            filters = {
-                "project_sn": state.get("project_sn"),
-                "requirement_source_id": gold_item.get("sources") or gold_item.get("source") or [],
-                "rfp_id": gold_item.get("rfp_id"),
-                "requirement_type": ["보안", "성능", "품질", "인터페이스", "데이터"],
-            }
+        def invoke(
+            index: int,
+        ) -> tuple[int, dict[str, list[ToolResult]], list[dict[str, Any] | None], dict[str, str]]:
+            queries = _normalize_rag_query_set(query_sets[index])
+            filters_list = _rag_search_filters(state)
+            search_results: dict[str, list[ToolResult]] = {}
+            for purpose, query in queries.items():
+                search_results[purpose] = [
+                    self.search_tool(query, search_targets="RAG", filters=filters, top_k=8)
+                    for filters in filters_list
+                ]
             return (
                 index,
-                self.search_tool(query, search_targets="RAG", filters=filters),
-                filters,
-                query,
+                search_results,
+                filters_list,
+                queries,
             )
 
         with ThreadPoolExecutor(max_workers=self.max_parallel_workers) as executor:
             futures = {executor.submit(invoke, index): index for index in range(len(gold_items))}
             for future in as_completed(futures):
-                index, search_result, filters, query = future.result()
-                normalized_results = (
-                    search_result["data"]["normalized_results"]
-                    if search_result["success"]
-                    else []
-                )
-                normalized_results = _dedupe_relevant_results(normalized_results)
-                if not normalized_results:
-                    normalized_results = _non_functional_fallback_results(non_functional_context)
-                results[index] = normalized_results
+                index, search_results_by_purpose, filters_list, queries = future.result()
+                normalized_by_purpose: dict[str, list[dict[str, Any]]] = {}
+                for purpose, search_results in search_results_by_purpose.items():
+                    raw_results: list[dict[str, Any]] = []
+                    for search_result in search_results:
+                        if search_result["success"]:
+                            raw_results.extend(search_result["data"]["normalized_results"])
+                    normalized_by_purpose[purpose] = _dedupe_relevant_results(raw_results)
+                results[index] = normalized_by_purpose
                 debug[index] = {
-                    "query": query,
-                    "filters": filters,
-                    "normalized_results": normalized_results,
+                    "queries": queries,
+                    "filters": filters_list,
+                    "normalized_results": normalized_by_purpose,
                 }
-                if not search_result["success"]:
-                    warnings.append(
-                        {
-                            "code": "REQUIREMENT_RAG_SEARCH_FAILED",
-                            "message": search_result["error"]["message"],
-                            "query": query,
-                        }
-                    )
+                for purpose, search_results in search_results_by_purpose.items():
+                    for search_result, filters in zip(search_results, filters_list, strict=False):
+                        if search_result["success"]:
+                            continue
+                        warnings.append(
+                            {
+                                "code": "REQUIREMENT_RAG_SEARCH_FAILED",
+                                "message": search_result["error"]["message"],
+                                "purpose": purpose,
+                                "query": queries[purpose],
+                                "filters": filters,
+                            }
+                        )
         return results, warnings, debug
 
     @staticmethod
@@ -300,7 +306,9 @@ def _dedupe_relevant_results(results: list[dict[str, Any]]) -> list[dict[str, An
     seen: set[str] = set()
     for result in sorted(results, key=lambda item: item.get("score") or 0, reverse=True):
         score = result.get("score")
-        if isinstance(score, (int, float)) and score < 0.2:
+        if isinstance(score, (int, float)) and score < 0.4:
+            continue
+        if _is_blocked_policy_result(result):
             continue
         key = str(result.get("citation") or result.get("content") or result.get("title") or "")
         if key in seen:
@@ -319,38 +327,62 @@ def _non_functional_context(items: list[Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _non_functional_fallback_results(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    results = []
-    for item in items:
-        content = _constraint_text(item)
-        if not content:
-            continue
-        results.append(
-            {
-                "source_kind": "RAG",
-                "source": "RAG",
-                "title": _name(item),
-                "content": content,
-                "score": 0.5,
-                "metadata": {
-                    "requirement_id": item.get("req_id") or item.get("requirement_id"),
-                    "requirement_type": item.get("requirement_type") or item.get("type"),
-                    "source": "document_merge_agent",
-                },
-                "citation": _source_id(item),
-            }
+def _rag_search_filters(state: WorkflowState) -> list[dict[str, Any] | None]:
+    project_filter: dict[str, Any] = {
+        "doc_type": "project_non_functional_requirement",
+    }
+    if state.get("project_sn") is not None:
+        project_filter["project_sn"] = state.get("project_sn")
+
+    # First search the non-functional requirements parsed from the current RFP
+    # and stored during document_merge. Then search the collection without a
+    # project filter so guide/reference documents can also be used.
+    return [project_filter, None]
+
+
+def _normalize_rag_query_set(value: dict[str, str]) -> dict[str, str]:
+    constraints = str(value.get("constraints") or value.get("query") or "").strip()
+    validation = str(value.get("validation_criteria") or value.get("validation_query") or "").strip()
+    if not validation:
+        validation = constraints
+    return {
+        "constraints": constraints,
+        "validation_criteria": validation,
+    }
+
+
+def _is_blocked_policy_result(result: dict[str, Any]) -> bool:
+    text = " ".join(
+        str(value or "")
+        for value in (
+            result.get("title"),
+            result.get("content"),
+            result.get("citation"),
+            (result.get("metadata") or {}).get("requirement_name") if isinstance(result.get("metadata"), dict) else "",
+            (result.get("metadata") or {}).get("requirement_type") if isinstance(result.get("metadata"), dict) else "",
         )
-    return _dedupe_relevant_results(results)
+    )
+    return _contains_blocked_terms(text)
 
 
-def _constraint_text(item: dict[str, Any]) -> str:
-    parts = [
-        _name(item),
-        _description(item),
-        _join_values(item.get("constraints")),
-        _join_values(item.get("validation_criteria")),
+def _contains_blocked_terms(text: str) -> bool:
+    lowered = text.lower()
+    blocked = [
+        "하도급",
+        "계약",
+        "대금",
+        "제안서 작성",
+        "입찰",
+        "사업관리",
+        "프로젝트 관리",
+        "착수",
+        "보고회",
+        "검수 후 지급",
+        "지체상금",
+        "용역",
+        "과업",
     ]
-    return " - ".join(part for part in parts if part)
+    return any(term in lowered for term in blocked)
 
 
 def _join_values(value: Any) -> str:

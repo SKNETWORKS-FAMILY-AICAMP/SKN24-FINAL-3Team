@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 import uuid
 
@@ -112,11 +113,16 @@ def _create_qdrant_client(settings: Settings) -> Any:
 def _ensure_collection(client: Any, collection_name: str, vector_size: int) -> None:
     if _collection_exists(client, collection_name):
         return
-    from qdrant_client.models import Distance, VectorParams
+    try:
+        from qdrant_client.models import Distance, VectorParams
+
+        vectors_config = VectorParams(size=vector_size, distance=Distance.COSINE)
+    except ImportError:
+        vectors_config = {"size": vector_size, "distance": "Cosine"}
 
     client.create_collection(
         collection_name=collection_name,
-        vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
+        vectors_config=vectors_config,
     )
 
 
@@ -131,7 +137,10 @@ def _collection_exists(client: Any, collection_name: str) -> bool:
 
 
 def _upsert_points(client: Any, collection_name: str, points: list[dict[str, Any]]) -> None:
-    from qdrant_client.models import PointStruct
+    try:
+        from qdrant_client.models import PointStruct
+    except ImportError:
+        PointStruct = SimpleNamespace
 
     client.upsert(
         collection_name=collection_name,
@@ -203,8 +212,10 @@ def _embedded_text(item: dict[str, Any]) -> str:
 
 def _original_text(item: dict[str, Any]) -> str:
     return str(
-        item.get("detail_text")
+        item.get("requirement_detail")
+        or item.get("detail_text")
         or item.get("description")
+        or item.get("requirement_definition")
         or item.get("content")
         or item.get("requirement_text")
         or ""

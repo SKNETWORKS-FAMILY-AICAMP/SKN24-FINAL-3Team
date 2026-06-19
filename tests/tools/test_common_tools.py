@@ -417,6 +417,49 @@ class CommonToolsTest(unittest.TestCase):
         self.assertTrue(all(payload["doc_type"] == "project_non_functional_requirement" for payload in payloads))
         self.assertTrue(all(payload["chunk_type"] == "project_requirement_source" for payload in payloads))
 
+    def test_embedding_writer_uses_requirement_detail_as_rag_evidence_text(self) -> None:
+        class FakeQdrant:
+            def __init__(self):
+                self.created = []
+                self.upserts = []
+
+            def collection_exists(self, **kwargs):
+                return False
+
+            def create_collection(self, **kwargs):
+                self.created.append(kwargs)
+
+            def upsert(self, **kwargs):
+                self.upserts.append(kwargs)
+
+        class FakeEmbedder:
+            def encode(self, text, normalize_embeddings=True):
+                self.last_text = text
+                return [0.1, 0.2, 0.3]
+
+        qdrant = FakeQdrant()
+        embedder = FakeEmbedder()
+        result = write_non_functional_requirements(
+            [
+                {
+                    "requirement_id": "SEC-001",
+                    "requirement_type": "보안",
+                    "requirement_name": "인증정보 암호화",
+                    "requirement_detail": "개인정보와 인증정보는 전송 및 저장 시 암호화해야 한다.",
+                }
+            ],
+            project_sn=1,
+            source_path="rfp.docx",
+            qdrant_client=qdrant,
+            embedder=embedder,
+            collection="test_collection",
+        )
+
+        self.assertTrue(result["success"])
+        payload = qdrant.upserts[0]["points"][0].payload
+        self.assertIn("개인정보와 인증정보는 전송 및 저장 시 암호화해야 한다.", payload["content"])
+        self.assertEqual(payload["original_text"], "개인정보와 인증정보는 전송 및 저장 시 암호화해야 한다.")
+
     def test_embedding_writer_defaults_to_alpled_reference_collection(self) -> None:
         class FakeQdrant:
             def __init__(self):

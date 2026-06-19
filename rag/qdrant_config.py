@@ -2,13 +2,18 @@ import os
 from typing import Any
 
 from dotenv import load_dotenv
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
 
 load_dotenv()
 
-QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
-EMBED_MODEL_NAME = os.getenv("EMBED_MODEL_NAME", "BAAI/bge-m3")
+QDRANT_URL = os.getenv("QDRANT_URL") or (
+    f"http://{os.getenv('QDRANT_HOST', 'localhost')}:{os.getenv('QDRANT_PORT', '6333')}"
+)
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+EMBED_MODEL_NAME = (
+    os.getenv("EMBED_MODEL_NAME")
+    or os.getenv("EMBEDDING_MODEL")
+    or "BAAI/bge-m3"
+)
 
 ALPLED_REFERENCE_COLLECTION = os.getenv(
     "ALPLED_REFERENCE_COLLECTION",
@@ -21,10 +26,15 @@ _client = None
 _embedder = None
 
 
-def get_client() -> QdrantClient:
+def get_client() -> Any:
     global _client
     if _client is None:
-        _client = QdrantClient(url=QDRANT_URL)
+        from qdrant_client import QdrantClient
+
+        kwargs = {"url": QDRANT_URL}
+        if QDRANT_API_KEY:
+            kwargs["api_key"] = QDRANT_API_KEY
+        _client = QdrantClient(**kwargs)
     return _client
 
 
@@ -52,6 +62,8 @@ def get_embeddings(texts: list[str]):
 
 
 def ensure_named_collection(collection_name: str, recreate: bool = False):
+    from qdrant_client.models import Distance, VectorParams
+
     client = get_client()
     embedder = get_embedder()
     dim = embedder.get_sentence_embedding_dimension()

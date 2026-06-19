@@ -16,7 +16,7 @@ class FakeLLM:
         system = messages[0]["content"]
         if "RAG query" in system:
             return success_result({"query": "login security validation"})
-        if "supplemental SRS columns" in system:
+        if "보강 컬럼" in system or "supplemental SRS columns" in system:
             return success_result(
                 {
                     "constraints": ["Lock account after 5 failed login attempts."],
@@ -69,7 +69,11 @@ class RequirementGenerationAgentTest(unittest.TestCase):
             return success_result(
                 {
                     "normalized_results": [
-                        {"content": "Lock account after 5 failed login attempts.", "score": 0.9},
+                        {
+                            "content": "Lock account after 5 failed login attempts.",
+                            "score": 0.9,
+                            "metadata": {"requirement_id": "NFR-SEC-001"},
+                        },
                     ]
                 }
             )
@@ -89,15 +93,23 @@ class RequirementGenerationAgentTest(unittest.TestCase):
         self.assertEqual(gold_input["scope_reference_requirements"][0]["scope_id"], "NFR-001")
         self.assertEqual(search_calls[0][1]["search_targets"], "RAG")
         self.assertEqual(search_calls[0][1]["filters"]["project_sn"], 1)
+        self.assertEqual(search_calls[0][1]["filters"]["doc_type"], "project_non_functional_requirement")
         self.assertEqual(search_calls[0][0], "login security validation")
+        self.assertIsNone(search_calls[1][1]["filters"])
+        self.assertEqual(len(search_calls), 4)
+        self.assertIn("검수기준", search_calls[2][0])
+        self.assertEqual(search_calls[2][1]["filters"]["project_sn"], 1)
+        self.assertIsNone(search_calls[3][1]["filters"])
 
         item = result["final_requirement_json_list"][0]
         self.assertEqual(item["requirement_id"], "GOLD-001")
         self.assertEqual(item["requirement_type"], "기능")
         self.assertEqual(item["requirement_name"], "사용자 로그인")
         self.assertEqual(item["description"], "사용자는 계정으로 로그인할 수 있어야 한다.")
-        self.assertEqual(item["source"], ["SFR-001"])
-        self.assertEqual(item["note"], "단일 기능 요구사항으로 유지")
+        self.assertEqual(item["source"], ["SFR-001", "NFR-SEC-001"])
+        self.assertIn("단일 기능 요구사항으로 유지", item["note"])
+        self.assertIn("RAG 보강 근거", item["note"])
+        self.assertIn("NFR-SEC-001", item["note"])
         self.assertNotIn("action_type", item)
         self.assertNotIn("merge_basis", item)
         self.assertNotIn("req_id", item)
@@ -107,20 +119,23 @@ class RequirementGenerationAgentTest(unittest.TestCase):
         self.assertNotIn("source_task2_ids", item)
         self.assertNotIn("source_atomic_ids", item)
         self.assertEqual(item["constraints"], ["Lock account after 5 failed login attempts."])
-        self.assertEqual(item["priority"], "High")
+        self.assertEqual(item["priority"], [])
+        self.assertEqual(item["solution"], [])
         self.assertEqual(item["validation_criteria"], ["Verify account lock after 5 failed login attempts."])
         self.assertIs(state["agent_outputs"]["requirement_generation_agent"], result)
         self.assertNotIn("debug", result)
 
-    def test_empty_rag_uses_non_functional_source_requirements_as_supplement(self) -> None:
+    def test_empty_rag_keeps_gold_without_unrelated_non_functional_fallback(self) -> None:
         result = RequirementGenerationAgent(
             gold_service=FakeGoldService(),
             search_tool=lambda query, **kwargs: success_result({"normalized_results": []}),
         ).execute(_state())
 
         item = result["final_requirement_json_list"][0]
-        self.assertIn("응답시간 - 3초 이내 응답해야 한다.", item["constraints"])
-        self.assertTrue(item["validation_criteria"])
+        self.assertEqual(item["constraints"], [])
+        self.assertEqual(item["priority"], [])
+        self.assertEqual(item["solution"], [])
+        self.assertEqual(item["validation_criteria"], [])
 
     def test_rag_failure_keeps_gold_result_and_returns_warning(self) -> None:
         def failed_search(query, **kwargs):
@@ -181,6 +196,8 @@ class RequirementGenerationAgentTest(unittest.TestCase):
         self.assertEqual(item["requirement_type"], "기능")
         self.assertEqual(item["description"], "CXL 메모리 프레임워크를 설계하여야 한다.")
         self.assertEqual(item["source"], ["SFR-001", "SFR-003"])
+        self.assertEqual(item["priority"], [])
+        self.assertEqual(item["solution"], [])
         self.assertEqual(item["note"], "중복 기능을 통합함.")
         self.assertNotIn("action_type", item)
         self.assertNotIn("merge_basis", item)
