@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, cast
 from urllib.parse import urlparse
 
-from config.constants import DOCS_CODES, FILE_CODE_RFP, UPDATE_YN_VALUES
+from config.constants import DOCS_CODES, FILE_CODE_RFP, UPDATE_YN_VALUES, normalize_docs_cd
 from config.settings import get_settings
 from database.repositories.docs_detail_repository import DocsDetailRepository
 from database.repositories.file_repository import FileRepository
@@ -80,7 +80,6 @@ def request_preprocess_node(
         _validate_request(result)
         _validate_project(result, dependencies.project_repository)
         file_records = _find_file_sn_records(result["file_list"], dependencies)
-        image_records = _find_file_sn_records(result["image_list"], dependencies)
         _validate_file_list_policy(result, file_records)
         result["input_file_paths"] = _download_file_records(
             result["file_list"], file_records, dependencies
@@ -88,9 +87,7 @@ def request_preprocess_node(
         result["base_rfp_path"] = _select_downloaded_rfp_path(
             result["file_list"], file_records, result["input_file_paths"]
         )
-        result["input_image_paths"] = _download_file_records(
-            result["image_list"], image_records, dependencies
-        )
+        result["input_image_paths"] = _download_image_paths(result["image_list"], dependencies)
         _resolve_required_documents(result, dependencies)
         _try_mark_docs_generating(result, dependencies.docs_detail_repository)
         return result
@@ -111,7 +108,7 @@ def request_preprocess_node(
 def _initialize_state(state: WorkflowState) -> WorkflowState:
     return {
         "project_sn": state.get("project_sn"),  # type: ignore[typeddict-item]
-        "docs_cd": str(state.get("docs_cd")).upper() if state.get("docs_cd") is not None else None,  # type: ignore[typeddict-item]
+        "docs_cd": normalize_docs_cd(state.get("docs_cd")) if state.get("docs_cd") is not None else None,  # type: ignore[typeddict-item]
         "udt_yn": str(state.get("udt_yn")).upper() if state.get("udt_yn") is not None else None,  # type: ignore[typeddict-item]
         "status": "READY",
         "next_action": "SUPERVISOR",
@@ -130,6 +127,11 @@ def _initialize_state(state: WorkflowState) -> WorkflowState:
         "current_round": 0,
         "max_round": get_settings().max_round,
         "supervisor_decision": None,
+        "repair_history": [],
+        "current_repair_instruction": None,
+        "repair_round": 0,
+        "max_repair_round": 2,
+        "agent_outputs_before_repair": {},
         "validation_result": None,
         "final_document_json": None,
         "export_result": None,
@@ -285,6 +287,23 @@ def _download_file_records(
     dependencies: RequestPreprocessDependencies,
 ) -> list[str]:
     return [_download_record(records_by_sn[file_sn], dependencies) for file_sn in file_sn_list]
+
+
+def _download_image_paths(
+    image_list: list[str],
+    dependencies: RequestPreprocessDependencies,
+) -> list[str]:
+    downloaded_paths: list[str] = []
+    for image_path in image_list:
+        source = str(image_path).strip()
+        if not source:
+            raise PreprocessError("IMAGE_PATH_EMPTY", "image_list에 빈 이미지 경로가 포함되어 있습니다.")
+        if source.startswith(("s3://", "http://", "https://")):
+            record = {"file_path": source}
+        else:
+            record = {"s3_key": source}
+        downloaded_paths.append(_download_record(record, dependencies))
+    return downloaded_paths
 
 
 def _download_active_doc(

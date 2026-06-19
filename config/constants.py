@@ -53,6 +53,23 @@ DOCS_CODE_DB_MAP = {
 
 DB_DOCS_CODE_MAP = {value: key for key, value in DOCS_CODE_DB_MAP.items()}
 
+
+def normalize_docs_cd(docs_cd: str | DocsCode) -> str:
+    value = str(docs_cd or "").strip().upper()
+    if value in DOCS_CODES:
+        return value
+    if value in DB_DOCS_CODE_MAP:
+        return DB_DOCS_CODE_MAP[value]
+
+    for prefix in ("DOC_", "DOCS_"):
+        if value.startswith(prefix):
+            normalized = value.removeprefix(prefix)
+            if normalized == "ITF":
+                return DocsCode.INTERFACE.value
+            if normalized in DOCS_CODES:
+                return normalized
+    return value
+
 DOCS_PROGRESS_DB_MAP = {
     DocsProgressStatus.READY.value: "PRGRS_PENDING",
     DocsProgressStatus.GENERATING.value: "PRGRS_PROCESSING",
