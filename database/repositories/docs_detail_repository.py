@@ -101,6 +101,7 @@ class DocsDetailRepository:
         docs_sn = self._find_docs_sn(
             project_sn=project_sn,
             docs_cd=docs_cd,
+            docs_ver=docs_ver,
         )
         result = self.session.execute(
             text(INSERT_DOCS_DETAIL),
@@ -171,6 +172,7 @@ class DocsDetailRepository:
         *,
         project_sn: int,
         docs_cd: DocsCode,
+        docs_ver: str | None = None,
     ) -> int:
         current = self.session.execute(
             text(FIND_CURRENT_DOCS),
@@ -183,6 +185,7 @@ class DocsDetailRepository:
             docs_cd=docs_cd,
             status="DONE",
             mdfcn_cn="산출물 생성 완료",
+            docs_ver=docs_ver,
         )
 
     def _insert_docs(
@@ -193,13 +196,14 @@ class DocsDetailRepository:
         status: str,
         mdfcn_cn: str | None,
         user_sn: int = 1,
+        docs_ver: str | None = None,
     ) -> int:
         result = self.session.execute(
             text(INSERT_DOCS),
             {
                 "project_sn": project_sn,
                 "docs_cd": _to_db_docs_cd(docs_cd),
-                "docs_ver": None,
+                "docs_ver": _normalize_docs_ver(docs_ver),
                 "docs_prgrs_stts_cd": _to_db_status(status),
                 "mdfcn_cn": mdfcn_cn,
                 "user_sn": user_sn,
@@ -214,6 +218,11 @@ def _to_db_docs_cd(docs_cd: DocsCode | str) -> str:
 
 def _to_db_status(status: str) -> str:
     return DOCS_PROGRESS_DB_MAP.get(status, status)
+
+
+def _normalize_docs_ver(docs_ver: str | None) -> str:
+    value = str(docs_ver or "").strip()
+    return value or "v1.0"
 
 
 def _normalize_docs_row(row: Any | None) -> dict[str, Any] | None:
