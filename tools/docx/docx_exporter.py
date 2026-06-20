@@ -358,29 +358,61 @@ def _fill_interface_structure_table(
 ) -> None:
     rows = []
     for item in ui_structure or []:
-        rows.append(
-            [
-                _pick(item, "level1"),
-                _pick(item, "level2"),
-                _pick(item, "level3"),
-                _pick(item, "level4"),
-            ]
-        )
+        rows.append(_normalize_interface_structure_levels([
+            _pick(item, "level1"),
+            _pick(item, "level2"),
+            _pick(item, "level3"),
+            _pick(item, "level4"),
+        ]))
     if rows:
         _fill_repeating_table(table, rows)
         return
     for screen in screens:
         menu_path = str(_pick(screen, "menu_path", default=""))
         levels = [part.strip() for part in menu_path.split(">") if part.strip()]
-        rows.append(
-            [
-                levels[0] if len(levels) > 0 else _pick(screen, "screen_name", "name"),
+        screen_name = _pick(screen, "screen_name", "name")
+        if len(levels) <= 1 and (not levels or levels[0] == screen_name):
+            module_name, detail_name = _screen_menu_levels(screen_name)
+            rows.append(["AI 통합 플랫폼", module_name, _pick(screen, "screen_type", default="업무 화면"), detail_name])
+        else:
+            rows.append(_normalize_interface_structure_levels([
+                levels[0] if len(levels) > 0 else screen_name,
                 levels[1] if len(levels) > 1 else "",
                 levels[2] if len(levels) > 2 else "",
                 levels[3] if len(levels) > 3 else "",
-            ]
-        )
+            ]))
     _fill_repeating_table(table, rows)
+
+
+def _normalize_interface_structure_levels(levels: list[str]) -> list[str]:
+    cleaned = [str(value or "").strip() for value in levels[:4]]
+    if len(cleaned) < 4:
+        cleaned.extend([""] * (4 - len(cleaned)))
+    if cleaned[0] == "업무 화면" and cleaned[1] and not cleaned[2] and not cleaned[3]:
+        module_name, detail_name = _screen_menu_levels(cleaned[1])
+        cleaned = ["AI 통합 플랫폼", module_name, "업무 화면", detail_name]
+    return _dedupe_interface_structure_levels(cleaned)
+
+
+def _dedupe_interface_structure_levels(levels: list[str]) -> list[str]:
+    cleaned = [str(value or "").strip() for value in levels[:4]]
+    seen: set[str] = set()
+    for index, value in enumerate(cleaned):
+        if not value:
+            continue
+        if value in seen:
+            cleaned[index] = ""
+            continue
+        seen.add(value)
+    return cleaned
+
+
+def _screen_menu_levels(screen_name: str) -> tuple[str, str]:
+    name = re.sub(r"^\d{1,3}_", "", str(screen_name or "").strip())
+    parts = [part for part in name.split("_") if part]
+    if len(parts) >= 2:
+        return " ".join(parts[:-1]), parts[-1]
+    return name or "업무", name or "화면"
 
 
 def _fill_interface_detail_table(table: Table, screen: dict[str, Any]) -> None:
