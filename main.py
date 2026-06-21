@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from api.download_router import router as download_router
 from api.generation_router import router as generation_router
 from api.health_router import router as health_router
+from api.approval_review_router import router as approval_review_router
 from config.logging_config import configure_logging, get_logger
 from config.logging_context import bind_log_extra, reset_request_id, set_request_id
 from config.settings import get_settings
@@ -29,6 +30,7 @@ app = FastAPI(title="ALPLED Core", lifespan=lifespan)
 app.include_router(health_router)
 app.include_router(generation_router)
 app.include_router(download_router)
+app.include_router(approval_review_router)
 
 
 @app.middleware("http")

@@ -13,7 +13,7 @@ class Docs(Base):
 
     docs_sn: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     prj_sn: Mapped[int] = mapped_column(Integer, nullable=False)
-    pssn_user_sn: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    psn_user_sn: Mapped[int | None] = mapped_column(Integer, nullable=True)
     docs_cd: Mapped[str] = mapped_column(String(100), nullable=False)
     docs_ver: Mapped[str] = mapped_column(String(20), nullable=False, default="0")
     docs_prgrs_stts_cd: Mapped[str] = mapped_column(

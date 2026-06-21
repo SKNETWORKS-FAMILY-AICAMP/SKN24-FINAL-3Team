@@ -71,9 +71,6 @@ class GenerationSupervisor:
                 print("[ARCH_TRACE][supervisor.run] failure:", failure)
             if failure.get("action") == "END":
                 return self._mark_failed(state, failure)
-            if str(failure.get("failure_type") or "").startswith("ERD_REPAIR_"):
-                self._finish_repair(state, "FAILED")
-                return self._mark_failed(state, failure)
             if not can_replan(state["current_round"], state["max_round"]):
                 self._finish_repair(state, "FAILED")
                 return self._mark_failed(state, failure)
