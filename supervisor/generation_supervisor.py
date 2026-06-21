@@ -20,6 +20,13 @@ class GenerationSupervisor:
 
     def run(self, state: WorkflowState) -> WorkflowState:
         self._prepare_state(state)
+        debug = bool((state.get("etc") or {}).get("debug"))
+        if debug and str(state.get("docs_cd", "")).upper() == "ARCH":
+            print("[ARCH_TRACE][supervisor.run] file:", __file__)
+            print("[ARCH_TRACE][supervisor.run] docs_cd:", state.get("docs_cd"))
+            print("[ARCH_TRACE][supervisor.run] udt_yn:", state.get("udt_yn"))
+            print("[ARCH_TRACE][supervisor.run] state keys:", list(state.keys()))
+
         state["execution_plan"] = build_plan(
             state["docs_cd"],
             state["udt_yn"],
@@ -30,6 +37,8 @@ class GenerationSupervisor:
             "Initial supervisor plan built",
             extra=bind_state_log_extra(state, "supervisor_plan_built", round=1),
         )
+        if debug and str(state.get("docs_cd", "")).upper() == "ARCH":
+            print("[ARCH_TRACE][supervisor.run] execution_plan:", state["execution_plan"])
 
         while True:
             state["current_round"] = state["execution_plan"]["round"]
@@ -52,7 +61,12 @@ class GenerationSupervisor:
                         round=state["current_round"],
                     ),
                 )
+                if debug and str(state.get("docs_cd", "")).upper() == "ARCH":
+                    print("[ARCH_TRACE][supervisor.run] plan success. reducing outputs.")
+                    print("[ARCH_TRACE][supervisor.run] agent_outputs keys:", list(state.get("agent_outputs", {}).keys()))
                 return reduce_outputs(state)
+            if debug and str(state.get("docs_cd", "")).upper() == "ARCH":
+                print("[ARCH_TRACE][supervisor.run] failure:", failure)
             if failure.get("action") == "END":
                 return self._mark_failed(state, failure)
             if not can_replan(state["current_round"], state["max_round"]):
@@ -77,8 +91,11 @@ class GenerationSupervisor:
                 target_scope=failure.get("target_scope"),
                 failed_checks=failure.get("failed_checks"),
             )
+            if debug and str(state.get("docs_cd", "")).upper() == "ARCH":
+                print("[ARCH_TRACE][supervisor.run] rebuilt execution_plan:", state["execution_plan"])
 
     def _execute_plan(self, state: WorkflowState) -> dict[str, Any] | None:
+        debug = bool((state.get("etc") or {}).get("debug"))
         for step in state["execution_plan"]["steps"]:
             agent_name = step["agent"]
             retry_count = 0
@@ -97,6 +114,11 @@ class GenerationSupervisor:
                         step=step.get("step"),
                     ),
                 )
+                if debug and str(state.get("docs_cd", "")).upper() == "ARCH":
+                    print("[ARCH_TRACE][supervisor.step] running agent:", agent_name)
+                    print("[ARCH_TRACE][supervisor.step] step:", step.get("step"))
+                    print("[ARCH_TRACE][supervisor.step] retry_count:", retry_count)
+                    print("[ARCH_TRACE][supervisor.step] required_output_keys:", step.get("required_output_keys", []))
                 try:
                     output = self.agent_registry.run(agent_name, state)
                 except Exception as exc:
@@ -110,12 +132,26 @@ class GenerationSupervisor:
                 state["agent_outputs"][agent_name] = output
                 if agent_name == "validation_agent":
                     state["validation_result"] = output.get("validation_result")
+                if debug and str(state.get("docs_cd", "")).upper() == "ARCH":
+                    print("[ARCH_TRACE][supervisor.step] output status:", output.get("status") if isinstance(output, dict) else None)
+                    print("[ARCH_TRACE][supervisor.step] output keys:", list(output.keys()) if isinstance(output, dict) else None)
+                    print("[ARCH_TRACE][supervisor.step] output errors:", output.get("errors") if isinstance(output, dict) else None)
+                    print("[ARCH_TRACE][supervisor.step] output warnings:", output.get("warnings") if isinstance(output, dict) else None)
 
                 evaluation = evaluate_step(
                     agent_name,
                     output,
                     step.get("required_output_keys", []),
                 )
+                if debug and str(state.get("docs_cd", "")).upper() == "ARCH":
+                    print("[ARCH_TRACE][supervisor.eval] agent:", agent_name)
+                    print("[ARCH_TRACE][supervisor.eval] required:", step.get("required_output_keys", []))
+                    print("[ARCH_TRACE][supervisor.eval] success:", evaluation.get("success"))
+                    print("[ARCH_TRACE][supervisor.eval] failure_type:", evaluation.get("failure_type"))
+                    print("[ARCH_TRACE][supervisor.eval] action:", evaluation.get("action"))
+                    print("[ARCH_TRACE][supervisor.eval] message:", evaluation.get("message"))
+                    print("[ARCH_TRACE][supervisor.eval] failed_checks:", evaluation.get("failed_checks"))
+
                 if evaluation["success"]:
                     step["status"] = "DONE"
                     logger.info(
