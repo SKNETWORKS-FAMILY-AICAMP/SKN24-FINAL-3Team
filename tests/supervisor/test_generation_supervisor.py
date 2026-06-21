@@ -84,6 +84,26 @@ class GenerationSupervisorTest(unittest.TestCase):
 
         self.assertFalse(result["success"])
 
+    def test_failed_status_uses_agent_error_message(self) -> None:
+        result = check_agent_result(
+            "requirement_generation_agent",
+            {
+                "status": "FAILED",
+                "failure_type": "REQUIREMENT_GOLD_HF_TOKEN_MISSING",
+                "errors": [
+                    {
+                        "code": "REQUIREMENT_GOLD_HF_TOKEN_MISSING",
+                        "message": "HF_TOKEN이 없습니다.",
+                    }
+                ],
+            },
+            ["final_requirement_json_list"],
+        )
+
+        self.assertFalse(result["success"])
+        self.assertEqual(result["failure_type"], "REQUIREMENT_GOLD_HF_TOKEN_MISSING")
+        self.assertEqual(result["message"], "HF_TOKEN이 없습니다.")
+
     def test_successful_mock_agents_reduce_to_agent_outputs(self) -> None:
         state = {
             "project_sn": 1,

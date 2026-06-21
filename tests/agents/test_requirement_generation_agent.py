@@ -1,3 +1,4 @@
+import logging
 import unittest
 
 from agents.requirement_generation.agent import RequirementGenerationAgent
@@ -56,6 +57,23 @@ class FakeGoldService:
             "relation_decisions": [],
             "quality": {"status": "PASS", "fallback_count": 0},
         }
+
+
+class FailingGoldService:
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+
+    def generate_from_dict(self, document, **kwargs):
+        raise self.exc
+
+
+class ListHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
 
 
 class RequirementGenerationAgentTest(unittest.TestCase):
@@ -171,6 +189,38 @@ class RequirementGenerationAgentTest(unittest.TestCase):
         self.assertIn("gold_generation_input", result["debug"])
         self.assertIn("gold_final_requirement_list", result["debug"])
         self.assertIn("rag_searches", result["debug"])
+
+    def test_gold_generation_failure_is_classified_and_logged(self) -> None:
+        logger = logging.getLogger("agents.requirement_generation.agent")
+        handler = ListHandler()
+        logger.addHandler(handler)
+        logger.setLevel(logging.ERROR)
+        try:
+            result = RequirementGenerationAgent(
+                gold_service=FailingGoldService(
+                    RuntimeError("HF_TOKEN이 없습니다. 환경변수 또는 /workspace/env을 확인하세요.")
+                )
+            ).execute(_state())
+        finally:
+            logger.removeHandler(handler)
+
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["failure_type"], "REQUIREMENT_GOLD_HF_TOKEN_MISSING")
+        self.assertEqual(
+            result["errors"][0]["message"],
+            "HF_TOKEN이 없습니다. 환경변수 또는 /workspace/env을 확인하세요.",
+        )
+        self.assertTrue(handler.records)
+        self.assertEqual(handler.records[-1].phase, "requirement_gold_generation_failed")
+        self.assertEqual(handler.records[-1].error_code, "REQUIREMENT_GOLD_HF_TOKEN_MISSING")
+
+    def test_unknown_gold_generation_failure_uses_generic_code(self) -> None:
+        result = RequirementGenerationAgent(
+            gold_service=FailingGoldService(RuntimeError("unexpected runtime blowup"))
+        ).execute(_state())
+
+        self.assertEqual(result["status"], "FAILED")
+        self.assertEqual(result["failure_type"], "REQUIREMENT_GOLD_GENERATION_FAILED")
 
     def test_task3_output_is_normalized_for_cbd_document(self) -> None:
         normalized = normalize_task3_output(
