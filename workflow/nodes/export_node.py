@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 from agents.data_structure_design.db_quality import prepare_db_quality
 from agents.data_structure_design.erd_quality import prepare_erd_quality
-from config.constants import DOCS_CODES, FILE_CODE_REQUIREMENT_JSON
+from config.constants import DOCS_CODES, FILE_CODE_INTERFACE_JSON, FILE_CODE_REQUIREMENT_JSON
 from config.logging_config import get_logger
 from config.logging_context import bind_state_log_extra
 from config.settings import Settings, get_settings
@@ -129,7 +129,7 @@ def export_node(
                 final_document_json,
             )
 
-        requirement_json_record = _export_requirement_json_if_needed(
+        reference_json_record = _export_reference_json_if_needed(
             state=state,
             project_sn=project_sn,
             docs_cd=docs_cd,
@@ -214,10 +214,10 @@ def export_node(
             "docs_cd": docs_cd,
             "file_sn": None,
             "requirement_json_file_sn": (
-                requirement_json_record.get("file_sn") if requirement_json_record else None
+                reference_json_record.get("file_sn") if reference_json_record else None
             ),
             "requirement_json_file_path": (
-                requirement_json_record.get("storage_file_path") if requirement_json_record else ""
+                reference_json_record.get("storage_file_path") if reference_json_record else ""
             ),
             "local_file_path": generated_local_file_path,
             "storage_file_path": storage_file_path,
@@ -346,7 +346,17 @@ def _validate_state(state: WorkflowState) -> tuple[int, DocsCode, dict[str, Any]
     return project_sn, docs_cd, final_document_json
 
 
-def _export_requirement_json_if_needed(
+# docs_cd별로 docx 외에 JSON도 별도 보존할 대상과 그때 쓸 file_cd.
+# - SRS: requirement_json_list를 다른 5개 docs_cd가 base_requirement_json_path로 공통 참조.
+# - INTERFACE: interface_json_list/ui_structure를 TS가 reference_interface_json_list 생성 시 참조.
+#   (docx만 있으면 TS가 paragraph 텍스트를 재구조화해야 해서 정보 손실/실패 위험이 있었음)
+_REFERENCE_JSON_FILE_CODE_BY_DOCS_CD: dict[str, str] = {
+    "SRS": FILE_CODE_REQUIREMENT_JSON,
+    "INTERFACE": FILE_CODE_INTERFACE_JSON,
+}
+
+
+def _export_reference_json_if_needed(
     *,
     state: WorkflowState,
     project_sn: int,
@@ -355,7 +365,8 @@ def _export_requirement_json_if_needed(
     dependencies: ExportDependencies,
     settings: Settings,
 ) -> dict[str, Any] | None:
-    if docs_cd != "SRS":
+    file_cd = _REFERENCE_JSON_FILE_CODE_BY_DOCS_CD.get(docs_cd)
+    if file_cd is None:
         return None
 
     file_name = _build_json_file_name(project_sn, docs_cd)
@@ -373,12 +384,12 @@ def _export_requirement_json_if_needed(
         upload_kwargs["storage_path"] = str(local_file_path)
 
     uploaded = dependencies.uploader(str(local_file_path), **upload_kwargs)
-    uploaded_data = _unwrap_tool_result(uploaded, "REQUIREMENT_JSON_UPLOAD_FAILED")
+    uploaded_data = _unwrap_tool_result(uploaded, "REFERENCE_JSON_UPLOAD_FAILED")
     storage_file_path = str(uploaded_data["storage_file_path"])
 
     file_record = dependencies.file_repository.insert_file(
         project_sn=project_sn,
-        file_cd=FILE_CODE_REQUIREMENT_JSON,
+        file_cd=file_cd,
         file_nm=file_name,
         file_path=storage_file_path,
         file_size=local_file_path.stat().st_size,

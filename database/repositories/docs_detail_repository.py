@@ -7,6 +7,7 @@ from config.constants import (
     DOCS_CODE_DB_MAP,
     DOCS_PROGRESS_DB_MAP,
     FILE_CODE_REQUIREMENT_JSON,
+    FILE_CODE_INTERFACE_JSON,
 )
 from database.repositories.file_repository import FileRepository
 from database.queries.docs_detail_query import (
@@ -27,6 +28,11 @@ class DocsDetailRepository:
     def find_active_srs(self, project_sn: int) -> Any | None:
         return FileRepository(self.session).find_latest_file_by_project_and_code(
             project_sn, FILE_CODE_REQUIREMENT_JSON
+        )
+
+    def find_active_interface_json(self, project_sn: int) -> Any | None:
+        return FileRepository(self.session).find_latest_file_by_project_and_code(
+            project_sn, FILE_CODE_INTERFACE_JSON
         )
 
     def find_active_doc(self, project_sn: int, docs_cd: DocsCode) -> Any | None:

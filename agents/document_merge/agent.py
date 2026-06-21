@@ -19,6 +19,20 @@ from workflow.state import WorkflowState
 
 
 class DocumentMergeAgent:
+    # reference_type별 구조화 프롬프트. 미정의 타입(ERD 등)은 기존 범용 프롬프트를 사용함.
+    _REFERENCE_SCHEMA_PROMPTS: dict[str, str] = {
+        "INTERFACE": (
+            "인터페이스(화면) 설계서 텍스트를 후속 시험 시나리오 생성 Agent가 사용할 "
+            "JSON 배열로 구조화하세요. 각 항목은 다음 키를 포함해야 합니다: "
+            "screen_id(화면 식별자, 문서에 명시된 식별자가 없으면 'SCR-' + 일련번호로 생성), "
+            "screen_name(화면명), "
+            "description(화면 목적/주요 기능 한 문장 요약), "
+            "matched_requirement_ids(이 화면과 연관된 요구사항 ID 문자열 배열, 알 수 없으면 빈 배열). "
+            "최상위는 {\"reference_interface_json_list\": [...]} 형식의 JSON 객체 하나만 반환하세요. "
+            "설명이나 마크다운 코드블록 없이 JSON만 응답하세요."
+        ),
+    }
+
     def __init__(
         self,
         *,
@@ -92,12 +106,12 @@ class DocumentMergeAgent:
             integrated_requirement_json_list=integrated,
         )
         if docs_cd == "DB":
-            reference = self._parse_reference(state.get("erd_file_path"), "ERD")
+            reference = self._parse_reference(state.get("erd_file_path"), "ERD", warnings)
             if not reference["success"]:
                 return reference["output"]
             output["reference_erd_json_list"] = reference["items"]
         elif docs_cd == "TS":
-            reference = self._parse_reference(state.get("interface_file_path"), "INTERFACE")
+            reference = self._parse_reference(state.get("interface_file_path"), "INTERFACE", warnings)
             if not reference["success"]:
                 return reference["output"]
             output["reference_interface_json_list"] = reference["items"]
@@ -185,7 +199,12 @@ class DocumentMergeAgent:
                 warnings.append({"code": "DOCUMENT_MERGE_SEARCH_FAILED", "message": result["error"]["message"]})
         return changes
 
-    def _parse_reference(self, path: str | None, reference_type: str) -> dict[str, Any]:
+    def _parse_reference(
+        self,
+        path: str | None,
+        reference_type: str,
+        warnings: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
         if not path:
             return {
                 "success": False,
@@ -213,11 +232,23 @@ class DocumentMergeAgent:
                     f"REFERENCE_{reference_type}_PARSE_FAILED", parsed
                 ),
             }
+        items = artifact_items(parsed["data"])
+        if (
+            reference_type == "INTERFACE"
+            and items
+            and all(isinstance(item, dict) for item in items)
+        ):
+            # INTERFACE가 (export_node에서 새로 저장하는) JSON 경로로 들어오면 image_analysis_agent가
+            # 이미 screen_id/screen_name/description/matched_requirement_ids를 갖춰 만들어둔 상태라
+            # LLM 재구조화가 불필요함. docx 폴백(평문 텍스트, dict 아님)일 때만 아래 LLM 경로를 탄다.
+            # ERD 등 다른 reference_type은 기존 동작을 그대로 유지(_structure_reference_with_llm 미변경).
+            return {"success": True, "items": items}
         return {
             "success": True,
             "items": self._structure_reference_with_llm(
-                artifact_items(parsed["data"]),
+                items,
                 reference_type,
+                warnings,
             ),
         }
 
@@ -334,27 +365,67 @@ class DocumentMergeAgent:
         self,
         items: list[Any],
         reference_type: str,
+        warnings: list[dict[str, Any]] | None = None,
     ) -> list[Any]:
+        warnings = warnings if warnings is not None else []
         if self.llm_client is None or not items:
             return items
+
+        system_prompt = self._REFERENCE_SCHEMA_PROMPTS.get(
+            reference_type,
+            f"{reference_type} 참조 문서를 후속 Agent가 사용할 JSON List로 구조화하세요.",
+        )
         result = self.llm_client.chat(
             [
-                {
-                    "role": "system",
-                    "content": f"{reference_type} 참조 문서를 후속 Agent가 사용할 JSON List로 구조화하세요.",
-                },
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": json.dumps(items, ensure_ascii=False)},
             ]
         )
         if not result["success"]:
+            warnings.append(
+                {
+                    "code": f"REFERENCE_{reference_type}_STRUCTURING_LLM_FAILED",
+                    "message": (
+                        f"{reference_type} 참조 문서 구조화 LLM 호출에 실패하여 "
+                        "원본 텍스트를 그대로 사용합니다."
+                    ),
+                }
+            )
             return items
+
         parsed = parse_json_response(result["data"])
         if not parsed["success"]:
+            warnings.append(
+                {
+                    "code": f"REFERENCE_{reference_type}_STRUCTURING_PARSE_FAILED",
+                    "message": (
+                        f"{reference_type} 참조 문서 구조화 응답 파싱에 실패하여 "
+                        "원본 텍스트를 그대로 사용합니다."
+                    ),
+                }
+            )
             return items
+
         value = parsed["data"]
         if isinstance(value, dict):
-            value = value.get("items") or value.get("reference_items") or value.get("reference_erd_json_list") or value.get("reference_interface_json_list")
-        return value if isinstance(value, list) else items
+            value = (
+                value.get("items")
+                or value.get("reference_items")
+                or value.get("reference_erd_json_list")
+                or value.get("reference_interface_json_list")
+            )
+        if not isinstance(value, list) or not all(isinstance(item, dict) for item in value):
+            warnings.append(
+                {
+                    "code": f"REFERENCE_{reference_type}_STRUCTURING_INVALID_SHAPE",
+                    "message": (
+                        f"{reference_type} 참조 문서 구조화 결과가 JSON 객체 배열 형식이 아니어서 "
+                        "원본 텍스트를 그대로 사용합니다."
+                    ),
+                }
+            )
+            return items
+        return value
 
     def _write_non_functional_embeddings(
         self,
