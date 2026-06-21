@@ -79,4 +79,20 @@ Content-Type: application/json
   }
 }
 
+# [60]     → 요구사항 기준으로 ARCH 생성/수정
+# [2]  → 기존 ARCH + 회의록 변경사항 반영, 추천
 
+### Generate ARCH from RFP
+POST {{host}}/generate
+Content-Type: application/json
+
+{
+  "project_sn": {{projectSn}},
+  "docs_cd": "ARCH",
+  "udt_yn": "Y",
+  "file_list": [2],
+  "image_list": [],
+  "etc": {
+    "debug": true
+  }
+}

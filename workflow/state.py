@@ -29,7 +29,7 @@ class WorkflowState(TypedDict, total=False):
     erd_file_path: str | None
     interface_file_path: str | None
     existing_output_path: str | None
-
+    existing_output_raw_json: dict[str, Any] | None
     # 5. Agent Output
     agent_outputs: dict[str, Any]
 
