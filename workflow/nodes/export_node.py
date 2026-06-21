@@ -8,7 +8,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from config.constants import DOCS_CODES, FILE_CODE_REQUIREMENT_JSON
+from agents.data_structure_design.db_quality import prepare_db_quality
+from agents.data_structure_design.erd_quality import prepare_erd_quality
+from config.constants import DOCS_CODES, FILE_CODE_INTERFACE_JSON, FILE_CODE_REQUIREMENT_JSON
 from config.logging_config import get_logger
 from config.logging_context import bind_state_log_extra
 from config.settings import Settings, get_settings
@@ -116,8 +118,18 @@ def export_node(
             extra=bind_state_log_extra(state, "export_validate_state"),
         )
         project_sn, docs_cd, final_document_json = _validate_state(state)
+        if docs_cd == "ERD":
+            final_document_json = _validate_and_prepare_erd_export(
+                state,
+                final_document_json,
+            )
+        elif docs_cd == "DB":
+            final_document_json = _validate_and_prepare_db_export(
+                state,
+                final_document_json,
+            )
 
-        requirement_json_record = _export_requirement_json_if_needed(
+        reference_json_record = _export_reference_json_if_needed(
             state=state,
             project_sn=project_sn,
             docs_cd=docs_cd,
@@ -202,10 +214,10 @@ def export_node(
             "docs_cd": docs_cd,
             "file_sn": None,
             "requirement_json_file_sn": (
-                requirement_json_record.get("file_sn") if requirement_json_record else None
+                reference_json_record.get("file_sn") if reference_json_record else None
             ),
             "requirement_json_file_path": (
-                requirement_json_record.get("storage_file_path") if requirement_json_record else ""
+                reference_json_record.get("storage_file_path") if reference_json_record else ""
             ),
             "local_file_path": generated_local_file_path,
             "storage_file_path": storage_file_path,
@@ -246,6 +258,77 @@ def export_node(
             session.close()
 
 
+def _validate_and_prepare_erd_export(
+    state: WorkflowState,
+    final_document_json: dict[str, Any],
+) -> dict[str, Any]:
+    document = final_document_json.get("erd_entity_json")
+    if not isinstance(document, dict):
+        raise ExportError("ERD_EXPORT_VALIDATION_FAILED", "erd_entity_json이 필요합니다.")
+
+    corrected, report = prepare_erd_quality(document)
+    state["export_validation_result"] = report
+    logger.info(
+        "ERD export quality validation status=%s corrections=%s errors=%s warnings=%s",
+        report.get("status"),
+        len(report.get("corrections", [])),
+        len(report.get("errors", [])),
+        len(report.get("warnings", [])),
+        extra=bind_state_log_extra(state, "erd_export_quality_validation"),
+    )
+    if report.get("errors"):
+        raise ExportError(
+            "ERD_EXPORT_VALIDATION_FAILED",
+            json.dumps(report["errors"], ensure_ascii=False),
+        )
+
+    structural_corrections = [
+        item
+        for item in report.get("corrections", [])
+        if str(item.get("type") or "").startswith("RELATION")
+    ]
+    if structural_corrections:
+        raise ExportError(
+            "ERD_EXPORT_REGENERATION_REQUIRED",
+            "관계 구조 보정이 Export 직전에 감지되어 데이터 구조 및 Mermaid 재생성이 필요합니다: "
+            + json.dumps(structural_corrections, ensure_ascii=False),
+        )
+
+    result = deepcopy(final_document_json)
+    result["erd_entity_json"] = corrected
+    state["final_document_json"] = result
+    return result
+
+
+def _validate_and_prepare_db_export(
+    state: WorkflowState,
+    final_document_json: dict[str, Any],
+) -> dict[str, Any]:
+    document = final_document_json.get("db_design_json")
+    if not isinstance(document, dict):
+        raise ExportError("DB_EXPORT_VALIDATION_FAILED", "db_design_json이 필요합니다.")
+
+    corrected, report = prepare_db_quality(document)
+    state["export_validation_result"] = report
+    logger.info(
+        "DB export quality validation status=%s corrections=%s errors=%s",
+        report.get("status"),
+        len(report.get("corrections", [])),
+        len(report.get("errors", [])),
+        extra=bind_state_log_extra(state, "db_export_quality_validation"),
+    )
+    if report.get("errors"):
+        raise ExportError(
+            "DB_EXPORT_VALIDATION_FAILED",
+            json.dumps(report["errors"], ensure_ascii=False),
+        )
+
+    result = deepcopy(final_document_json)
+    result["db_design_json"] = corrected
+    state["final_document_json"] = result
+    return result
+
+
 def _validate_state(state: WorkflowState) -> tuple[int, DocsCode, dict[str, Any]]:
     project_sn = state.get("project_sn")
     docs_cd = state.get("docs_cd")
@@ -263,7 +346,17 @@ def _validate_state(state: WorkflowState) -> tuple[int, DocsCode, dict[str, Any]
     return project_sn, docs_cd, final_document_json
 
 
-def _export_requirement_json_if_needed(
+# docs_cd별로 docx 외에 JSON도 별도 보존할 대상과 그때 쓸 file_cd.
+# - SRS: requirement_json_list를 다른 5개 docs_cd가 base_requirement_json_path로 공통 참조.
+# - INTERFACE: interface_json_list/ui_structure를 TS가 reference_interface_json_list 생성 시 참조.
+#   (docx만 있으면 TS가 paragraph 텍스트를 재구조화해야 해서 정보 손실/실패 위험이 있었음)
+_REFERENCE_JSON_FILE_CODE_BY_DOCS_CD: dict[str, str] = {
+    "SRS": FILE_CODE_REQUIREMENT_JSON,
+    "INTERFACE": FILE_CODE_INTERFACE_JSON,
+}
+
+
+def _export_reference_json_if_needed(
     *,
     state: WorkflowState,
     project_sn: int,
@@ -272,7 +365,8 @@ def _export_requirement_json_if_needed(
     dependencies: ExportDependencies,
     settings: Settings,
 ) -> dict[str, Any] | None:
-    if docs_cd != "SRS":
+    file_cd = _REFERENCE_JSON_FILE_CODE_BY_DOCS_CD.get(docs_cd)
+    if file_cd is None:
         return None
 
     file_name = _build_json_file_name(project_sn, docs_cd)
@@ -290,12 +384,12 @@ def _export_requirement_json_if_needed(
         upload_kwargs["storage_path"] = str(local_file_path)
 
     uploaded = dependencies.uploader(str(local_file_path), **upload_kwargs)
-    uploaded_data = _unwrap_tool_result(uploaded, "REQUIREMENT_JSON_UPLOAD_FAILED")
+    uploaded_data = _unwrap_tool_result(uploaded, "REFERENCE_JSON_UPLOAD_FAILED")
     storage_file_path = str(uploaded_data["storage_file_path"])
 
     file_record = dependencies.file_repository.insert_file(
         project_sn=project_sn,
-        file_cd=FILE_CODE_REQUIREMENT_JSON,
+        file_cd=file_cd,
         file_nm=file_name,
         file_path=storage_file_path,
         file_size=local_file_path.stat().st_size,

@@ -297,10 +297,16 @@ def _resolve_required_documents(
         )
 
     elif docs_cd == "TS":
-        active_interface = dependencies.docs_detail_repository.find_active_doc(
-            project_sn,
-            cast(DocsCode, "INTERFACE"),
-        )
+        active_interface = dependencies.docs_detail_repository.find_active_interface_json(project_sn)
+        if active_interface is None:
+            # 하위호환: INTERFACE JSON export가 도입되기 전에 이미 생성된 프로젝트는
+            # JSON 레코드가 없으므로 기존 docx로 폴백한다.
+            # document_merge_agent의 parse_artifact()는 .docx/.json 둘 다 처리 가능하므로
+            # 다운스트림(TS) 쪽 추가 분기는 필요 없다.
+            active_interface = dependencies.docs_detail_repository.find_active_doc(
+                project_sn,
+                cast(DocsCode, "INTERFACE"),
+            )
         state["interface_file_path"] = _download_required_document(
             active_interface,
             dependencies,
