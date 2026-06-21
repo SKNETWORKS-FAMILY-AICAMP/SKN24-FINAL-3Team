@@ -262,6 +262,290 @@ class ValidationAgentTest(unittest.TestCase):
         self.assertEqual(_failure(result, "ERD_PK_MISSING")["target_agent"], "data_structure_design_agent")
         self.assertEqual(_failure(result, "ERD_MERMAID_RENDER_FAILED")["target_agent"], "mermaid_generation_agent")
 
+    def test_erd_update_reports_missing_meeting_data_structure_changes(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "ERD",
+                "udt_yn": "Y",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "meeting_change_items": [
+                            {
+                                "change_id": "M-001",
+                                "content": "사용자-권한 N:M 관계와 문서-태그 N:M 관계, RAG 버전 관리가 필요하다.",
+                            }
+                        ]
+                    },
+                    "data_structure_design_agent": {
+                        "erd_entity_json": {
+                            "tables": [
+                                {
+                                    "table_id": "TABLE-001",
+                                    "logical_name": "사용자",
+                                    "physical_name": "tbl_user",
+                                    "source_requirement_ids": ["REQ-001"],
+                                    "columns": [
+                                        {
+                                            "column_id": "COL-001-001",
+                                            "logical_name": "사용자 번호",
+                                            "physical_name": "user_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        }
+                                    ],
+                                }
+                            ],
+                            "relationships": [],
+                        },
+                        "erd_mermaid_json": {"entities": [{"name": "tbl_user"}], "relationships": []},
+                    },
+                    "mermaid_generation_agent": {
+                        "mermaid_code": "erDiagram\n tbl_user { BIGINT user_sn PK }",
+                        "mermaid_image_path": "erd.png",
+                    },
+                },
+            }
+        )
+
+        check = _failure(result, "ERD_MEETING_CHANGE_MISSING")
+        self.assertEqual(check["target_agent"], "data_structure_design_agent")
+        self.assertIn("tbl_user_role", check["missing_items"])
+        self.assertIn("tbl_rag_version", check["missing_items"])
+        self.assertTrue(check["meeting_change_requirements"])
+
+    def test_erd_detects_generic_and_mismatched_entity_names(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "ERD",
+                "agent_outputs": {
+                    "data_structure_design_agent": {
+                        "erd_entity_json": {
+                            "tables": [
+                                {
+                                    "table_id": "TABLE-001",
+                                    "entity_id": "ENTITY-001",
+                                    "logical_name": "엔티티",
+                                    "entity_name": "엔티티",
+                                    "physical_name": "tbl_agent",
+                                    "description": "Agent 정보를 관리한다.",
+                                    "entity_description": "Agent 정보를 관리한다.",
+                                    "source_requirement_ids": ["REQ-001"],
+                                    "columns": [
+                                        {
+                                            "column_id": "COL-001-001",
+                                            "logical_name": "AgentID",
+                                            "attribute_name": "AgentID",
+                                            "physical_name": "agent_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        },
+                                        {
+                                            "column_id": "COL-001-002",
+                                            "logical_name": "Agent명",
+                                            "attribute_name": "Agent명",
+                                            "physical_name": "agent_nm",
+                                            "data_type": "VARCHAR",
+                                            "nullable": False,
+                                            "constraints": [],
+                                        },
+                                    ],
+                                }
+                            ],
+                            "relationships": [],
+                        },
+                        "erd_mermaid_json": {"entities": [{"name": "엔티티"}], "relationships": []},
+                    },
+                    "mermaid_generation_agent": {
+                        "mermaid_code": "erDiagram\n Agent { BIGINT AgentID PK }",
+                        "mermaid_image_path": "erd.png",
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(_failure(result, "ENTITY_GENERIC_NAME")["target_scope"], ["ENTITY-001"])
+        self.assertEqual(_failure(result, "ENTITY_NAME_MISMATCH")["target_scope"], ["ENTITY-001"])
+
+    def test_erd_detects_attribute_and_description_mismatch(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "ERD",
+                "agent_outputs": {
+                    "data_structure_design_agent": {
+                        "erd_entity_json": {
+                            "tables": [
+                                {
+                                    "table_id": "TABLE-001",
+                                    "entity_id": "ENTITY-001",
+                                    "logical_name": "사용자",
+                                    "entity_name": "사용자",
+                                    "physical_name": "tbl_user",
+                                    "description": "Agent 정보를 관리한다.",
+                                    "entity_description": "Agent 정보를 관리한다.",
+                                    "source_requirement_ids": ["REQ-001"],
+                                    "columns": [
+                                        {
+                                            "column_id": "COL-001-001",
+                                            "logical_name": "사용자ID",
+                                            "attribute_name": "사용자ID",
+                                            "physical_name": "user_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        },
+                                        {
+                                            "column_id": "COL-001-002",
+                                            "logical_name": "Agent명",
+                                            "attribute_name": "Agent명",
+                                            "physical_name": "agent_nm",
+                                            "data_type": "VARCHAR",
+                                            "nullable": False,
+                                            "constraints": [],
+                                        },
+                                    ],
+                                }
+                            ],
+                            "relationships": [],
+                        },
+                        "erd_mermaid_json": {"entities": [{"name": "사용자"}], "relationships": []},
+                    },
+                    "mermaid_generation_agent": {
+                        "mermaid_code": "erDiagram\n 사용자 { BIGINT 사용자ID PK }",
+                        "mermaid_image_path": "erd.png",
+                    },
+                },
+            }
+        )
+
+        self.assertEqual(_failure(result, "ENTITY_ATTRIBUTE_MISMATCH")["target_scope"], ["ENTITY-001.COL-001-002"])
+        self.assertEqual(_failure(result, "ENTITY_DESCRIPTION_MISMATCH")["target_scope"], ["ENTITY-001"])
+
+    def test_erd_entity_consistency_ignores_audit_attributes_and_compound_description(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "ERD",
+                "agent_outputs": {
+                    "data_structure_design_agent": {
+                        "erd_entity_json": {
+                            "tables": [
+                                {
+                                    "table_id": "TABLE-001",
+                                    "entity_id": "ENTITY-001",
+                                    "logical_name": "사용자 알림",
+                                    "entity_name": "사용자 알림",
+                                    "physical_name": "tbl_user_notification",
+                                    "description": "사용자에게 전달할 알림 정보를 관리한다.",
+                                    "entity_description": "사용자에게 전달할 알림 정보를 관리한다.",
+                                    "source_requirement_ids": ["REQ-001"],
+                                    "columns": [
+                                        {
+                                            "column_id": "COL-001-001",
+                                            "logical_name": "알림ID",
+                                            "attribute_name": "알림ID",
+                                            "physical_name": "notification_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        },
+                                        {
+                                            "column_id": "COL-001-002",
+                                            "logical_name": "등록자명",
+                                            "attribute_name": "등록자명",
+                                            "physical_name": "creatr_nm",
+                                            "data_type": "VARCHAR",
+                                            "nullable": True,
+                                            "constraints": [],
+                                        },
+                                        {
+                                            "column_id": "COL-001-003",
+                                            "logical_name": "수정일시",
+                                            "attribute_name": "수정일시",
+                                            "physical_name": "udt_dt",
+                                            "data_type": "DATETIME",
+                                            "nullable": True,
+                                            "constraints": [],
+                                        },
+                                    ],
+                                }
+                            ],
+                            "relationships": [],
+                        },
+                        "erd_mermaid_json": {"entities": [{"name": "사용자 알림"}], "relationships": []},
+                    },
+                    "mermaid_generation_agent": {
+                        "mermaid_code": "erDiagram\n 사용자알림 { BIGINT 알림ID PK }",
+                        "mermaid_image_path": "erd.png",
+                    },
+                },
+            }
+        )
+
+        failure_types = {
+            check.get("failure_type")
+            for check in result["validation_result"]["checks"]
+            if check.get("status") == "FAIL"
+        }
+        self.assertNotIn("ENTITY_NAME_MISMATCH", failure_types)
+        self.assertNotIn("ENTITY_ATTRIBUTE_MISMATCH", failure_types)
+        self.assertNotIn("ENTITY_DESCRIPTION_MISMATCH", failure_types)
+
+    def test_erd_table_id_duplicates_do_not_fail_when_physical_names_are_unique(self) -> None:
+        result = self.agent.execute(
+            {
+                "docs_cd": "ERD",
+                "agent_outputs": {
+                    "data_structure_design_agent": {
+                        "erd_entity_json": {
+                            "tables": [
+                                {
+                                    "table_id": "TABLE-020",
+                                    "logical_name": "사용자",
+                                    "physical_name": "tbl_user",
+                                    "source_requirement_ids": ["REQ-001"],
+                                    "columns": [
+                                        {
+                                            "column_id": "COL-001-001",
+                                            "logical_name": "사용자 번호",
+                                            "physical_name": "user_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        }
+                                    ],
+                                },
+                                {
+                                    "table_id": "TABLE-020",
+                                    "logical_name": "권한",
+                                    "physical_name": "tbl_role",
+                                    "source_requirement_ids": ["REQ-002"],
+                                    "columns": [
+                                        {
+                                            "column_id": "COL-002-001",
+                                            "logical_name": "권한 번호",
+                                            "physical_name": "role_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        }
+                                    ],
+                                },
+                            ],
+                            "relationships": [],
+                        },
+                        "erd_mermaid_json": {"entities": [{"name": "tbl_user"}, {"name": "tbl_role"}], "relationships": []},
+                    },
+                    "mermaid_generation_agent": {
+                        "mermaid_code": "erDiagram",
+                        "mermaid_image_path": "erd.png",
+                    },
+                },
+            }
+        )
+
+        self.assertIsNone(_maybe_failure(result, "ERD_TABLE_DUPLICATED"))
+
     def test_db_and_arch_route_to_document_specific_validators(self) -> None:
         db = self.agent.execute(
             {
@@ -636,6 +920,17 @@ def _failure(result, failure_type):
         check
         for check in result["validation_result"]["checks"]
         if check["failure_type"] == failure_type
+    )
+
+
+def _maybe_failure(result, failure_type):
+    return next(
+        (
+            check
+            for check in result["validation_result"]["checks"]
+            if check["failure_type"] == failure_type
+        ),
+        None,
     )
 
 

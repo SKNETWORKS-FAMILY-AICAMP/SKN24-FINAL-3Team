@@ -1,6 +1,9 @@
 import unittest
 
 from agents.data_structure_design.agent import DataStructureDesignAgent
+from agents.data_structure_design.pipeline.domain_classifier import classify_domain
+from agents.data_structure_design.pipeline.relationship_inferer import infer_relationships
+from agents.data_structure_design.processors.column_standardizer import table_name
 from agents.data_structure_design.processors import apply_public_standard_results
 from agents.validation.agent import ValidationAgent
 from tools.result import success_result
@@ -121,6 +124,189 @@ class FakeBadNamingDataLLM:
 
 
 class DataStructureDesignAgentTest(unittest.TestCase):
+    def test_plain_data_model_text_is_not_classified_as_ai_platform(self) -> None:
+        result = classify_domain(
+            [{"requirement_name": "업무 데이터 모델 관리", "detail": "논리 데이터 모델을 관리한다."}]
+        )
+
+        self.assertNotEqual(result["primary_domain"], "AI_PLATFORM")
+
+    def test_unknown_korean_table_names_do_not_collapse_to_tbl_entity(self) -> None:
+        first = table_name("진료예약")
+        second = table_name("생산계획")
+
+        self.assertNotEqual(first, "tbl_entity")
+        self.assertNotEqual(second, "tbl_entity")
+        self.assertNotEqual(first, second)
+
+    def test_relationship_inference_resolves_semantic_fk_alias(self) -> None:
+        relationships = infer_relationships(
+            [
+                {
+                    "table_name": "tbl_org",
+                    "columns": [
+                        {"column_name": "org_sn", "pk": True, "constraints": ["PK"]}
+                    ],
+                },
+                {
+                    "table_name": "tbl_user",
+                    "columns": [
+                        {"column_name": "user_sn", "pk": True, "constraints": ["PK"]},
+                        {"column_name": "organization_sn", "fk": True, "constraints": ["FK"]},
+                    ],
+                },
+            ]
+        )
+
+        self.assertEqual(len(relationships), 1)
+        self.assertEqual(relationships[0]["parent_table"], "tbl_org")
+        self.assertEqual(relationships[0]["parent_column"], "org_sn")
+        self.assertEqual(relationships[0]["child_column"], "organization_sn")
+
+    def test_erd_update_reflects_meeting_required_data_structures(self) -> None:
+        meeting_text = (
+            "사용자-권한 N:M 관계를 추가하고 문서-태그 N:M 관계를 추가한다. "
+            "AI 모델 평가 결과, RAG 버전 관리, 작업 실행 로그, 사용자 알림, 조직-사용자 관계도 필요하다."
+        )
+        result = DataStructureDesignAgent().execute(
+            {
+                "docs_cd": "ERD",
+                "udt_yn": "Y",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "existing_output_raw_json": {
+                            "tables": [
+                                {
+                                    "logical_name": "사용자",
+                                    "physical_name": "tbl_user",
+                                    "columns": [
+                                        {
+                                            "logical_name": "사용자 번호",
+                                            "physical_name": "user_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        }
+                                    ],
+                                },
+                                {
+                                    "logical_name": "문서",
+                                    "physical_name": "tbl_document",
+                                    "columns": [
+                                        {
+                                            "logical_name": "문서 번호",
+                                            "physical_name": "document_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        }
+                                    ],
+                                },
+                            ]
+                        },
+                        "meeting_change_items": [{"change_id": "M-001", "content": meeting_text}],
+                    }
+                },
+            }
+        )
+
+        table_names = {
+            table["physical_name"]
+            for table in result["erd_entity_json"]["tables"]
+        }
+        user = next(table for table in result["erd_entity_json"]["tables"] if table["physical_name"] == "tbl_user")
+        user_columns = {column["physical_name"] for column in user["columns"]}
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertTrue(
+            {
+                "tbl_user_role",
+                "tbl_tag",
+                "tbl_document_tag",
+                "tbl_ai_model_eval",
+                "tbl_rag_version",
+                "tbl_job_log",
+                "tbl_notification",
+            }.issubset(table_names)
+        )
+        self.assertIn("org_sn", user_columns)
+        self.assertEqual(result["meeting_change_reflection"]["missing_items"], [])
+
+    def test_erd_update_detects_organization_user_meeting_wording(self) -> None:
+        result = DataStructureDesignAgent().execute(
+            {
+                "docs_cd": "ERD",
+                "udt_yn": "Y",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "existing_output_raw_json": {
+                            "tables": [
+                                {
+                                    "logical_name": "사용자",
+                                    "physical_name": "tbl_user",
+                                    "columns": [
+                                        {
+                                            "logical_name": "사용자 번호",
+                                            "physical_name": "user_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        }
+                                    ],
+                                }
+                            ]
+                        },
+                        "meeting_change_items": [
+                            {
+                                "content": "조직별 사용자 관리 기능 추가. 사용자는 반드시 하나의 조직에 소속된다. 조직별 관리자 여부를 저장한다."
+                            }
+                        ],
+                    }
+                },
+            }
+        )
+
+        user = next(table for table in result["erd_entity_json"]["tables"] if table["physical_name"] == "tbl_user")
+        user_columns = {column["physical_name"] for column in user["columns"]}
+
+        self.assertIn("org_sn", user_columns)
+        self.assertEqual(result["meeting_change_reflection"]["missing_items"], [])
+
+    def test_generic_entity_name_is_inferred_from_agent_description(self) -> None:
+        result = DataStructureDesignAgent().execute(
+            {
+                "docs_cd": "ERD",
+                "udt_yn": "Y",
+                "agent_outputs": {
+                    "document_merge_agent": {
+                        "existing_output_raw_json": {
+                            "tables": [
+                                {
+                                    "entity_name": "엔티티",
+                                    "logical_name": "엔티티",
+                                    "description": "Agent 정보를 관리한다.",
+                                    "physical_name": "tbl_agent",
+                                    "columns": [
+                                        {
+                                            "logical_name": "Agent 번호",
+                                            "physical_name": "agent_sn",
+                                            "data_type": "BIGINT",
+                                            "nullable": False,
+                                            "constraints": ["PK"],
+                                        }
+                                    ],
+                                }
+                            ]
+                        },
+                        "meeting_change_items": [],
+                    }
+                },
+            }
+        )
+
+        table = result["erd_entity_json"]["tables"][0]
+        self.assertIn(table["logical_name"], {"Agent", "에이전트"})
+
     def test_public_standard_rag_results_are_applied_to_erd_columns(self) -> None:
         tables = [
             {
@@ -473,7 +659,61 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         result = DataStructureDesignAgent().execute(state)
 
         self.assertEqual(result["status"], "SUCCESS")
-        self.assertEqual(result["erd_mermaid_json"]["entities"][0]["name"], "tbl_user")
+        self.assertEqual(result["erd_mermaid_json"]["entities"][0]["name"], "사용자")
+
+    def test_erd_update_regenerates_duplicate_column_ids(self) -> None:
+        state = {
+            "docs_cd": "ERD",
+            "udt_yn": "Y",
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "existing_output_raw_json": {
+                        "tables": [
+                            {
+                                "logical_name": "사용자",
+                                "physical_name": "tbl_user",
+                                "columns": [
+                                    {
+                                        "column_id": "COL-001",
+                                        "logical_name": "사용자 번호",
+                                        "physical_name": "user_sn",
+                                        "data_type": "BIGINT",
+                                        "nullable": False,
+                                        "constraints": ["PK"],
+                                    },
+                                    {
+                                        "column_id": "COL-001",
+                                        "logical_name": "사용자 명",
+                                        "physical_name": "user_nm",
+                                        "data_type": "VARCHAR(200)",
+                                        "nullable": False,
+                                        "constraints": [],
+                                    },
+                                    {
+                                        "column_id": "COL-002",
+                                        "logical_name": "사용자 명 중복",
+                                        "physical_name": "user_nm",
+                                        "data_type": "VARCHAR(200)",
+                                        "nullable": False,
+                                        "constraints": [],
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "meeting_change_items": [],
+                }
+            },
+        }
+
+        result = DataStructureDesignAgent().execute(state)
+        columns = result["erd_entity_json"]["tables"][0]["columns"]
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual([column["physical_name"] for column in columns[:2]], ["user_sn", "user_nm"])
+        self.assertEqual(len({column["physical_name"] for column in columns}), len(columns))
+        self.assertEqual(len({column["column_id"] for column in columns}), len(columns))
+        self.assertEqual(columns[0]["column_id"], "COL-001-001")
 
     def test_erd_create_uses_parallel_llm_domain_entity_table_and_column_stages(self) -> None:
         state = {
@@ -501,7 +741,7 @@ class DataStructureDesignAgentTest(unittest.TestCase):
         table = result["erd_entity_json"]["tables"][0]
         self.assertEqual(table["physical_name"], "tbl_user")
         self.assertIn("user_id", {column["physical_name"] for column in table["columns"]})
-        self.assertEqual(result["erd_mermaid_json"]["entities"][0]["name"], "tbl_user")
+        self.assertEqual(result["erd_mermaid_json"]["entities"][0]["name"], "사용자")
 
     def test_erd_create_standardizes_bad_llm_physical_names_before_validation(self) -> None:
         state = {
@@ -804,6 +1044,84 @@ class DataStructureDesignAgentTest(unittest.TestCase):
 
         self.assertEqual(result["db_design_json"]["tables"][0]["table_name"], "tbl_docs")
         self.assertIn("source_artifacts", result["debug"])
+
+    def test_db_update_accepts_document_merge_raw_json_output(self) -> None:
+        state = {
+            "docs_cd": "DB",
+            "udt_yn": "Y",
+            "etc": {"debug": True},
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "existing_output_raw_json": {
+                        "tables": [
+                            {
+                                "table_name": "tbl_docs",
+                                "table_description": "문서",
+                                "columns": [
+                                    {
+                                        "column_name": "docs_sn",
+                                        "data_type": "BIGINT",
+                                        "nullable": False,
+                                        "default": None,
+                                        "description": "문서 번호",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "meeting_change_items": [
+                        {"change_type": "MODIFY", "content": "문서 테이블에 상태 관리를 명확히 반영한다."}
+                    ],
+                }
+            },
+        }
+
+        result = DataStructureDesignAgent().execute(state)
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(result["db_design_json"]["tables"][0]["table_name"], "tbl_docs")
+        self.assertIn("existing_output_raw_json", result["debug"])
+        self.assertIn("meeting_change_items", result["debug"])
+
+    def test_db_update_prefers_raw_tables_over_generic_items(self) -> None:
+        state = {
+            "docs_cd": "DB",
+            "udt_yn": "Y",
+            "agent_outputs": {
+                "document_merge_agent": {
+                    "existing_output_raw_json": {
+                        "items": ["테이블 명세 문단"],
+                        "tables": [
+                            {
+                                "table_name": "tbl_user",
+                                "table_logical_name": "사용자",
+                                "table_description": "사용자 정보를 관리하는 테이블입니다.",
+                                "columns": [
+                                    {
+                                        "column_name": "user_sn",
+                                        "column_logical_name": "사용자 번호",
+                                        "data_type": "BIGINT",
+                                        "type_and_length": "BIGINT",
+                                        "nullable": False,
+                                        "default": "",
+                                        "description": "사용자 번호",
+                                        "pk": "Y",
+                                        "idx": "Y",
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    "meeting_change_items": [],
+                }
+            },
+        }
+
+        result = DataStructureDesignAgent().execute(state)
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(result["db_design_json"]["tables"][0]["table_name"], "tbl_user")
+        self.assertEqual(result["db_design_json"]["tables"][0]["columns"][0]["column_name"], "user_sn")
 
     def test_missing_inputs_fail(self) -> None:
         erd = DataStructureDesignAgent().execute({"docs_cd": "ERD", "udt_yn": "N"})

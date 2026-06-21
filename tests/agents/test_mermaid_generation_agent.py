@@ -292,6 +292,62 @@ class MermaidGenerationAgentTest(unittest.TestCase):
         )
         self.assertEqual(result["failure_type"], "ARCH_MERMAID_INPUT_INVALID")
 
+    def test_erd_mermaid_uses_logical_model_names(self) -> None:
+        result = MermaidGenerationAgent(
+            renderer=lambda code, **kwargs: {
+                "success": True,
+                "data": {
+                    "mermaid_file_path": f"{kwargs.get('file_stem', 'erd')}.mmd",
+                    "mermaid_image_path": "erd.png",
+                },
+                "error": None,
+            }
+        ).execute(
+            {
+                "docs_cd": "ERD",
+                "agent_outputs": {
+                    "data_structure_design_agent": {
+                        "erd_mermaid_json": {
+                            "entities": [
+                                {
+                                    "entity_name": "Agent",
+                                    "logical_name": "Agent",
+                                    "physical_name": "tbl_agent",
+                                    "table_name": "tbl_agent",
+                                    "columns": [
+                                        {
+                                            "attribute_name": "AgentID",
+                                            "logical_name": "AgentID",
+                                            "physical_name": "agent_sn",
+                                            "column_name": "agent_sn",
+                                            "data_type": "BIGINT",
+                                            "constraints": ["PK"],
+                                        },
+                                        {
+                                            "attribute_name": "Agent명",
+                                            "logical_name": "Agent명",
+                                            "physical_name": "agent_nm",
+                                            "column_name": "agent_nm",
+                                            "data_type": "VARCHAR",
+                                            "constraints": [],
+                                        },
+                                    ],
+                                }
+                            ],
+                            "relationships": [],
+                        }
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertIn("Agent", result["mermaid_code"])
+        self.assertIn("AgentID", result["mermaid_code"])
+        self.assertIn("Agent명", result["mermaid_code"])
+        self.assertNotIn("tbl_agent {", result["mermaid_code"])
+        self.assertNotIn("agent_sn", result["mermaid_code"])
+
 
 def _erd_state():
     return {

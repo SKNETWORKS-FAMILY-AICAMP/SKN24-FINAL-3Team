@@ -362,6 +362,51 @@ class DocumentMergeAgentTest(unittest.TestCase):
             self.assertEqual(result["status"], "SUCCESS")
             self.assertEqual(result["existing_output_raw_json"]["tables"][0]["logical_name"], "사용자")
 
+    def test_db_update_docx_uses_db_design_parser_for_existing_output(self) -> None:
+        from docx import Document
+
+        with tempfile.TemporaryDirectory() as root:
+            root_path = Path(root)
+            existing = root_path / "existing_db.docx"
+            meeting = root_path / "meeting.txt"
+            document = Document()
+            table = document.add_table(rows=8, cols=9)
+            table.rows[0].cells[0].text = "테이블 ID"
+            table.rows[0].cells[1].text = "tbl_user"
+            table.rows[0].cells[5].text = "테이블명"
+            table.rows[0].cells[6].text = "사용자"
+            table.rows[1].cells[0].text = "데이터베이스 명"
+            table.rows[1].cells[1].text = "업무 DB"
+            table.rows[1].cells[5].text = "TS명"
+            table.rows[1].cells[6].text = "TS_USER"
+            table.rows[2].cells[0].text = "트리거 구성"
+            table.rows[2].cells[1].text = "해당 없음"
+            table.rows[3].cells[0].text = "테이블 설명"
+            table.rows[3].cells[1].text = "사용자 정보를 관리하는 테이블입니다."
+            for index, header in enumerate(("초기건수", "증가량(일)", "보관주기", "최대건수", "용량", "비고")):
+                table.rows[4].cells[index].text = header
+            for index, value in enumerate(("0", "산정 필요", "업무 기준에 따름", "산정 필요", "산정 필요", "")):
+                table.rows[5].cells[index].text = value
+            for index, header in enumerate(("컬럼명", "컬럼 ID", "타입 및 길이", "Not Null", "PK", "FK", "IDX", "기본값", "제약조건")):
+                table.rows[6].cells[index].text = header
+            for index, value in enumerate(("사용자 번호", "user_sn", "BIGINT", "Y", "Y", "", "Y", "", "AUTO_INCREMENT")):
+                table.rows[7].cells[index].text = value
+            document.save(existing)
+            meeting.write_text("사용자 테이블 설명을 보완한다.", encoding="utf-8")
+
+            result = DocumentMergeAgent().execute(
+                {
+                    "docs_cd": "DB",
+                    "udt_yn": "Y",
+                    "existing_output_path": str(existing),
+                    "input_file_paths": [str(meeting)],
+                }
+            )
+
+            self.assertEqual(result["status"], "SUCCESS")
+            self.assertEqual(result["existing_output_raw_json"]["tables"][0]["table_name"], "tbl_user")
+            self.assertEqual(result["existing_output_raw_json"]["tables"][0]["columns"][0]["column_name"], "user_sn")
+
     def test_update_fallback_meeting_text_is_not_appended_as_artifact_item(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             root_path = Path(root)

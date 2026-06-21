@@ -6,6 +6,7 @@ from supervisor.evaluate.evaluator import evaluate_step
 from supervisor.plan.plan_builder import build_plan
 from supervisor.reduce.reduce_builder import reduce_outputs
 from supervisor.registry.agent_registry import AgentRegistry, default_agent_registry
+from supervisor.repair import build_repair_instruction
 from supervisor.replan.replan_builder import build_replan
 from supervisor.replan.retry_policy import can_replan, can_retry_step, is_terminal_failure
 from workflow.state import WorkflowState
@@ -53,6 +54,7 @@ class GenerationSupervisor:
             )
             failure = self._execute_plan(state)
             if failure is None:
+                self._finish_repair(state, "PASS")
                 logger.info(
                     "Supervisor reducing agent outputs",
                     extra=bind_state_log_extra(
@@ -69,7 +71,11 @@ class GenerationSupervisor:
                 print("[ARCH_TRACE][supervisor.run] failure:", failure)
             if failure.get("action") == "END":
                 return self._mark_failed(state, failure)
+            if str(failure.get("failure_type") or "").startswith("ERD_REPAIR_"):
+                self._finish_repair(state, "FAILED")
+                return self._mark_failed(state, failure)
             if not can_replan(state["current_round"], state["max_round"]):
+                self._finish_repair(state, "FAILED")
                 return self._mark_failed(state, failure)
             logger.warning(
                 "Supervisor replanning failure_type=%s",
@@ -81,6 +87,8 @@ class GenerationSupervisor:
                     agent=failure.get("agent"),
                 ),
             )
+            self._finish_repair(state, "FAILED")
+            self._prepare_repair(state, failure)
             state["execution_plan"] = build_replan(
                 state["docs_cd"],
                 state["udt_yn"],
@@ -102,6 +110,13 @@ class GenerationSupervisor:
             while True:
                 step["status"] = "RUNNING"
                 step["retry_count"] = retry_count
+                state["supervisor_decision"] = {
+                    "action": "RETRY_AGENT" if state["current_round"] > 1 else "EXECUTE_AGENT",
+                    "round": state["current_round"],
+                    "agent": agent_name,
+                    "failure_type": state["execution_plan"].get("replan_reason"),
+                    "target_scope": list(step.get("retry_scope", [])),
+                }
                 logger.info(
                     "Supervisor step started agent=%s retry=%s",
                     agent_name,
@@ -207,8 +222,44 @@ class GenerationSupervisor:
         state.setdefault("max_round", 3)
         state.setdefault("warnings", [])
         state.setdefault("errors", [])
+        state.setdefault("current_repair_instruction", None)
+        state.setdefault("repair_history", [])
+        state.setdefault("repair_round", 0)
+        state.setdefault("max_repair_round", state.get("max_round", 3))
         state["status"] = "RUNNING"
         state["next_action"] = "CONTINUE"
+
+    @staticmethod
+    def _prepare_repair(state: WorkflowState, failure: dict[str, Any]) -> None:
+        next_round = int(state.get("repair_round", 0)) + 1
+        if next_round > int(state.get("max_repair_round", state.get("max_round", 3))):
+            state["current_repair_instruction"] = None
+            return
+        instruction = build_repair_instruction(failure, repair_round=next_round)
+        state["current_repair_instruction"] = instruction
+        if instruction is None:
+            return
+        state["repair_round"] = next_round
+        state["repair_history"].append(
+            {
+                "repair_id": instruction["repair_id"],
+                "status": "PENDING",
+                "instruction": instruction,
+            }
+        )
+
+    @staticmethod
+    def _finish_repair(state: WorkflowState, status: str) -> None:
+        instruction = state.get("current_repair_instruction")
+        if not instruction:
+            return
+        repair_id = instruction.get("repair_id")
+        for entry in reversed(state.get("repair_history", [])):
+            if entry.get("repair_id") == repair_id and entry.get("status") == "PENDING":
+                entry["status"] = status
+                entry["validation_result"] = state.get("validation_result")
+                break
+        state["current_repair_instruction"] = None
 
     @staticmethod
     def _mark_failed(state: WorkflowState, failure: dict[str, Any]) -> WorkflowState:

@@ -335,6 +335,21 @@ class RequestPreprocessNodeTest(unittest.TestCase):
         self.assertEqual(result["status"], "READY")
         self.assertEqual(docs_repository.ensure_generating_calls, [(10, "SRS")])
 
+    def test_normalizes_db_docs_cd_before_validation(self) -> None:
+        dependencies, docs_repository = self.dependencies(
+            {10: {"file_sn": 10, "s3_key": "docs/srs.json", "file_nm": "srs.json"}},
+            active_srs={"file_sn": 10},
+        )
+
+        result = request_preprocess_node(
+            {"project_sn": 10, "docs_cd": "DOC_ITF", "udt_yn": "N"},
+            dependencies,
+        )
+
+        self.assertEqual(result["docs_cd"], "INTERFACE")
+        self.assertEqual(result["status"], "READY")
+        self.assertEqual(docs_repository.ensure_generating_calls, [(10, "INTERFACE")])
+
     def test_interface_create_without_images_records_warning_but_continues(self) -> None:
         dependencies, docs_repository = self.dependencies(
             {10: {"file_sn": 10, "s3_key": "docs/srs.json", "file_nm": "srs.json"}},
@@ -348,6 +363,28 @@ class RequestPreprocessNodeTest(unittest.TestCase):
 
         self.assertEqual(result["status"], "READY")
         self.assertEqual(result["warnings"][0]["code"], "INTERFACE_IMAGE_LIST_EMPTY")
+        self.assertEqual(docs_repository.ensure_generating_calls, [(10, "INTERFACE")])
+
+    def test_interface_create_downloads_image_paths_without_file_lookup(self) -> None:
+        dependencies, docs_repository = self.dependencies(
+            {10: {"file_sn": 10, "s3_key": "docs/srs.json", "file_nm": "srs.json"}},
+            active_srs={"file_sn": 10},
+        )
+
+        result = request_preprocess_node(
+            {
+                "project_sn": 10,
+                "docs_cd": "DOC_ITF",
+                "udt_yn": "N",
+                "image_list": ["s3://bucket/ui/login.png", "ui/main.png"],
+            },
+            dependencies,
+        )
+
+        self.assertEqual(result["status"], "READY")
+        self.assertEqual(result["docs_cd"], "INTERFACE")
+        self.assertEqual(result["input_image_paths"], ["/tmp/login.png", "/tmp/main.png"])
+        self.assertEqual(result["warnings"], [])
         self.assertEqual(docs_repository.ensure_generating_calls, [(10, "INTERFACE")])
 
     def test_update_uses_existing_docs_status_without_insert_fallback(self) -> None:
