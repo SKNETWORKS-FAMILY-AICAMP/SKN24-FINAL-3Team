@@ -72,7 +72,7 @@ Content-Type: application/json
   "project_sn": {{projectSn}},
   "docs_cd": "ARCH",
   "udt_yn": "N",
-  "file_list": [2],
+  "file_list": [60],
   "image_list": [],
   "etc": {
     "debug": true
