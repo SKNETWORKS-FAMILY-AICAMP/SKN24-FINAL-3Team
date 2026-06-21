@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     llm_timeout: float = Field(default=300, gt=0)
     llm_temperature: float = Field(default=0.2, ge=0)
     llm_max_tokens: int = Field(default=8192, gt=0)
+    requirement_docs_codes: list[str] = Field(
+        default_factory=lambda: ["SRS", "REQUIREMENT"]
+    )
+    fixed_status_codes: list[str] = Field(
+        default_factory=lambda: ["FIXED", "DOCS_FIXED", "PRGRS_FIX"]
+    )
 
     # Storage
     local_storage_root: Path = Path("./storage")

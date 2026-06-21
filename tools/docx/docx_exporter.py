@@ -420,7 +420,7 @@ def _fill_interface_process_table(table: Table, items: list[dict[str, Any]]) -> 
 
 def _fill_erd_entity_table(table: Table, entity: dict[str, Any]) -> None:
     _set_cell_safe(table, 0, 2, _pick(entity, "entity_id", "table_id", default=""))
-    _set_cell_safe(table, 0, 7, _entity_display_name(entity))
+    _set_cell_safe(table, 0, 7, _pick(entity, "entity_name", "logical_name", "table_logical_name"))
     _set_cell_safe(table, 1, 4, _pick(entity, "entity_description", "table_comment", "description"))
     rows = [_erd_column_to_row(column) for column in _entity_columns(entity)]
     _fill_repeating_table(table, rows, base_row_idx=3)
@@ -719,7 +719,7 @@ def _erd_diagram_caption(
 ) -> str:
     group_type = str(group.get("group_type") or "")
     if group_type == "orphan":
-        suffix = _group_numeric_suffix(group, index)
+        suffix = int(group.get("orphan_index") or _group_numeric_suffix(group, index))
         return f"1.{index} 단독 엔티티 ERD - {suffix}"
     group_name = str(group.get("group_name") or "").strip()
     if group_name:
@@ -807,7 +807,7 @@ def _erd_entities(erd: dict[str, Any]) -> list[dict[str, Any]]:
         entities.append(
             {
                 "entity_id": _pick(table, "entity_id", "table_id", default=f"ENT-{index:03d}"),
-                "entity_name": _entity_display_name(table),
+                "entity_name": _pick(table, "entity_name", "logical_name", "table_logical_name"),
                 "entity_description": _short_text(_pick(table, "entity_description", "description", "table_comment"), 80),
                 "columns": _entity_columns(table),
             }
@@ -846,25 +846,15 @@ def _erd_column_to_row(column: dict[str, Any]) -> list[Any]:
         _yes_no(not bool(column.get("nullable", True))) or _pick(column, "not_null"),
         _erd_key_marker(column, constraints, "PK"),
         _erd_key_marker(column, constraints, "FK"),
-        _yes_no(column.get("is_pk") or column.get("is_fk")) or _pick(column, "inx") or _contains_constraint(constraints, "PK", "FK"),
+        _yes_no(
+            _pick(column, "idx", "inx")
+            or column.get("is_pk")
+            or column.get("is_fk")
+            or _contains_constraint(constraints, "PK", "FK", "INDEX", "IDX")
+        ),
         _pick(column, "default", default=""),
         _short_text(_column_constraint_text(column), 60),
     ]
-
-
-def _entity_display_name(table: dict[str, Any]) -> str:
-    for key in ("entity_name", "logical_name", "table_logical_name"):
-        value = _pick(table, key)
-        if value and not _looks_like_physical_name(value):
-            return _short_text(value, 40)
-    return ""
-
-
-def _looks_like_physical_name(value: Any) -> bool:
-    text = str(value or "").strip()
-    if not text:
-        return False
-    return bool(re.fullmatch(r"(tbl_)?[A-Za-z][A-Za-z0-9_]*", text) or re.fullmatch(r"TABLE-\d+", text, re.IGNORECASE))
 
 
 def _split_data_type(value: Any) -> tuple[str, str]:
@@ -898,9 +888,9 @@ def _db_column_to_row(column: dict[str, Any]) -> list[Any]:
             _pick(column, "length"),
         ),
         _yes_no(not bool(column.get("nullable", True))) or _pick(column, "not_null"),
-        _pick(column, "pk") or _yes_no(column.get("is_pk")) or _contains_constraint(constraints, "PK"),
-        _pick(column, "fk") or _yes_no(column.get("is_fk")) or _contains_constraint(constraints, "FK"),
-        _pick(column, "idx", "inx") or _yes_no(column.get("is_pk") or column.get("is_fk")) or _contains_constraint(constraints, "PK", "FK", "INDEX", "IDX"),
+        _yes_no(_pick(column, "pk") or column.get("is_pk") or _contains_constraint(constraints, "PK")),
+        _yes_no(_pick(column, "fk") or column.get("is_fk") or _contains_constraint(constraints, "FK")),
+        _yes_no(_pick(column, "idx", "inx") or column.get("is_pk") or column.get("is_fk") or _contains_constraint(constraints, "PK", "FK", "INDEX", "IDX")),
         _pick(column, "default", default=""),
         _column_constraint_text(column),
     ]
@@ -923,12 +913,12 @@ def _contains_constraint(value: Any, *needles: str) -> str:
 def _erd_key_marker(column: dict[str, Any], constraints: Any, marker: str) -> str:
     explicit = _pick(column, marker.lower())
     if explicit:
-        return marker if str(explicit).upper() == "Y" else str(explicit)
+        return _yes_no(explicit)
     if marker == "PK" and column.get("is_pk"):
-        return "PK"
+        return "Y"
     if marker == "FK" and column.get("is_fk"):
-        return "FK"
-    return marker if _contains_constraint(constraints, marker) else ""
+        return "Y"
+    return _contains_constraint(constraints, marker)
 
 
 def _column_constraint_text(column: dict[str, Any]) -> str:

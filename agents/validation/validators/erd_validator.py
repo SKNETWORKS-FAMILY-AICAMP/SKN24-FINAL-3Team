@@ -8,6 +8,7 @@ from agents.data_structure_design.meeting_erd_requirements import (
     evaluate_meeting_erd_requirements,
     extract_meeting_erd_requirements,
 )
+from agents.data_structure_design.erd_quality import inspect_erd_quality
 from workflow.state import WorkflowState
 
 
@@ -88,6 +89,7 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
     )
     if meeting_check is not None:
         checks.append(meeting_check)
+    checks.extend(_erd_quality_checks(entity_doc, mermaid_doc))
     return checks + _mermaid_checks(outputs)
 
 
@@ -338,6 +340,111 @@ def _mermaid_checks(outputs: dict[str, Any]) -> list[dict[str, Any]]:
         make_check("ERD_MERMAID_001", "Mermaid 코드 존재 검증", not is_empty(output.get("mermaid_code")), failure_type="ERD_MERMAID_CODE_MISSING", message="ERD Mermaid 코드가 없습니다.", target_agent="mermaid_generation_agent"),
         make_check("ERD_MERMAID_002", "Mermaid 이미지 렌더링 검증", not is_empty(output.get("mermaid_image_path")), failure_type="ERD_MERMAID_RENDER_FAILED", message="ERD Mermaid 이미지 렌더링 결과가 없습니다.", target_agent="mermaid_generation_agent"),
     ]
+
+
+def _erd_quality_checks(entity_doc: dict[str, Any], mermaid_doc: dict[str, Any]) -> list[dict[str, Any]]:
+    report = inspect_erd_quality(entity_doc)
+    checks: list[dict[str, Any]] = []
+    for code, items in _group_quality_issues(report.get("errors", [])).items():
+        checks.append(
+            make_check(
+                f"ERD_QUALITY_{code}",
+                _quality_check_name(code),
+                False,
+                failure_type=code,
+                message="; ".join(str(item.get("message") or "") for item in items),
+                target_agent=TARGET,
+                target_scope=[scope for item in items for scope in item.get("target_scope", [])],
+            )
+        )
+    for code, items in _group_quality_issues(report.get("warnings", [])).items():
+        checks.append(
+            make_check(
+                f"ERD_QUALITY_{code}",
+                _quality_check_name(code),
+                False,
+                failure_type=code,
+                message="; ".join(str(item.get("message") or "") for item in items),
+                target_agent=TARGET,
+                target_scope=[scope for item in items for scope in item.get("target_scope", [])],
+                severity="MEDIUM",
+                warning=True,
+            )
+        )
+
+    invalid_flags = []
+    for table in first_list(entity_doc, "tables", "entities"):
+        if not isinstance(table, dict):
+            continue
+        for column in table.get("columns", []):
+            if not isinstance(column, dict):
+                continue
+            for key in ("pk", "fk", "idx", "inx"):
+                if column.get(key) not in (None, "", "Y"):
+                    invalid_flags.append(f"{_entity_scope(table, str(table.get('table_id') or ''))}.{column.get('column_id')}.{key}")
+    checks.append(
+        make_check(
+            "ERD_KEY_FORMAT_001",
+            "PK/FK/INX 출력값 검증",
+            not invalid_flags,
+            failure_type="ERD_KEY_FLAG_FORMAT_INVALID",
+            message="PK/FK/INX 값은 Y 또는 빈 값이어야 합니다.",
+            target_agent=TARGET,
+            target_scope=invalid_flags,
+        )
+    )
+
+    consistency_errors = _mermaid_entity_name_mismatches(entity_doc, mermaid_doc)
+    checks.append(
+        make_check(
+            "ERD_ENTITY_NAME_005",
+            "JSON-Mermaid 엔티티명 일치 검증",
+            not consistency_errors,
+            failure_type="ERD_ENTITY_NAME_INCONSISTENT",
+            message="ERD JSON과 Mermaid 구조의 엔티티명이 다릅니다.",
+            target_agent=TARGET,
+            target_scope=consistency_errors,
+        )
+    )
+    return checks
+
+
+def _group_quality_issues(items: Any) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in items if isinstance(items, list) else []:
+        if isinstance(item, dict):
+            grouped.setdefault(str(item.get("code") or "ERD_QUALITY_ERROR"), []).append(item)
+    return grouped
+
+
+def _quality_check_name(code: str) -> str:
+    names = {
+        "ENTITY_NAME_MISSING": "엔티티명 누락 검증",
+        "ENTITY_NAME_OVERLONG": "엔티티명 길이 검증",
+        "ENTITY_NAME_SENTENCE": "요구사항 문장형 엔티티명 검증",
+        "ENTITY_SEMANTIC_DUPLICATED": "의미 중복 엔티티 검증",
+        "RELATION_TABLE_MISSING": "관계 대상 엔티티 검증",
+        "RELATION_COLUMN_MISSING": "관계 PK/FK 컬럼 검증",
+        "RELATION_KEY_MISMATCH": "관계와 PK/FK 표시 일치 검증",
+        "FK_RELATION_MISSING": "FK 관계 누락 검증",
+        "COMMON_COLUMN_OVERUSE": "공통 컬럼 과다 검증",
+        "STANDALONE_ENTITY_EXCESSIVE": "단독 엔티티 적정성 검증",
+    }
+    return names.get(code, "ERD 품질 검증")
+
+
+def _mermaid_entity_name_mismatches(entity_doc: dict[str, Any], mermaid_doc: dict[str, Any]) -> list[str]:
+    expected = {
+        str(table.get("table_name") or table.get("physical_name") or ""): str(table.get("entity_name") or table.get("logical_name") or "")
+        for table in first_list(entity_doc, "tables", "entities")
+        if isinstance(table, dict)
+    }
+    actual = {
+        str(table.get("table_name") or table.get("physical_name") or ""): str(table.get("entity_name") or table.get("logical_name") or "")
+        for table in first_list(mermaid_doc, "entities", "tables")
+        if isinstance(table, dict)
+    }
+    return sorted(table_name for table_name, entity_name in expected.items() if table_name and actual.get(table_name) != entity_name)
 
 
 def _meeting_change_reflection_check(

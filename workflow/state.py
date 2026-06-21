@@ -51,6 +51,7 @@ class WorkflowState(TypedDict, total=False):
 
     # 9. Export
     export_result: dict[str, Any] | None
+    export_validation_result: dict[str, Any] | None
 
     # 10. Cleanup
     cleanup_result: dict[str, Any] | None

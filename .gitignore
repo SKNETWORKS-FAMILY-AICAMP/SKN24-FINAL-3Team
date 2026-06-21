@@ -5,3 +5,5 @@ storage/
 requests/
 tests/
 old/
+logs/alpled.log
+requests/generate.http
