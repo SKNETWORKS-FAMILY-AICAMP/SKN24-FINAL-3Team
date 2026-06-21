@@ -15,7 +15,6 @@ os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
 os.environ.setdefault("HF_XET_HIGH_PERFORMANCE", "1")
 
 import torch
-from dotenv import load_dotenv
 from huggingface_hub import login
 
 from .config import (
@@ -34,6 +33,7 @@ from .config import (
     USE_4BIT,
 )
 from .contracts import build_prompt_messages, get_training_contracts, normalize_messages
+from .env_loader import PROJECT_ENV_FILE, load_runtime_env
 from .output_validation import extract_complete_task_json, validate_task_output
 from .storage import dump_json
 
@@ -61,10 +61,13 @@ class ModelRuntime:
         with self._load_lock:
             if self._loaded:
                 return self
-            load_dotenv(ENV_FILE, override=False)
+            loaded_env_file = load_runtime_env(ENV_FILE, override=False)
             self.hf_token = os.getenv("HF_TOKEN")
             if not self.hf_token:
-                raise RuntimeError(f"HF_TOKEN이 없습니다. 환경변수 또는 {ENV_FILE}을 확인하세요.")
+                env_hint = ENV_FILE
+                if loaded_env_file == PROJECT_ENV_FILE:
+                    env_hint = f"{ENV_FILE} 또는 {PROJECT_ENV_FILE}"
+                raise RuntimeError(f"HF_TOKEN이 없습니다. 환경변수 또는 {env_hint}을 확인하세요.")
             if not torch.cuda.is_available():
                 raise RuntimeError("CUDA GPU가 필요합니다.")
             login(token=self.hf_token, add_to_git_credential=False)

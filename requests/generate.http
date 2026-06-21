@@ -3,6 +3,17 @@
 @rfpFileSn = 3
 @meetingFileSn = 2
 
+
+### docs_cd
+# 사용자 요구사항 정의서: "DOC_SRS"
+# 사용자 인터페이스 설계서: "DOC_ITF"
+# 아키텍처 설계서: "DOC_ARCH"
+# 엔티티 관계 모형: "DOC_ERD"
+# 데이터베이스 설계서: "DOC_DB"
+# 통합 시험 시나리오: "DOC_TS"
+
+
+
 ### Health check
 GET {{host}}/health
 
