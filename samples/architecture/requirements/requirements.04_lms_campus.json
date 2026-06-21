@@ -1,0 +1,12 @@
+{
+  "requirements": [
+    {"requirement_id": "LMS-FUR-001", "requirement_type": "기능 요구사항", "requirement_name": "학습 현황 통합 조회", "requirement_detail": "학생은 수강 과목, 비교과 프로그램, 상담 예약, 역량진단 결과를 통합 대시보드에서 조회할 수 있어야 한다."},
+    {"requirement_id": "LMS-FUR-002", "requirement_type": "기능 요구사항", "requirement_name": "비교과 신청 및 승인", "requirement_detail": "학생은 비교과 프로그램을 신청할 수 있고 담당자는 신청 승인, 출석 확인, 이수 결과를 관리할 수 있어야 한다."},
+    {"requirement_id": "LMS-FUR-003", "requirement_type": "기능 요구사항", "requirement_name": "상담 예약 및 이력 관리", "requirement_detail": "학생은 상담을 예약하고 상담사는 상담 결과와 후속 조치 이력을 등록할 수 있어야 한다."},
+    {"requirement_id": "LMS-FUR-004", "requirement_type": "기능 요구사항", "requirement_name": "AI 추천 및 지식 검색", "requirement_detail": "시스템은 학습 이력과 상담 데이터를 기반으로 비교과 프로그램과 학습 자료를 추천하고 지식 검색을 지원하여야 한다."},
+    {"requirement_id": "LMS-NFR-001", "requirement_type": "성능 요구사항", "requirement_name": "학기 초 동시 접속 대응", "requirement_detail": "학기 초 수강 및 비교과 신청 집중 기간에도 안정적인 응답을 제공하도록 API 서버와 캐시를 확장 가능하게 구성하여야 한다."},
+    {"requirement_id": "LMS-NFR-002", "requirement_type": "보안 요구사항", "requirement_name": "대학 SSO와 권한 분리", "requirement_detail": "학생, 교수, 직원, 상담사 권한을 분리하고 대학 SSO와 연계하여 사용자 인증을 수행하여야 한다."},
+    {"requirement_id": "LMS-NFR-003", "requirement_type": "운영 요구사항", "requirement_name": "알림 작업과 배치 관리", "requirement_detail": "알림 발송, 통계 집계, 추천 갱신 작업은 비동기 작업 서버에서 수행하고 실패 시 재처리할 수 있어야 한다."},
+    {"requirement_id": "LMS-IFR-001", "requirement_type": "인터페이스 요구사항", "requirement_name": "학사 시스템 연계", "requirement_detail": "학사 시스템과 사용자, 수강, 성적, 학적 정보를 API 또는 배치 방식으로 연계하여야 한다."}
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "prj_net_sn": "4",
+  "prj_sn": "1",
+  "prj_net_nm": "학습관리 내부 서비스망",
+  "prj_net_prps": "Django 웹/API 서버, Celery Worker, PostgreSQL DB, Redis Broker, S3 파일 저장소를 중심으로 학습 콘텐츠, 수강, 과제, 상담 및 통계 흐름을 처리하는 망",
+  "mid_stack": "Django, Python, Django REST Framework, Celery, PostgreSQL, Redis, S3, Nginx, Gunicorn, Docker, Grafana",
+  "fwl_settings": "웹/API는 HTTPS로 접근하고 DB, Redis, S3는 내부 서비스 계정 및 보안 그룹에서만 허용한다.",
+  "auth_method": "세션 기반 인증, JWT, SSO 연계, 서비스 계정 인증",
+  "expected_smtn": "200",
+  "cloud_yn": "Y",
+  "hard_spec": "Django/Gunicorn Pod 3개 이상, Celery Worker 2개 이상, PostgreSQL 관리형 DB, Redis, S3 Bucket 사용",
+  "etc_note": "학습 콘텐츠, 수강신청, 진도/성적 관리, 비교과 및 상담 연계를 담당한다.",
+  "reg_dt": "2026-06-16 14:29:55",
+  "reg_user_sn": "1",
+  "mod_dt": "2026-06-16 14:29:55",
+  "mod_user_sn": "1"
+}

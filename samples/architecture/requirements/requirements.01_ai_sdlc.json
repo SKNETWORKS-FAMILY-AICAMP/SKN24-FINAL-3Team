@@ -1,0 +1,12 @@
+{
+  "requirements": [
+    {"requirement_id": "SDLC-FUR-001", "requirement_type": "기능 요구사항", "requirement_name": "산출물 생성 요청 접수", "requirement_detail": "사용자는 웹 포털에서 프로젝트를 선택하고 요구사항 문서, 회의록, 참고자료를 업로드한 뒤 산출물 생성을 요청할 수 있어야 한다."},
+    {"requirement_id": "SDLC-FUR-002", "requirement_type": "기능 요구사항", "requirement_name": "멀티에이전트 산출물 생성", "requirement_detail": "시스템은 요구사항 생성, 아키텍처 설계, 데이터베이스 설계, 테스트 시나리오 생성을 각 에이전트의 워크플로우로 수행하여야 한다."},
+    {"requirement_id": "SDLC-FUR-003", "requirement_type": "기능 요구사항", "requirement_name": "작업 상태 및 산출물 조회", "requirement_detail": "사용자는 산출물 생성 진행 상태, 실패 사유, 완료 산출물 목록을 조회하고 DOCX 파일을 다운로드할 수 있어야 한다."},
+    {"requirement_id": "SDLC-FUR-004", "requirement_type": "기능 요구사항", "requirement_name": "RAG 기반 검증", "requirement_detail": "시스템은 공공 SW사업 가이드, 보안 지침, 표준프레임워크 문서를 검색하여 산출물의 근거와 보완 내용을 제시하여야 한다."},
+    {"requirement_id": "SDLC-NFR-001", "requirement_type": "보안 요구사항", "requirement_name": "사용자 및 서버 간 인증", "requirement_detail": "시스템은 사용자 요청에 JWT 인증을 적용하고 내부 Agent 호출과 저장소 접근에는 API Key 또는 서비스 계정 인증을 적용하여야 한다."},
+    {"requirement_id": "SDLC-NFR-002", "requirement_type": "성능 요구사항", "requirement_name": "비동기 작업 처리", "requirement_detail": "장시간 실행되는 산출물 생성 작업은 비동기 워크플로우로 처리하고 API 응답과 작업 처리 리소스를 분리하여야 한다."},
+    {"requirement_id": "SDLC-NFR-003", "requirement_type": "운영 요구사항", "requirement_name": "모니터링 및 로그 추적", "requirement_detail": "시스템은 요청 처리 이력, 에이전트별 실행 단계, 오류 메시지, 파일 저장 이력을 로그로 수집하고 모니터링 지표를 제공하여야 한다."},
+    {"requirement_id": "SDLC-IFR-001", "requirement_type": "인터페이스 요구사항", "requirement_name": "외부 AI 모델 및 저장소 연계", "requirement_detail": "시스템은 외부 또는 내부 LLM 추론 서비스, Vector DB, 파일 저장소와 API 방식으로 연계할 수 있어야 한다."}
+  ]
+}

@@ -21,7 +21,7 @@ Content-Type: application/json
   }
 }
 
-### Generate INTERFACE from local samples
+### Generate INTERFACE from RFP
 POST {{host}}/generate
 Content-Type: application/json
 
@@ -30,21 +30,9 @@ Content-Type: application/json
   "docs_cd": "INTERFACE",
   "udt_yn": "N",
   "file_list": [],
-  "image_list": [
-    "C:/SKN24/ALPLED-CORE/prototypes/01_통합_AI_포털_대시보드.png",
-    "C:/SKN24/ALPLED-CORE/prototypes/02_대화형_AI_업무지원.png",
-    "C:/SKN24/ALPLED-CORE/prototypes/03_RAG_문서승인_학습관리.png",
-    "C:/SKN24/ALPLED-CORE/prototypes/04_내부검색_규정법률_QA.png",
-    "C:/SKN24/ALPLED-CORE/prototypes/05_AI_Agent_비주얼_캔버스.png",
-    "C:/SKN24/ALPLED-CORE/prototypes/06_AI_OCR_문서자동화.png",
-    "C:/SKN24/ALPLED-CORE/prototypes/07_자연어_데이터분석_대시보드.png",
-    "C:/SKN24/ALPLED-CORE/prototypes/08_MLOps_모델운영관리.png",
-    "C:/SKN24/ALPLED-CORE/prototypes/09_관리자_권한보안_로그관리.png",
-    "C:/SKN24/ALPLED-CORE/prototypes/10_대국민_AI상담_채널.png"
-  ],
+  "image_list": [24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
   "etc": {
-    "debug": true,
-    "sample_requirement_json_path": "C:/SKN24/ALPLED-CORE/requirements/사용자 요구사항 정의서 샘플.json"
+    "debug": true
   }
 }
 
@@ -62,3 +50,22 @@ Content-Type: application/json
     "debug": true
   }
 }
+
+
+
+### Generate ARCH from RFP
+POST {{host}}/generate
+Content-Type: application/json
+
+{
+  "project_sn": {{projectSn}},
+  "docs_cd": "ARCH",
+  "udt_yn": "N",
+  "file_list": [2],
+  "image_list": [],
+  "etc": {
+    "debug": true
+  }
+}
+
+

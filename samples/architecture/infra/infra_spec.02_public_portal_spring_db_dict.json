@@ -1,0 +1,17 @@
+{
+  "prj_net_sn": "2",
+  "prj_sn": "1",
+  "prj_net_nm": "대민 포털 서비스망",
+  "prj_net_prps": "사용자 포털, Spring Boot API 서버, PostgreSQL DB, Redis 캐시, 파일 저장소를 중심으로 대민 서비스 요청과 신청·조회 업무 흐름을 처리하는 망",
+  "mid_stack": "React, Java, Spring Boot, Spring Security, JPA, PostgreSQL, Redis, Nginx, S3, Docker, Prometheus",
+  "fwl_settings": "외부 사용자는 HTTPS Ingress/Nginx를 통해서만 접근하고 DB, Redis, 파일 저장소는 내부 보안 그룹에서만 허용한다.",
+  "auth_method": "OAuth2, JWT, Spring Security 기반 인증, 관리자 MFA",
+  "expected_smtn": "300",
+  "cloud_yn": "Y",
+  "hard_spec": "Spring Boot API 서버 2대 이상, PostgreSQL 관리형 DB, Redis, S3 Bucket, Nginx Ingress 사용",
+  "etc_note": "회원 인증, 신청 접수, 진행상태 조회, 공지 및 첨부파일 제공을 담당한다.",
+  "reg_dt": "2026-06-16 14:29:55",
+  "reg_user_sn": "1",
+  "mod_dt": "2026-06-16 14:29:55",
+  "mod_user_sn": "1"
+}

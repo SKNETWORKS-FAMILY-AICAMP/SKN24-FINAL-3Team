@@ -1,0 +1,17 @@
+{
+  "prj_net_sn": "3",
+  "prj_sn": "1",
+  "prj_net_nm": "데이터 수집·분석 플랫폼망",
+  "prj_net_prps": "외부 데이터 수집, 비동기 적재, 데이터 정제, 분석 API, 검색 인덱싱, 파일 적재와 대시보드 조회 흐름을 처리하는 플랫폼망",
+  "mid_stack": "React, Node.js, Express, TypeScript, Prisma, PostgreSQL, MinIO, Kafka, Elasticsearch, Redis, Docker, Grafana",
+  "fwl_settings": "외부 수집 API는 전용 Ingress를 경유하고, DB·검색엔진·MinIO는 내부 서비스 계정으로만 접근한다.",
+  "auth_method": "OAuth2, JWT, 서비스 계정 토큰, Kafka SASL 인증",
+  "expected_smtn": "120",
+  "cloud_yn": "Y",
+  "hard_spec": "Express API Pod 3개 이상, Kafka 3노드, PostgreSQL 관리형 DB, MinIO Object Storage, Elasticsearch 3노드",
+  "etc_note": "데이터 적재와 검색, 분석 결과 조회를 동시에 지원한다.",
+  "reg_dt": "2026-06-16 14:29:55",
+  "reg_user_sn": "1",
+  "mod_dt": "2026-06-16 14:29:55",
+  "mod_user_sn": "1"
+}
