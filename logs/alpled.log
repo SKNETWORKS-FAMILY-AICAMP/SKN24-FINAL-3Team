@@ -1867,3 +1867,801 @@ LIMIT 1
 2026-06-21 17:56:53,014 | INFO | workflow.nodes.cleanup_node | request_id=ea4030ca-5d26-4bc8-a699-7d35dbab8746 | phase=cleanup_complete | Cleanup completed
 2026-06-21 17:56:53,016 | INFO | api.generation_router | request_id=ea4030ca-5d26-4bc8-a699-7d35dbab8746 | phase=generate_workflow_invoke_complete | Generation workflow invocation completed status=DONE
 2026-06-21 17:56:53,018 | INFO | main | request_id=ea4030ca-5d26-4bc8-a699-7d35dbab8746 | phase=http_request_complete | HTTP request completed status=202
+2026-06-21 18:25:44,727 | INFO | main | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=http_request_start | HTTP request started POST /generate
+2026-06-21 18:25:44,737 | INFO | api.generation_router | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=generate_request_received | Generate request received payload={"project_sn":1,"docs_cd":"ARCH","udt_yn":"N","file_list":[60],"image_list":[],"etc":{"debug":true,"request_id":"73c1fdd0-cbeb-4512-8522-807327e58f15"}}
+2026-06-21 18:25:44,739 | INFO | api.generation_router | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=generate_workflow_invoke_start | Invoking generation workflow
+2026-06-21 18:25:44,749 | INFO | workflow.nodes.request_preprocess_node | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=preprocess_start | Request preprocessing started
+2026-06-21 18:25:44,750 | INFO | workflow.nodes.request_preprocess_node | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=preprocess_validate_request | Validating request payload
+2026-06-21 18:25:44,750 | INFO | workflow.nodes.request_preprocess_node | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=preprocess_validate_project | Validating project
+2026-06-21 18:25:45,056 | INFO | workflow.nodes.request_preprocess_node | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=preprocess_download_files | Resolving input files
+2026-06-21 18:25:46,044 | INFO | workflow.nodes.request_preprocess_node | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=preprocess_download_images | Resolving input images
+2026-06-21 18:25:46,044 | INFO | workflow.nodes.request_preprocess_node | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=preprocess_resolve_required_documents | Resolving prerequisite documents
+2026-06-21 18:25:46,390 | INFO | workflow.nodes.request_preprocess_node | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=preprocess_mark_generating | Marking document as generating
+2026-06-21 18:25:46,406 | INFO | workflow.nodes.request_preprocess_node | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=preprocess_complete | Request preprocessing completed files=1 images=0
+2026-06-21 18:25:46,430 | INFO | workflow.nodes.generation_supervisor_node | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_start | Generation supervisor node started
+2026-06-21 18:25:46,432 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_plan_built | Initial supervisor plan built
+2026-06-21 18:25:46,433 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_round_start | Supervisor round started round=1
+2026-06-21 18:25:46,433 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_step_start | Supervisor step started agent=document_merge_agent retry=0
+2026-06-21 18:25:46,441 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_step_done | Supervisor step completed agent=document_merge_agent
+2026-06-21 18:25:46,441 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_step_start | Supervisor step started agent=architecture_analysis_agent retry=0
+2026-06-21 18:33:24,162 | INFO | sentence_transformers.base.model | request_id=- | phase=- | No device provided, using cpu
+2026-06-21 18:33:24,164 | INFO | sentence_transformers.base.model | request_id=- | phase=- | No device provided, using cpu
+2026-06-21 18:33:24,171 | INFO | sentence_transformers.base.model | request_id=- | phase=- | No device provided, using cpu
+2026-06-21 18:33:24,171 | INFO | sentence_transformers.base.model | request_id=- | phase=- | No device provided, using cpu
+2026-06-21 18:33:24,425 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:24,445 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:24,470 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:24,485 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:24,495 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:24,501 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:24,515 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:24,521 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:24,697 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:24,712 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:24,717 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:24,722 | INFO | sentence_transformers.base.model | request_id=- | phase=- | Loading SentenceTransformer model from BAAI/bge-m3.
+2026-06-21 18:33:24,733 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:24,735 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:24,742 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:24,753 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:24,756 | INFO | sentence_transformers.base.model | request_id=- | phase=- | Loading SentenceTransformer model from BAAI/bge-m3.
+2026-06-21 18:33:24,766 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:24,774 | INFO | sentence_transformers.base.model | request_id=- | phase=- | Loading SentenceTransformer model from BAAI/bge-m3.
+2026-06-21 18:33:24,786 | INFO | sentence_transformers.base.model | request_id=- | phase=- | Loading SentenceTransformer model from BAAI/bge-m3.
+2026-06-21 18:33:24,939 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:24,952 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:24,973 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:24,984 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:24,992 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,004 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,014 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,027 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,167 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,180 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/README.md "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,204 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,217 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/README.md "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,238 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,242 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,251 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/README.md "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,259 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/README.md "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,393 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,407 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,426 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,445 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,468 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,486 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,498 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,500 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,627 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,641 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,660 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,677 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,717 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,728 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:25,730 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,740 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:25,866 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:25,898 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:25,949 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:25,952 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:26,073 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:26,083 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,142 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:26,163 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:26,167 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,180 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,181 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:26,195 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,447 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/model.safetensors "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:26,451 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/model.safetensors "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:26,452 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/model.safetensors "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:26,453 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/model.safetensors "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:26,676 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,689 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,701 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,708 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,911 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/main "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,939 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/main "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,943 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/main "HTTP/1.1 200 OK"
+2026-06-21 18:33:26,974 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/main "HTTP/1.1 200 OK"
+2026-06-21 18:33:27,156 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/discussions?p=0 "HTTP/1.1 200 OK"
+2026-06-21 18:33:27,186 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/discussions?p=0 "HTTP/1.1 200 OK"
+2026-06-21 18:33:27,192 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/discussions?p=0 "HTTP/1.1 200 OK"
+2026-06-21 18:33:27,222 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/discussions?p=0 "HTTP/1.1 200 OK"
+2026-06-21 18:33:27,390 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/refs%2Fpr%2F130 "HTTP/1.1 200 OK"
+2026-06-21 18:33:27,443 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/refs%2Fpr%2F130 "HTTP/1.1 200 OK"
+2026-06-21 18:33:27,467 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/refs%2Fpr%2F130 "HTTP/1.1 200 OK"
+2026-06-21 18:33:27,476 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/refs%2Fpr%2F130 "HTTP/1.1 200 OK"
+2026-06-21 18:33:27,628 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors.index.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:27,696 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors.index.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:27,707 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors.index.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:27,748 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors.index.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:27,879 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors "HTTP/1.1 302 Found"
+2026-06-21 18:33:27,955 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors "HTTP/1.1 302 Found"
+2026-06-21 18:33:27,971 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors "HTTP/1.1 302 Found"
+2026-06-21 18:33:27,993 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors "HTTP/1.1 302 Found"
+2026-06-21 18:33:29,039 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/processor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,048 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/processor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,055 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/processor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,057 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/processor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,255 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,277 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,285 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,297 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,475 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/video_preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,497 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/video_preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,507 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/video_preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,517 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/video_preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,697 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,724 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,739 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,742 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:29,912 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:29,930 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:29,942 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:29,961 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:29,963 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:29,966 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:29,979 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:29,986 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,145 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,159 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,217 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,220 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,230 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,253 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,256 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,257 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,402 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,416 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,519 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,526 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,537 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,538 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,569 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,572 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,633 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,665 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,794 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,809 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,840 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,842 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:30,856 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,862 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:30,900 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:31,027 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:31,080 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:31,099 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-06-21 18:33:31,116 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-06-21 18:33:31,375 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-06-21 18:33:31,376 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-06-21 18:33:31,733 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,081 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,111 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,112 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,114 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,416 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:45,418 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:45,419 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:45,423 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 18:33:45,442 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,444 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,446 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,449 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,669 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,674 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,682 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:45,688 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,116 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,121 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,122 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,124 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,561 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,568 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,572 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,584 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,988 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,991 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 18:33:48,991 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 18:33:49,219 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 18:33:49,317 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 18:33:49,333 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 18:48:53,305 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_step_done | Supervisor step completed agent=architecture_analysis_agent
+2026-06-21 18:48:53,306 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_step_start | Supervisor step started agent=mermaid_generation_agent retry=0
+2026-06-21 18:48:59,532 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_step_done | Supervisor step completed agent=mermaid_generation_agent
+2026-06-21 18:48:59,533 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_step_start | Supervisor step started agent=validation_agent retry=0
+2026-06-21 18:48:59,569 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_step_done | Supervisor step completed agent=validation_agent
+2026-06-21 18:48:59,569 | INFO | supervisor.generation_supervisor | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_reduce_outputs | Supervisor reducing agent outputs
+2026-06-21 18:48:59,571 | INFO | workflow.nodes.generation_supervisor_node | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=supervisor_complete | Generation supervisor node completed status=RUNNING
+2026-06-21 18:48:59,576 | ERROR | api.generation_router | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=generate_workflow_invoke_failed | Generation workflow invocation failed
+Traceback (most recent call last):
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 834, in _write_bytes
+    self._sock.sendall(data)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\ssl.py", line 1210, in sendall
+    v = self.send(byte_view[count:])
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\ssl.py", line 1179, in send
+    return self._sslobj.write(data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 10054] 현재 연결은 원격 호스트에 의해 강제로 끊겼습니다
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 1130, in _rollback_impl
+    self.engine.dialect.do_rollback(self.connection)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\default.py", line 712, in do_rollback
+    dbapi_connection.rollback()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 511, in rollback
+    self._execute_command(COMMAND.COM_QUERY, "ROLLBACK")
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 886, in _execute_command
+    self._write_bytes(packet)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 837, in _write_bytes
+    raise err.OperationalError(
+pymysql.err.OperationalError: (2006, "MySQL server has gone away (ConnectionResetError(10054, '현재 연결은 원격 호스트에 의해 강제로 끊겼습니다'))")
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\skn24\ALPLED-CORE\api\generation_router.py", line 53, in generate
+    result_state = await run_in_threadpool(workflow.invoke, state)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\concurrency.py", line 32, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\anyio\to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\anyio\_backends\_asyncio.py", line 2518, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\anyio\_backends\_asyncio.py", line 1002, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\pregel\main.py", line 3880, in invoke
+    for chunk in self.stream(
+                 ^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\pregel\main.py", line 2936, in stream
+    for _ in runner.tick(
+             ^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\pregel\_runner.py", line 207, in tick
+    run_with_retry(
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\pregel\_retry.py", line 585, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\_internal\_runnable.py", line 684, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\_internal\_runnable.py", line 426, in invoke
+    ret = self.func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\skn24\ALPLED-CORE\workflow\nodes\generation_supervisor_node.py", line 44, in generation_supervisor_node
+    session.close()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\orm\session.py", line 2528, in close
+    self._close_impl(invalidate=False)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\orm\session.py", line 2597, in _close_impl
+    transaction.close(invalidate)
+  File "<string>", line 2, in close
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\orm\state_changes.py", line 137, in _go
+    ret_value = fn(self, *arg, **kw)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\orm\session.py", line 1421, in close
+    transaction.close()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 2599, in close
+    self._do_close()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 2737, in _do_close
+    self._close_impl()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 2723, in _close_impl
+    self._connection_rollback_impl()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 2715, in _connection_rollback_impl
+    self.connection._rollback_impl()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 1132, in _rollback_impl
+    self._handle_dbapi_exception(e, None, None, None, None)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 1130, in _rollback_impl
+    self.engine.dialect.do_rollback(self.connection)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\default.py", line 712, in do_rollback
+    dbapi_connection.rollback()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 511, in rollback
+    self._execute_command(COMMAND.COM_QUERY, "ROLLBACK")
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 886, in _execute_command
+    self._write_bytes(packet)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 837, in _write_bytes
+    raise err.OperationalError(
+sqlalchemy.exc.OperationalError: (pymysql.err.OperationalError) (2006, "MySQL server has gone away (ConnectionResetError(10054, '현재 연결은 원격 호스트에 의해 강제로 끊겼습니다'))")
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+During task with name 'generation_supervisor_node' and id '1138c6b2-a9a4-ca79-8114-8bd547f5aa37'
+2026-06-21 18:48:59,621 | INFO | main | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=http_request_complete | HTTP request completed status=500
+2026-06-21 18:48:59,624 | ERROR | main | request_id=73c1fdd0-cbeb-4512-8522-807327e58f15 | phase=http_request_unhandled_exception | HTTP request raised an unhandled exception
+Traceback (most recent call last):
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 834, in _write_bytes
+    self._sock.sendall(data)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\ssl.py", line 1210, in sendall
+    v = self.send(byte_view[count:])
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\ssl.py", line 1179, in send
+    return self._sslobj.write(data)
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 10054] 현재 연결은 원격 호스트에 의해 강제로 끊겼습니다
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 1130, in _rollback_impl
+    self.engine.dialect.do_rollback(self.connection)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\default.py", line 712, in do_rollback
+    dbapi_connection.rollback()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 511, in rollback
+    self._execute_command(COMMAND.COM_QUERY, "ROLLBACK")
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 886, in _execute_command
+    self._write_bytes(packet)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 837, in _write_bytes
+    raise err.OperationalError(
+pymysql.err.OperationalError: (2006, "MySQL server has gone away (ConnectionResetError(10054, '현재 연결은 원격 호스트에 의해 강제로 끊겼습니다'))")
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\middleware\base.py", line 191, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+                                   ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\contextlib.py", line 158, in __exit__
+    self.gen.throw(value)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\_utils.py", line 87, in collapse_excgroups
+    raise exc
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\middleware\base.py", line 193, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\skn24\ALPLED-CORE\main.py", line 46, in request_logging_middleware
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\middleware\base.py", line 168, in call_next
+    raise app_exc from app_exc.__cause__ or app_exc.__context__
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\fastapi\middleware\asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\fastapi\routing.py", line 1574, in handle
+    await self.original_router.handle(scope, receive, send)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\fastapi\routing.py", line 2012, in handle
+    await included_router._handle_selected(scope, receive, send)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\fastapi\routing.py", line 1594, in _handle_selected
+    await original_route.handle(scope, receive, send)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\fastapi\routing.py", line 1183, in handle
+    await app(scope, receive, send)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\fastapi\routing.py", line 143, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\fastapi\routing.py", line 129, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\fastapi\routing.py", line 683, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\fastapi\routing.py", line 337, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\skn24\ALPLED-CORE\api\generation_router.py", line 53, in generate
+    result_state = await run_in_threadpool(workflow.invoke, state)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\starlette\concurrency.py", line 32, in run_in_threadpool
+    return await anyio.to_thread.run_sync(func)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\anyio\to_thread.py", line 63, in run_sync
+    return await get_async_backend().run_sync_in_worker_thread(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\anyio\_backends\_asyncio.py", line 2518, in run_sync_in_worker_thread
+    return await future
+           ^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\anyio\_backends\_asyncio.py", line 1002, in run
+    result = context.run(func, *args)
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\pregel\main.py", line 3880, in invoke
+    for chunk in self.stream(
+                 ^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\pregel\main.py", line 2936, in stream
+    for _ in runner.tick(
+             ^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\pregel\_runner.py", line 207, in tick
+    run_with_retry(
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\pregel\_retry.py", line 585, in run_with_retry
+    return task.proc.invoke(task.input, config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\_internal\_runnable.py", line 684, in invoke
+    input = context.run(step.invoke, input, config, **kwargs)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\langgraph\_internal\_runnable.py", line 426, in invoke
+    ret = self.func(*args, **kwargs)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\skn24\ALPLED-CORE\workflow\nodes\generation_supervisor_node.py", line 44, in generation_supervisor_node
+    session.close()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\orm\session.py", line 2528, in close
+    self._close_impl(invalidate=False)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\orm\session.py", line 2597, in _close_impl
+    transaction.close(invalidate)
+  File "<string>", line 2, in close
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\orm\state_changes.py", line 137, in _go
+    ret_value = fn(self, *arg, **kw)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\orm\session.py", line 1421, in close
+    transaction.close()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 2599, in close
+    self._do_close()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 2737, in _do_close
+    self._close_impl()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 2723, in _close_impl
+    self._connection_rollback_impl()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 2715, in _connection_rollback_impl
+    self.connection._rollback_impl()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 1132, in _rollback_impl
+    self._handle_dbapi_exception(e, None, None, None, None)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 2365, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\base.py", line 1130, in _rollback_impl
+    self.engine.dialect.do_rollback(self.connection)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\sqlalchemy\engine\default.py", line 712, in do_rollback
+    dbapi_connection.rollback()
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 511, in rollback
+    self._execute_command(COMMAND.COM_QUERY, "ROLLBACK")
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 886, in _execute_command
+    self._write_bytes(packet)
+  File "C:\Users\Playdata\anaconda3\envs\aidlc_env\Lib\site-packages\pymysql\connections.py", line 837, in _write_bytes
+    raise err.OperationalError(
+sqlalchemy.exc.OperationalError: (pymysql.err.OperationalError) (2006, "MySQL server has gone away (ConnectionResetError(10054, '현재 연결은 원격 호스트에 의해 강제로 끊겼습니다'))")
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+During task with name 'generation_supervisor_node' and id '1138c6b2-a9a4-ca79-8114-8bd547f5aa37'
+2026-06-21 18:50:17,662 | INFO | main | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=http_request_start | HTTP request started POST /generate
+2026-06-21 18:50:17,666 | INFO | api.generation_router | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=generate_request_received | Generate request received payload={"project_sn":1,"docs_cd":"ARCH","udt_yn":"Y","file_list":[2],"image_list":[],"etc":{"debug":true,"request_id":"6eed4024-65a4-416c-bcab-1d597a8f3e83"}}
+2026-06-21 18:50:17,666 | INFO | api.generation_router | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=generate_workflow_invoke_start | Invoking generation workflow
+2026-06-21 18:50:17,670 | INFO | workflow.nodes.request_preprocess_node | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=preprocess_start | Request preprocessing started
+2026-06-21 18:50:17,671 | INFO | workflow.nodes.request_preprocess_node | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=preprocess_validate_request | Validating request payload
+2026-06-21 18:50:17,671 | INFO | workflow.nodes.request_preprocess_node | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=preprocess_validate_project | Validating project
+2026-06-21 18:50:17,829 | INFO | workflow.nodes.request_preprocess_node | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=preprocess_download_files | Resolving input files
+2026-06-21 18:50:18,059 | INFO | workflow.nodes.request_preprocess_node | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=preprocess_download_images | Resolving input images
+2026-06-21 18:50:18,060 | INFO | workflow.nodes.request_preprocess_node | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=preprocess_resolve_required_documents | Resolving prerequisite documents
+2026-06-21 18:50:18,360 | INFO | workflow.nodes.request_preprocess_node | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=preprocess_mark_generating | Marking document as generating
+2026-06-21 18:50:18,370 | INFO | workflow.nodes.request_preprocess_node | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=preprocess_complete | Request preprocessing completed files=1 images=0
+2026-06-21 18:50:18,394 | INFO | workflow.nodes.generation_supervisor_node | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=supervisor_start | Generation supervisor node started
+2026-06-21 18:50:18,396 | INFO | supervisor.generation_supervisor | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=supervisor_plan_built | Initial supervisor plan built
+2026-06-21 18:50:18,396 | INFO | supervisor.generation_supervisor | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=supervisor_round_start | Supervisor round started round=1
+2026-06-21 18:50:18,398 | INFO | supervisor.generation_supervisor | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=supervisor_step_start | Supervisor step started agent=document_merge_agent retry=0
+2026-06-21 18:53:06,525 | INFO | supervisor.generation_supervisor | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=supervisor_step_done | Supervisor step completed agent=document_merge_agent
+2026-06-21 18:53:06,525 | INFO | supervisor.generation_supervisor | request_id=6eed4024-65a4-416c-bcab-1d597a8f3e83 | phase=supervisor_step_start | Supervisor step started agent=architecture_analysis_agent retry=0
+2026-06-21 19:02:45,794 | INFO | main | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=http_request_start | HTTP request started POST /generate
+2026-06-21 19:02:45,802 | INFO | api.generation_router | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=generate_request_received | Generate request received payload={"project_sn":1,"docs_cd":"ARCH","udt_yn":"N","file_list":[60],"image_list":[],"etc":{"debug":true,"request_id":"80306197-4c4c-46a0-89b4-7f8f1dbbfe23"}}
+2026-06-21 19:02:45,803 | INFO | api.generation_router | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=generate_workflow_invoke_start | Invoking generation workflow
+2026-06-21 19:02:45,814 | INFO | workflow.nodes.request_preprocess_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=preprocess_start | Request preprocessing started
+2026-06-21 19:02:45,815 | INFO | workflow.nodes.request_preprocess_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=preprocess_validate_request | Validating request payload
+2026-06-21 19:02:45,815 | INFO | workflow.nodes.request_preprocess_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=preprocess_validate_project | Validating project
+2026-06-21 19:02:46,033 | INFO | workflow.nodes.request_preprocess_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=preprocess_download_files | Resolving input files
+2026-06-21 19:02:46,840 | INFO | workflow.nodes.request_preprocess_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=preprocess_download_images | Resolving input images
+2026-06-21 19:02:46,841 | INFO | workflow.nodes.request_preprocess_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=preprocess_resolve_required_documents | Resolving prerequisite documents
+2026-06-21 19:02:47,070 | INFO | workflow.nodes.request_preprocess_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=preprocess_mark_generating | Marking document as generating
+2026-06-21 19:02:47,079 | INFO | workflow.nodes.request_preprocess_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=preprocess_complete | Request preprocessing completed files=1 images=0
+2026-06-21 19:02:47,098 | INFO | workflow.nodes.generation_supervisor_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_start | Generation supervisor node started
+2026-06-21 19:02:47,099 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_plan_built | Initial supervisor plan built
+2026-06-21 19:02:47,100 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_round_start | Supervisor round started round=1
+2026-06-21 19:02:47,100 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_step_start | Supervisor step started agent=document_merge_agent retry=0
+2026-06-21 19:02:47,104 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_step_done | Supervisor step completed agent=document_merge_agent
+2026-06-21 19:02:47,104 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_step_start | Supervisor step started agent=architecture_analysis_agent retry=0
+2026-06-21 19:04:47,774 | INFO | sentence_transformers.base.model | request_id=- | phase=- | No device provided, using cpu
+2026-06-21 19:04:47,779 | INFO | sentence_transformers.base.model | request_id=- | phase=- | No device provided, using cpu
+2026-06-21 19:04:47,783 | INFO | sentence_transformers.base.model | request_id=- | phase=- | No device provided, using cpu
+2026-06-21 19:04:47,787 | INFO | sentence_transformers.base.model | request_id=- | phase=- | No device provided, using cpu
+2026-06-21 19:04:48,092 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,133 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,136 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,159 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,165 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,181 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,216 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,220 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,389 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,400 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,405 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,410 | INFO | sentence_transformers.base.model | request_id=- | phase=- | Loading SentenceTransformer model from BAAI/bge-m3.
+2026-06-21 19:04:48,415 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,422 | INFO | sentence_transformers.base.model | request_id=- | phase=- | Loading SentenceTransformer model from BAAI/bge-m3.
+2026-06-21 19:04:48,441 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,449 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,454 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,460 | INFO | sentence_transformers.base.model | request_id=- | phase=- | Loading SentenceTransformer model from BAAI/bge-m3.
+2026-06-21 19:04:48,466 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,473 | INFO | sentence_transformers.base.model | request_id=- | phase=- | Loading SentenceTransformer model from BAAI/bge-m3.
+2026-06-21 19:04:48,623 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,644 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,645 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,660 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,670 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,688 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,689 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,707 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config_sentence_transformers.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,864 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,879 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/README.md "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,881 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,894 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/README.md "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,904 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,918 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/README.md "HTTP/1.1 200 OK"
+2026-06-21 19:04:48,925 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:48,939 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/README.md "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,123 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,124 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,140 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,140 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,141 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,157 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,162 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,172 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/modules.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,381 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,389 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,392 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,395 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,398 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,403 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,407 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,419 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/sentence_bert_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,629 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:49,638 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:49,639 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:49,645 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:49,856 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,872 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,876 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,880 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,886 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,892 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:49,909 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:49,922 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:50,261 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/model.safetensors "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:50,262 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/model.safetensors "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:50,275 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/model.safetensors "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:50,276 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/model.safetensors "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:50,486 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:04:50,498 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:04:50,510 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:04:50,515 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:04:50,729 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/main "HTTP/1.1 200 OK"
+2026-06-21 19:04:50,754 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/main "HTTP/1.1 200 OK"
+2026-06-21 19:04:50,765 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/main "HTTP/1.1 200 OK"
+2026-06-21 19:04:50,767 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/main "HTTP/1.1 200 OK"
+2026-06-21 19:04:50,978 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/discussions?p=0 "HTTP/1.1 200 OK"
+2026-06-21 19:04:51,008 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/discussions?p=0 "HTTP/1.1 200 OK"
+2026-06-21 19:04:51,022 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/discussions?p=0 "HTTP/1.1 200 OK"
+2026-06-21 19:04:51,034 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/discussions?p=0 "HTTP/1.1 200 OK"
+2026-06-21 19:04:51,220 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/refs%2Fpr%2F130 "HTTP/1.1 200 OK"
+2026-06-21 19:04:51,267 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/refs%2Fpr%2F130 "HTTP/1.1 200 OK"
+2026-06-21 19:04:51,283 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/refs%2Fpr%2F130 "HTTP/1.1 200 OK"
+2026-06-21 19:04:51,297 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/commits/refs%2Fpr%2F130 "HTTP/1.1 200 OK"
+2026-06-21 19:04:51,437 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors.index.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:51,566 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors.index.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:51,575 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors.index.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:51,578 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors.index.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:51,660 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors "HTTP/1.1 302 Found"
+2026-06-21 19:04:51,823 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors "HTTP/1.1 302 Found"
+2026-06-21 19:04:51,825 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors "HTTP/1.1 302 Found"
+2026-06-21 19:04:51,829 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/refs%2Fpr%2F130/model.safetensors "HTTP/1.1 302 Found"
+2026-06-21 19:04:53,323 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/processor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,519 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/processor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,534 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/processor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,543 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/processor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,557 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,745 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,752 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,758 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,770 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/video_preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,970 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/video_preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,972 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/video_preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,981 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/video_preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:53,988 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:54,202 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:54,203 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,204 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:54,205 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/preprocessor_config.json "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:54,221 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,432 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,435 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,439 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,447 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,455 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,457 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,466 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,471 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,667 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,681 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,694 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,704 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,705 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,712 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,720 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,725 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,914 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,931 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,949 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,962 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,964 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:54,980 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:54,981 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:55,006 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:55,154 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:55,167 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:55,203 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:55,217 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:55,230 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:04:55,231 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:55,249 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/tokenizer_config.json "HTTP/1.1 200 OK"
+2026-06-21 19:04:55,383 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:55,443 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:55,449 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-06-21 19:04:55,473 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+2026-06-21 19:04:55,709 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-06-21 19:04:55,710 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-06-21 19:04:56,179 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,014 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,410 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,446 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,449 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,454 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:05:13,546 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,739 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:05:13,749 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:05:13,754 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,758 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/BAAI/bge-m3/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+2026-06-21 19:05:13,765 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,779 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,781 | INFO | httpx | request_id=- | phase=- | HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/BAAI/bge-m3/5617a9f61b028005a4858fdac845db406aefb181/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,979 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:05:13,994 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:05:14,019 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET https://huggingface.co/api/models/BAAI/bge-m3 "HTTP/1.1 200 OK"
+2026-06-21 19:05:17,988 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:05:18,001 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:05:18,002 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:05:18,004 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:05:18,436 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:05:18,437 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:05:18,445 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:05:18,447 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:05:19,139 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:05:19,143 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:05:19,146 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:05:19,420 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:05:19,451 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:05:19,468 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:10:23,656 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_step_done | Supervisor step completed agent=architecture_analysis_agent
+2026-06-21 19:10:23,657 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_step_start | Supervisor step started agent=mermaid_generation_agent retry=0
+2026-06-21 19:10:26,410 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_step_done | Supervisor step completed agent=mermaid_generation_agent
+2026-06-21 19:10:26,411 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_step_start | Supervisor step started agent=validation_agent retry=0
+2026-06-21 19:10:26,435 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_step_done | Supervisor step completed agent=validation_agent
+2026-06-21 19:10:26,436 | INFO | supervisor.generation_supervisor | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_reduce_outputs | Supervisor reducing agent outputs
+2026-06-21 19:10:26,437 | INFO | workflow.nodes.generation_supervisor_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=supervisor_complete | Generation supervisor node completed status=RUNNING
+2026-06-21 19:10:26,461 | INFO | workflow.nodes.export_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=export_validate_state | Export validation started
+2026-06-21 19:10:28,086 | INFO | workflow.nodes.export_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=export_upload | Uploading exported document
+2026-06-21 19:10:28,507 | INFO | workflow.nodes.export_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=export_complete | Export completed storage_file_path=s3://alpled-s3/project/1/ARCH/ARCH_1_20260621191026506626.docx
+2026-06-21 19:10:28,510 | INFO | workflow.nodes.cleanup_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=cleanup_start | Cleanup started
+2026-06-21 19:10:28,522 | INFO | workflow.nodes.cleanup_node | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=cleanup_complete | Cleanup completed
+2026-06-21 19:10:28,525 | INFO | api.generation_router | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=generate_workflow_invoke_complete | Generation workflow invocation completed status=DONE
+2026-06-21 19:10:28,548 | INFO | main | request_id=80306197-4c4c-46a0-89b4-7f8f1dbbfe23 | phase=http_request_complete | HTTP request completed status=202
+2026-06-21 19:17:34,277 | INFO | main | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=http_request_start | HTTP request started POST /generate
+2026-06-21 19:17:34,280 | INFO | api.generation_router | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=generate_request_received | Generate request received payload={"project_sn":1,"docs_cd":"ARCH","udt_yn":"Y","file_list":[2],"image_list":[],"etc":{"debug":true,"request_id":"f4f2503c-095b-47c2-8c64-944394c920d3"}}
+2026-06-21 19:17:34,281 | INFO | api.generation_router | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=generate_workflow_invoke_start | Invoking generation workflow
+2026-06-21 19:17:34,284 | INFO | workflow.nodes.request_preprocess_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=preprocess_start | Request preprocessing started
+2026-06-21 19:17:34,284 | INFO | workflow.nodes.request_preprocess_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=preprocess_validate_request | Validating request payload
+2026-06-21 19:17:34,285 | INFO | workflow.nodes.request_preprocess_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=preprocess_validate_project | Validating project
+2026-06-21 19:17:34,302 | INFO | workflow.nodes.request_preprocess_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=preprocess_download_files | Resolving input files
+2026-06-21 19:17:34,523 | INFO | workflow.nodes.request_preprocess_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=preprocess_download_images | Resolving input images
+2026-06-21 19:17:34,524 | INFO | workflow.nodes.request_preprocess_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=preprocess_resolve_required_documents | Resolving prerequisite documents
+2026-06-21 19:17:34,565 | WARNING | workflow.nodes.request_preprocess_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=- | Failed to parse docs_dtl_cn as JSON: Unterminated string starting at: line 1 column 46559 (char 46558)
+2026-06-21 19:17:34,888 | INFO | workflow.nodes.request_preprocess_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=preprocess_mark_generating | Marking document as generating
+2026-06-21 19:17:34,896 | INFO | workflow.nodes.request_preprocess_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=preprocess_complete | Request preprocessing completed files=1 images=0
+2026-06-21 19:17:34,935 | INFO | workflow.nodes.generation_supervisor_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_start | Generation supervisor node started
+2026-06-21 19:17:34,936 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_plan_built | Initial supervisor plan built
+2026-06-21 19:17:34,936 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_round_start | Supervisor round started round=1
+2026-06-21 19:17:34,937 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_step_start | Supervisor step started agent=document_merge_agent retry=0
+2026-06-21 19:20:33,874 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_step_done | Supervisor step completed agent=document_merge_agent
+2026-06-21 19:20:33,875 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_step_start | Supervisor step started agent=architecture_analysis_agent retry=0
+2026-06-21 19:30:38,392 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_step_done | Supervisor step completed agent=architecture_analysis_agent
+2026-06-21 19:30:38,393 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_step_start | Supervisor step started agent=mermaid_generation_agent retry=0
+2026-06-21 19:30:40,445 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_step_done | Supervisor step completed agent=mermaid_generation_agent
+2026-06-21 19:30:40,445 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_step_start | Supervisor step started agent=validation_agent retry=0
+2026-06-21 19:30:40,449 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_step_done | Supervisor step completed agent=validation_agent
+2026-06-21 19:30:40,450 | INFO | supervisor.generation_supervisor | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_reduce_outputs | Supervisor reducing agent outputs
+2026-06-21 19:30:40,450 | INFO | workflow.nodes.generation_supervisor_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=supervisor_complete | Generation supervisor node completed status=RUNNING
+2026-06-21 19:30:40,467 | INFO | workflow.nodes.export_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=export_validate_state | Export validation started
+2026-06-21 19:30:41,047 | INFO | workflow.nodes.export_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=export_upload | Uploading exported document
+2026-06-21 19:30:41,344 | INFO | workflow.nodes.export_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=export_complete | Export completed storage_file_path=s3://alpled-s3/project/1/ARCH/ARCH_1_20260621193040494501.docx
+2026-06-21 19:30:41,346 | INFO | workflow.nodes.cleanup_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=cleanup_start | Cleanup started
+2026-06-21 19:30:41,360 | INFO | workflow.nodes.cleanup_node | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=cleanup_complete | Cleanup completed
+2026-06-21 19:30:41,363 | INFO | api.generation_router | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=generate_workflow_invoke_complete | Generation workflow invocation completed status=DONE
+2026-06-21 19:30:41,366 | INFO | main | request_id=f4f2503c-095b-47c2-8c64-944394c920d3 | phase=http_request_complete | HTTP request completed status=202
+2026-06-21 19:37:42,344 | INFO | main | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=http_request_start | HTTP request started POST /generate
+2026-06-21 19:37:42,348 | INFO | api.generation_router | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=generate_request_received | Generate request received payload={"project_sn":1,"docs_cd":"ARCH","udt_yn":"N","file_list":[60],"image_list":[],"etc":{"debug":true,"request_id":"5e8f9d5d-bb76-4245-8cdd-9c9c045ec536"}}
+2026-06-21 19:37:42,348 | INFO | api.generation_router | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=generate_workflow_invoke_start | Invoking generation workflow
+2026-06-21 19:37:42,351 | INFO | workflow.nodes.request_preprocess_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=preprocess_start | Request preprocessing started
+2026-06-21 19:37:42,352 | INFO | workflow.nodes.request_preprocess_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=preprocess_validate_request | Validating request payload
+2026-06-21 19:37:42,352 | INFO | workflow.nodes.request_preprocess_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=preprocess_validate_project | Validating project
+2026-06-21 19:37:42,371 | INFO | workflow.nodes.request_preprocess_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=preprocess_download_files | Resolving input files
+2026-06-21 19:37:42,640 | INFO | workflow.nodes.request_preprocess_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=preprocess_download_images | Resolving input images
+2026-06-21 19:37:42,640 | INFO | workflow.nodes.request_preprocess_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=preprocess_resolve_required_documents | Resolving prerequisite documents
+2026-06-21 19:37:42,960 | INFO | workflow.nodes.request_preprocess_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=preprocess_mark_generating | Marking document as generating
+2026-06-21 19:37:42,967 | INFO | workflow.nodes.request_preprocess_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=preprocess_complete | Request preprocessing completed files=1 images=0
+2026-06-21 19:37:42,986 | INFO | workflow.nodes.generation_supervisor_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_start | Generation supervisor node started
+2026-06-21 19:37:42,986 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_plan_built | Initial supervisor plan built
+2026-06-21 19:37:42,986 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_round_start | Supervisor round started round=1
+2026-06-21 19:37:42,987 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_step_start | Supervisor step started agent=document_merge_agent retry=0
+2026-06-21 19:37:42,990 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_step_done | Supervisor step completed agent=document_merge_agent
+2026-06-21 19:37:42,990 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_step_start | Supervisor step started agent=architecture_analysis_agent retry=0
+2026-06-21 19:39:33,127 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,231 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,232 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,233 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,249 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,480 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,542 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,615 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,617 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,731 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,858 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:39:33,908 | INFO | httpx | request_id=- | phase=- | HTTP Request: GET http://3.36.145.124:6333 "HTTP/1.1 200 OK"
+2026-06-21 19:39:34,042 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:39:34,093 | INFO | httpx | request_id=- | phase=- | HTTP Request: POST http://3.36.145.124:6333/collections/ALPLED_reference/points/query "HTTP/1.1 200 OK"
+2026-06-21 19:53:35,266 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_step_done | Supervisor step completed agent=architecture_analysis_agent
+2026-06-21 19:53:35,266 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_step_start | Supervisor step started agent=mermaid_generation_agent retry=0
+2026-06-21 19:53:37,509 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_step_done | Supervisor step completed agent=mermaid_generation_agent
+2026-06-21 19:53:37,510 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_step_start | Supervisor step started agent=validation_agent retry=0
+2026-06-21 19:53:37,530 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_step_done | Supervisor step completed agent=validation_agent
+2026-06-21 19:53:37,531 | INFO | supervisor.generation_supervisor | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_reduce_outputs | Supervisor reducing agent outputs
+2026-06-21 19:53:37,531 | INFO | workflow.nodes.generation_supervisor_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=supervisor_complete | Generation supervisor node completed status=RUNNING
+2026-06-21 19:53:37,551 | INFO | workflow.nodes.export_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=export_validate_state | Export validation started
+2026-06-21 19:53:38,440 | INFO | workflow.nodes.export_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=export_upload | Uploading exported document
+2026-06-21 19:53:38,884 | INFO | workflow.nodes.export_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=export_complete | Export completed storage_file_path=s3://alpled-s3/project/1/ARCH/ARCH_1_20260621195337583952.docx
+2026-06-21 19:53:38,886 | INFO | workflow.nodes.cleanup_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=cleanup_start | Cleanup started
+2026-06-21 19:53:38,894 | INFO | workflow.nodes.cleanup_node | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=cleanup_complete | Cleanup completed
+2026-06-21 19:53:38,897 | INFO | api.generation_router | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=generate_workflow_invoke_complete | Generation workflow invocation completed status=DONE
+2026-06-21 19:53:38,902 | INFO | main | request_id=5e8f9d5d-bb76-4245-8cdd-9c9c045ec536 | phase=http_request_complete | HTTP request completed status=202
+2026-06-21 19:55:40,095 | INFO | main | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=http_request_start | HTTP request started POST /generate
+2026-06-21 19:55:40,097 | INFO | api.generation_router | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=generate_request_received | Generate request received payload={"project_sn":1,"docs_cd":"ARCH","udt_yn":"Y","file_list":[2],"image_list":[],"etc":{"debug":true,"request_id":"7af54250-3bb2-4f95-a944-e8d00aad8270"}}
+2026-06-21 19:55:40,097 | INFO | api.generation_router | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=generate_workflow_invoke_start | Invoking generation workflow
+2026-06-21 19:55:40,101 | INFO | workflow.nodes.request_preprocess_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=preprocess_start | Request preprocessing started
+2026-06-21 19:55:40,102 | INFO | workflow.nodes.request_preprocess_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=preprocess_validate_request | Validating request payload
+2026-06-21 19:55:40,103 | INFO | workflow.nodes.request_preprocess_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=preprocess_validate_project | Validating project
+2026-06-21 19:55:40,125 | INFO | workflow.nodes.request_preprocess_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=preprocess_download_files | Resolving input files
+2026-06-21 19:55:40,546 | INFO | workflow.nodes.request_preprocess_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=preprocess_download_images | Resolving input images
+2026-06-21 19:55:40,547 | INFO | workflow.nodes.request_preprocess_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=preprocess_resolve_required_documents | Resolving prerequisite documents
+2026-06-21 19:55:40,747 | INFO | workflow.nodes.request_preprocess_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=preprocess_existing_output_raw_json | Existing ARCH output JSON loaded from docs_dtl_cn
+2026-06-21 19:55:41,332 | INFO | workflow.nodes.request_preprocess_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=preprocess_mark_generating | Marking document as generating
+2026-06-21 19:55:41,402 | INFO | workflow.nodes.request_preprocess_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=preprocess_complete | Request preprocessing completed files=1 images=0
+2026-06-21 19:55:41,424 | INFO | workflow.nodes.generation_supervisor_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_start | Generation supervisor node started
+2026-06-21 19:55:41,427 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_plan_built | Initial supervisor plan built
+2026-06-21 19:55:41,428 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_round_start | Supervisor round started round=1
+2026-06-21 19:55:41,431 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_step_start | Supervisor step started agent=document_merge_agent retry=0
+2026-06-21 19:58:11,126 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_step_done | Supervisor step completed agent=document_merge_agent
+2026-06-21 19:58:11,127 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_step_start | Supervisor step started agent=architecture_analysis_agent retry=0
+2026-06-21 20:08:05,771 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_step_done | Supervisor step completed agent=architecture_analysis_agent
+2026-06-21 20:08:05,771 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_step_start | Supervisor step started agent=mermaid_generation_agent retry=0
+2026-06-21 20:08:07,849 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_step_done | Supervisor step completed agent=mermaid_generation_agent
+2026-06-21 20:08:07,849 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_step_start | Supervisor step started agent=validation_agent retry=0
+2026-06-21 20:08:07,853 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_step_done | Supervisor step completed agent=validation_agent
+2026-06-21 20:08:07,854 | INFO | supervisor.generation_supervisor | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_reduce_outputs | Supervisor reducing agent outputs
+2026-06-21 20:08:07,854 | INFO | workflow.nodes.generation_supervisor_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=supervisor_complete | Generation supervisor node completed status=RUNNING
+2026-06-21 20:08:07,874 | INFO | workflow.nodes.export_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=export_validate_state | Export validation started
+2026-06-21 20:08:08,546 | INFO | workflow.nodes.export_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=export_upload | Uploading exported document
+2026-06-21 20:08:08,846 | INFO | workflow.nodes.export_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=export_complete | Export completed storage_file_path=s3://alpled-s3/project/1/ARCH/ARCH_1_20260621200807902157.docx
+2026-06-21 20:08:08,847 | INFO | workflow.nodes.cleanup_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=cleanup_start | Cleanup started
+2026-06-21 20:08:08,856 | INFO | workflow.nodes.cleanup_node | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=cleanup_complete | Cleanup completed
+2026-06-21 20:08:08,856 | INFO | api.generation_router | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=generate_workflow_invoke_complete | Generation workflow invocation completed status=DONE
+2026-06-21 20:08:08,859 | INFO | main | request_id=7af54250-3bb2-4f95-a944-e8d00aad8270 | phase=http_request_complete | HTTP request completed status=202

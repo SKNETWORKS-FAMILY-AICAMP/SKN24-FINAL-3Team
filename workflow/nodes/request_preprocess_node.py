@@ -236,7 +236,18 @@ def _resolve_required_documents(
         # ARCH 수정 모드에서만 docs_dtl_cn에 저장된 기존 산출물 JSON을 state에 싣습니다.
         # 다른 산출물 수정 흐름에는 영향이 없도록 docs_cd == "ARCH" 조건으로 제한합니다.
         if docs_cd == "ARCH":
+            raw_value = _read_value(active_doc, "docs_dtl_cn")
+            print("[ARCH_PREPROCESS_DEBUG] docs_dtl_cn type =", type(raw_value))
+            print("[ARCH_PREPROCESS_DEBUG] docs_dtl_cn length =", len(raw_value) if raw_value else None)
+
             existing_output_raw_json = _read_docs_detail_json(active_doc)
+
+            print("[ARCH_PREPROCESS_DEBUG] existing_output_raw_json loaded =", bool(existing_output_raw_json))
+            print(
+                "[ARCH_PREPROCESS_DEBUG] existing_output_raw_json keys =",
+                list(existing_output_raw_json.keys()) if isinstance(existing_output_raw_json, dict) else None,
+            )
+
             if existing_output_raw_json:
                 state["existing_output_raw_json"] = existing_output_raw_json
                 _log_info(
