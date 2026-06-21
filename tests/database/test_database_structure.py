@@ -12,6 +12,7 @@ from database.models import (
     File,
     Project,
 )
+from database.repositories.docs_detail_repository import _normalize_docs_ver
 from database.repositories import DocsDetailRepository, FileRepository
 from database.session import SessionLocal
 
@@ -40,6 +41,13 @@ class DatabaseStructureTest(unittest.TestCase):
         self.assertIn("docs_path", DocsDetail.__table__.columns)
         self.assertIn("file_ext", File.__table__.columns)
         self.assertNotIn("file_sn", DocsDetail.__table__.columns)
+        self.assertEqual(Docs.__table__.columns["docs_ver"].default.arg, "0")
+
+    def test_docs_version_defaults_to_initial_draft_version(self) -> None:
+        self.assertEqual(_normalize_docs_ver(None), "0")
+        self.assertEqual(_normalize_docs_ver(""), "0")
+        self.assertEqual(_normalize_docs_ver("v1.0"), "v1.0")
+        self.assertEqual(_normalize_docs_ver("1"), "1")
 
     def test_repository_signatures_exist(self) -> None:
         docs_methods = {
