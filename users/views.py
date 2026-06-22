@@ -1,3 +1,4 @@
+import json
 import re
 from urllib.parse import urlsplit
 
@@ -353,6 +354,45 @@ def _delete_user(request):
         messages.success(request, "연결된 데이터가 있어 사용자를 비활성화했습니다.")
 
 
+def _role_display_name(role):
+    role_code = getattr(role, "role_id", "") or getattr(getattr(role, "role", None), "code", "") or ""
+    role_name = getattr(getattr(role, "role", None), "name", "") or ""
+    if role_name:
+        return role_name
+    if role_code == "ROLE_MANAGER":
+        return "프로젝트 관리자"
+    if role_code == "ROLE_MEMBER":
+        return "담당자"
+    return role_code or "-"
+
+
+def _build_user_project_role_payloads(user_rows):
+    user_sns = [getattr(user, "sn", None) for user in user_rows]
+    user_sns = [user_sn for user_sn in user_sns if user_sn is not None]
+    payloads = {str(user_sn): [] for user_sn in user_sns}
+    if not user_sns:
+        return payloads
+
+    project_roles = (
+        ProjectUserRole.objects.filter(
+            user_id__in=user_sns,
+            project__is_deleted=YesNoChoices.NO,
+        )
+        .select_related("project", "role")
+        .order_by("user_id", "project__sn", "sn")
+    )
+    for project_role in project_roles:
+        role_code = project_role.role_id or ""
+        payloads.setdefault(str(project_role.user_id), []).append(
+            {
+                "projectName": project_role.project.name,
+                "roleCode": role_code,
+                "roleName": _role_display_name(project_role),
+            }
+        )
+    return payloads
+
+
 @login_required(login_url="home")
 def temp_password_notice(request):
     if request.user.tmpr_pswd_yn != YesNoChoices.YES:
@@ -443,11 +483,17 @@ def user_list(request):
     user_rows = list(users[:10]) if users.exists() else _demo_users()
     selected_user = users.first() if users.exists() else None
 
+    role_payloads_by_user = _build_user_project_role_payloads(user_rows)
+    for user in user_rows:
+        user_sn = getattr(user, "sn", None)
+        payload = role_payloads_by_user.get(str(user_sn), []) if user_sn is not None else []
+        setattr(user, "project_role_json", json.dumps(payload, ensure_ascii=False))
+
     if selected_user is not None:
         project_roles = (
-            ProjectUserRole.objects.filter(user=selected_user)
+            ProjectUserRole.objects.filter(user=selected_user, project__is_deleted=YesNoChoices.NO)
             .select_related("project", "role")
-            .order_by("sn")
+            .order_by("project__sn", "sn")
         )
         role_rows = list(project_roles) if project_roles.exists() else []
     else:

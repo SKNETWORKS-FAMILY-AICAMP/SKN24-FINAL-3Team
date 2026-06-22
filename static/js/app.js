@@ -493,6 +493,56 @@
     window.location.assign(profileUrl);
   }
 
+  function parseUserProjectRoles(row) {
+    const raw = row?.dataset?.userProjectRoles || "[]";
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+
+  function renderUserProjectRoles(modal, roles) {
+    const list = modal?.querySelector("[data-user-project-role-list]");
+    if (!list) return;
+
+    list.innerHTML = "";
+
+    if (!Array.isArray(roles) || roles.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "rounded-xl bg-white px-4 py-3 text-sm text-slate-500";
+      empty.textContent = "소속 프로젝트가 없습니다.";
+      list.appendChild(empty);
+      return;
+    }
+
+    roles.forEach((role) => {
+      const item = document.createElement("div");
+      item.className = "flex items-center justify-between rounded-xl bg-white px-4 py-3 shadow-sm";
+
+      const textWrap = document.createElement("div");
+      const projectName = document.createElement("p");
+      projectName.className = "text-sm font-medium text-slate-900";
+      projectName.textContent = role.projectName || "-";
+
+      const roleName = document.createElement("p");
+      roleName.className = "mt-1 text-xs text-slate-500";
+      roleName.textContent = role.roleName || role.roleCode || "-";
+
+      textWrap.appendChild(projectName);
+      textWrap.appendChild(roleName);
+
+      const badge = document.createElement("span");
+      badge.className = "rounded-lg bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600";
+      badge.textContent = "연결됨";
+
+      item.appendChild(textWrap);
+      item.appendChild(badge);
+      list.appendChild(item);
+    });
+  }
+
   function populateUserDetail(row) {
     const modal = document.getElementById("user-detail-modal");
     if (!modal) return;
@@ -511,6 +561,7 @@
     setValue("#user-detail-position", row.dataset.userPosition);
     setValue("#user-detail-active", row.dataset.userUseYn);
     setValue("#user-detail-temp-password-yn", row.dataset.userTempPasswordYn);
+    renderUserProjectRoles(modal, parseUserProjectRoles(row));
   }
 
   function getProjectSearchModal() {
@@ -1375,15 +1426,12 @@
       return;
     }
 
-    const isReadonlyAssignments = projectForm.dataset.projectReadonlyAssignments === "true";
-    if (!isReadonlyAssignments) {
-      const managerIds = getProjectRoleInput("manager")?.value.trim() || "";
-      const memberIds = getProjectRoleInput("member")?.value.trim() || "";
-      if (!managerIds && !memberIds) {
-        showAppAlert("최소 1명의 사용자를 추가해야 합니다.", "warning");
-        event.preventDefault();
-        return;
-      }
+    const managerIds = getProjectRoleInput("manager")?.value.trim() || "";
+    const memberIds = getProjectRoleInput("member")?.value.trim() || "";
+    if (!managerIds && !memberIds) {
+      showAppAlert("최소 1명의 사용자를 추가해야 합니다.", "warning");
+      event.preventDefault();
+      return;
     }
 
     event.preventDefault();
