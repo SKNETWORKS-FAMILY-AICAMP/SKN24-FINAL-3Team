@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 from agents.data_structure_design.db_quality import prepare_db_quality
 from agents.data_structure_design.erd_quality import prepare_erd_quality
-from config.constants import DOCS_CODES, FILE_CODE_DOCUMENT_JSON_MAP, FILE_CODE_REQUIREMENT_JSON
+from config.constants import DOCS_CODES, FILE_CODE_REQUIREMENT_JSON
 from config.logging_config import get_logger
 from config.logging_context import bind_state_log_extra
 from config.settings import Settings, get_settings
@@ -129,7 +129,7 @@ def export_node(
                 final_document_json,
             )
 
-        final_json_record = _export_final_json(
+        requirement_json_record = _export_requirement_json_if_needed(
             state=state,
             project_sn=project_sn,
             docs_cd=docs_cd,
@@ -213,14 +213,26 @@ def export_node(
             "project_sn": project_sn,
             "docs_cd": docs_cd,
             "file_sn": None,
-            "final_json_file_sn": final_json_record.get("file_sn"),
-            "final_json_file_path": final_json_record.get("storage_file_path", ""),
-            "requirement_json_file_sn": final_json_record.get("file_sn")
-            if docs_cd == "SRS"
-            else None,
-            "requirement_json_file_path": final_json_record.get("storage_file_path", "")
-            if docs_cd == "SRS"
-            else "",
+            "final_json_file_sn": (
+                requirement_json_record.get("file_sn")
+                if requirement_json_record
+                else None
+            ),
+            "final_json_file_path": (
+                requirement_json_record.get("storage_file_path", "")
+                if requirement_json_record
+                else ""
+            ),
+            "requirement_json_file_sn": (
+                requirement_json_record.get("file_sn")
+                if requirement_json_record
+                else None
+            ),
+            "requirement_json_file_path": (
+                requirement_json_record.get("storage_file_path", "")
+                if requirement_json_record
+                else ""
+            ),
             "local_file_path": generated_local_file_path,
             "storage_file_path": storage_file_path,
             "file_name": generated_file_name,
@@ -348,7 +360,7 @@ def _validate_state(state: WorkflowState) -> tuple[int, DocsCode, dict[str, Any]
     return project_sn, docs_cd, final_document_json
 
 
-def _export_final_json(
+def _export_requirement_json_if_needed(
     *,
     state: WorkflowState,
     project_sn: int,
@@ -356,7 +368,10 @@ def _export_final_json(
     final_document_json: dict[str, Any],
     dependencies: ExportDependencies,
     settings: Settings,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
+    if docs_cd != "SRS":
+        return None
+
     file_name = _build_json_file_name(project_sn, docs_cd)
     local_file_path = settings.output_dir / file_name
     local_file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -372,12 +387,12 @@ def _export_final_json(
         upload_kwargs["storage_path"] = str(local_file_path)
 
     uploaded = dependencies.uploader(str(local_file_path), **upload_kwargs)
-    uploaded_data = _unwrap_tool_result(uploaded, "FINAL_JSON_UPLOAD_FAILED")
+    uploaded_data = _unwrap_tool_result(uploaded, "REQUIREMENT_JSON_UPLOAD_FAILED")
     storage_file_path = str(uploaded_data["storage_file_path"])
 
     file_record = dependencies.file_repository.insert_file(
         project_sn=project_sn,
-        file_cd=_final_json_file_code(docs_cd),
+        file_cd=FILE_CODE_REQUIREMENT_JSON,
         file_nm=file_name,
         file_path=storage_file_path,
         file_size=local_file_path.stat().st_size,
@@ -391,10 +406,6 @@ def _export_final_json(
         "file_name": file_name,
         "file_size": local_file_path.stat().st_size,
     }
-
-
-def _final_json_file_code(docs_cd: DocsCode) -> str:
-    return FILE_CODE_DOCUMENT_JSON_MAP.get(str(docs_cd), FILE_CODE_REQUIREMENT_JSON)
 
 
 def _enrich_final_document_json_for_export(
