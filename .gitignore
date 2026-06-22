@@ -15,6 +15,8 @@ venv.bak/
 db.sqlite3
 db.sqlite3-journal
 media/                # 사용자가 업로드한 파일 폴더 (서버 용량 및 보안)
+# 로컬 파일 관리 업로드 저장소
+.storage/project-files/
 staticfiles/          # collectstatic 명령어로 모인 정적 파일 폴더
 **/migrations/*.py
 !**/migrations/__init__.py
