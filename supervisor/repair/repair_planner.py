@@ -82,6 +82,21 @@ def build_repair_instruction(
     must_preserve = list(
         dict.fromkeys(item for kind in failure_types for item in _RULES[kind]["must_preserve"])
     )
+    if {
+        "ENTITY_GENERIC_NAME",
+        "ENTITY_NAME_MISMATCH",
+        "ENTITY_NAME_OVERLONG",
+        "ENTITY_NAME_SENTENCE",
+    } & set(failure_types):
+        must_preserve = [
+            item for item in must_preserve if item not in {"entity_name", "logical_name"}
+        ]
+    if "ENTITY_DESCRIPTION_MISMATCH" in failure_types:
+        must_preserve = [
+            item for item in must_preserve if item != "entity_description"
+        ]
+    if "ENTITY_ATTRIBUTE_MISMATCH" in failure_types:
+        must_preserve = [item for item in must_preserve if item != "columns"]
     if "FK_RELATION_MISSING" in failure_types:
         must_preserve = [item for item in must_preserve if item != "relationships"]
     forbidden_changes = [

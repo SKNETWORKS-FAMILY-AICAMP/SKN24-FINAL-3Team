@@ -114,16 +114,32 @@ def apply_meeting_erd_requirements(
                     table.setdefault("columns", []).append(_template_column(column_name, "조직 번호", constraints=["FK"]))
                     report["added_columns"].append(f"{table_name}.{column_name}")
         for parent, child in requirement.get("required_relationships", []):
-            if not _has_table(updated_tables, parent):
-                updated_tables.append(_template_table(parent, parent))
+            parent_table = _find_table(updated_tables, parent)
+            if parent_table is None:
+                parent_table = _template_table(parent, parent)
+                updated_tables.append(parent_table)
                 report["added_tables"].append(parent)
-            if not _has_table(updated_tables, child):
-                updated_tables.append(_template_table(child, child))
+            child_table = _find_table(updated_tables, child)
+            if child_table is None:
+                child_table = _template_table(child, child)
+                updated_tables.append(child_table)
                 report["added_tables"].append(child)
-            if _has_table(updated_tables, parent) and _has_table(updated_tables, child):
-                relation_key = f"{parent}->{child}"
-                if not _has_relationship(updated_relationships, parent, child):
-                    updated_relationships.append(_template_relationship(parent, child, len(updated_relationships) + 1))
+            if parent_table is not None and child_table is not None:
+                actual_parent = _table_name(parent_table)
+                actual_child = _table_name(child_table)
+                parent_column = _ensure_primary_key(parent_table)
+                child_column = _ensure_foreign_key(child_table, parent_column, parent_table)
+                relation_key = f"{actual_parent}->{actual_child}"
+                if not _has_relationship(updated_relationships, actual_parent, actual_child):
+                    updated_relationships.append(
+                        _template_relationship(
+                            actual_parent,
+                            parent_column,
+                            actual_child,
+                            child_column,
+                            len(updated_relationships) + 1,
+                        )
+                    )
                     report["added_relationships"].append(relation_key)
 
     return updated_tables, _dedupe_relationships(updated_relationships), report
@@ -134,16 +150,8 @@ def evaluate_meeting_erd_requirements(
     relationships: list[Any],
     requirements: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    table_names = {
-        str(table.get("physical_name") or table.get("table_name") or "")
-        for table in tables
-        if isinstance(table, dict)
-    }
-    table_map = {
-        str(table.get("physical_name") or table.get("table_name") or ""): table
-        for table in tables
-        if isinstance(table, dict)
-    }
+    table_names = {_table_name(table) for table in tables if isinstance(table, dict)}
+    table_map = {_table_name(table): table for table in tables if isinstance(table, dict)}
     relation_pairs = {
         (
             str(relation.get("parent_table") or relation.get("source") or relation.get("from") or ""),
@@ -166,9 +174,10 @@ def evaluate_meeting_erd_requirements(
         table_satisfied = True
         for table_name in requirement.get("required_tables", []):
             alternatives = set(requirement.get("alternative_tables", []))
-            if table_name in table_names:
-                reflected_tables.append(table_name)
-                reflected_for_requirement["tables"].append(table_name)
+            resolved = _resolve_existing_table_name(tables, table_name)
+            if resolved:
+                reflected_tables.append(resolved)
+                reflected_for_requirement["tables"].append(resolved)
             elif alternatives & table_names:
                 reflected = sorted(alternatives & table_names)[0]
                 reflected_tables.append(reflected)
@@ -180,7 +189,8 @@ def evaluate_meeting_erd_requirements(
         for column_requirement in requirement.get("required_columns", []):
             table_name = str(column_requirement.get("table") or "")
             column_name = str(column_requirement.get("column") or "")
-            table = table_map.get(table_name)
+            resolved_table_name = _resolve_existing_table_name(tables, table_name)
+            table = table_map.get(resolved_table_name)
             alternative_tables = set(requirement.get("alternative_tables", []))
             alternative_reflected = bool(alternative_tables & table_names)
             if table and _has_column(table, column_name):
@@ -197,8 +207,10 @@ def evaluate_meeting_erd_requirements(
 
         required_relationships = requirement.get("required_relationships", [])
         for parent, child in required_relationships:
-            if (parent, child) in relation_pairs:
-                item = f"{parent}->{child}"
+            actual_parent = _resolve_existing_table_name(tables, parent) or parent
+            actual_child = _resolve_existing_table_name(tables, child) or child
+            if (actual_parent, actual_child) in relation_pairs:
+                item = f"{actual_parent}->{actual_child}"
                 reflected_relationships.append(item)
                 reflected_for_requirement["relationships"].append(item)
             else:
@@ -259,8 +271,9 @@ def _has_table(tables: list[dict[str, Any]], table_name: str) -> bool:
 
 
 def _find_table(tables: list[dict[str, Any]], table_name: str) -> dict[str, Any] | None:
+    requested_aliases = _table_aliases(table_name)
     for table in tables:
-        if str(table.get("physical_name") or table.get("table_name") or "") == table_name:
+        if _table_aliases(_table_name(table)) & requested_aliases:
             return table
     return None
 
@@ -323,15 +336,112 @@ def _template_column(
     }
 
 
-def _template_relationship(parent: str, child: str, index: int) -> dict[str, Any]:
+def _template_relationship(
+    parent: str,
+    parent_column: str,
+    child: str,
+    child_column: str,
+    index: int,
+) -> dict[str, Any]:
     return {
         "relationship_id": f"REL-MEETING-{index:03d}",
         "parent_table": parent,
+        "parent_column": parent_column,
         "child_table": child,
+        "child_column": child_column,
+        "to_table": parent,
+        "to_column": parent_column,
+        "from_table": child,
+        "from_column": child_column,
         "relationship_type": "1:N",
         "label": "references",
         "meeting_reflected": True,
     }
+
+
+def _table_name(table: dict[str, Any]) -> str:
+    return str(table.get("physical_name") or table.get("table_name") or "")
+
+
+def _table_aliases(table_name: str) -> set[str]:
+    normalized = str(table_name or "").strip().lower()
+    aliases = {normalized}
+    alias_groups = (
+        {"tbl_docs", "tbl_document"},
+        {"tbl_role", "tbl_auth_role"},
+        {"tbl_org", "tbl_organization"},
+    )
+    for group in alias_groups:
+        if normalized in group:
+            aliases.update(group)
+    return aliases
+
+
+def _resolve_existing_table_name(tables: list[Any], table_name: str) -> str:
+    table = _find_table(
+        [item for item in tables if isinstance(item, dict)],
+        table_name,
+    )
+    return _table_name(table) if table is not None else ""
+
+
+def _ensure_primary_key(table: dict[str, Any]) -> str:
+    for column in table.get("columns", []):
+        if not isinstance(column, dict):
+            continue
+        constraints = {str(item).upper() for item in column.get("constraints", [])}
+        if column.get("pk") in {"Y", True} or "PK" in constraints:
+            return str(column.get("physical_name") or column.get("column_name") or "")
+    table_name = _table_name(table)
+    base = table_name.removeprefix("tbl_") or "entity"
+    column_name = f"{base}_sn"
+    table.setdefault("columns", []).insert(
+        0,
+        _template_column(
+            column_name,
+            f"{table.get('logical_name') or table.get('entity_name') or base} 일련번호",
+            constraints=["PK", "AUTO_INCREMENT"],
+            nullable=False,
+        ),
+    )
+    return column_name
+
+
+def _ensure_foreign_key(
+    child_table: dict[str, Any],
+    parent_column: str,
+    parent_table: dict[str, Any],
+) -> str:
+    parent_base = _table_name(parent_table).removeprefix("tbl_")
+    child_column = parent_column or f"{parent_base}_sn"
+    if not _has_column(child_table, child_column):
+        logical_parent = str(
+            parent_table.get("logical_name")
+            or parent_table.get("entity_name")
+            or parent_base
+        )
+        child_table.setdefault("columns", []).append(
+            _template_column(
+                child_column,
+                f"{logical_parent} 일련번호",
+                constraints=["FK"],
+                nullable=False,
+            )
+        )
+    else:
+        for column in child_table.get("columns", []):
+            if not isinstance(column, dict):
+                continue
+            if str(column.get("physical_name") or column.get("column_name") or "") == child_column:
+                constraints = [
+                    str(item) for item in column.get("constraints", []) if str(item)
+                ]
+                if "FK" not in {item.upper() for item in constraints}:
+                    constraints.append("FK")
+                column["constraints"] = constraints
+                column["fk"] = "Y"
+                break
+    return child_column
 
 
 def _logical_table_name(table_name: str, label: str) -> str:

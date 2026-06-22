@@ -106,6 +106,12 @@ def rank_parent_candidates(
         if fk_type and fk_type == _normalized_type(pk_column):
             score += 10
             reasons.append("data_type_compatible")
+        structural_tokens = parent_tokens & _STRUCTURAL_TOKENS
+        if structural_tokens and not (fk_tokens & structural_tokens):
+            score -= 30
+            reasons.append(
+                f"structural_variant_penalty:{','.join(sorted(structural_tokens))}"
+            )
         # 타입 일치만으로는 부모 후보 근거가 되지 않습니다.
         if score <= 10:
             continue
@@ -126,9 +132,9 @@ def rank_parent_candidates(
 
 
 def _can_auto_select(candidates: list[dict[str, Any]]) -> bool:
-    if not candidates or int(candidates[0]["score"]) < 70:
+    if not candidates or int(candidates[0]["score"]) < 60:
         return False
-    return len(candidates) == 1 or int(candidates[0]["score"]) - int(candidates[1]["score"]) >= 15
+    return len(candidates) == 1 or int(candidates[0]["score"]) - int(candidates[1]["score"]) >= 20
 
 
 _IDENTIFIER_ALIASES = {
@@ -223,6 +229,20 @@ _SEMANTIC_ALIASES = {
     "updater": "actor",
     "owner": "actor",
     "assignee": "actor",
+}
+
+_STRUCTURAL_TOKENS = {
+    "version",
+    "버전",
+    "history",
+    "hist",
+    "이력",
+    "log",
+    "로그",
+    "detail",
+    "상세",
+    "step",
+    "단계",
 }
 
 

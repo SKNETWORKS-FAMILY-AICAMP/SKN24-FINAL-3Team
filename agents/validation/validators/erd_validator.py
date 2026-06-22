@@ -41,15 +41,23 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
             generic_names.append(entity_scope)
         columns = table["columns"] if isinstance(table["columns"], list) else []
         inferred = _infer_entity_name_from_table(table)
-        if inferred and entity_name and not _same_concept(entity_name, inferred):
-            name_mismatches.append(entity_scope)
-        if _description_mismatch(entity_name, table):
-            description_mismatches.append(entity_scope)
+        description_mismatch = _description_mismatch(entity_name, table)
         mismatched_columns = [
             _column_scope(entity_scope, column)
             for column in columns
             if isinstance(column, dict) and _attribute_mismatch(entity_name, column)
         ]
+        # 물리명은 보조 근거입니다. 설명과 대표 속성이 모두 일치한다면 물리명 토큰만으로
+        # 논리 엔티티명을 실패시키지 않습니다.
+        if (
+            inferred
+            and entity_name
+            and not _same_concept(entity_name, inferred)
+            and (description_mismatch or bool(mismatched_columns))
+        ):
+            name_mismatches.append(entity_scope)
+        if description_mismatch:
+            description_mismatches.append(entity_scope)
         attribute_mismatches.extend(mismatched_columns)
         if any(
             not isinstance(column, dict)
@@ -244,9 +252,33 @@ def _entity_from_table_name(value: Any) -> str:
         "notification": "알림",
         "job": "작업",
         "log": "로그",
+        "dept": "부서",
+        "department": "부서",
+        "menu": "메뉴",
+        "product": "상품",
+        "prompt": "프롬프트",
+        "template": "템플릿",
+        "approval": "승인",
+        "embedding": "임베딩",
+        "index": "색인",
+        "counsel": "상담",
+        "status": "상태",
+        "hist": "이력",
+        "code": "코드",
+        "config": "설정",
+        "model": "모델",
+        "llm": "LLM",
+        "rag": "RAG",
+        "ml": "ML",
     }
+    tokens = set(re.findall(r"[a-z0-9]+", text))
     for key, label in aliases.items():
-        if text == key or text.startswith(f"{key}_") or text.endswith(f"_{key}"):
+        if (
+            text == key
+            or text.startswith(f"{key}_")
+            or text.endswith(f"_{key}")
+            or key in tokens
+        ):
             return label
     return ""
 

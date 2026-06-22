@@ -64,9 +64,12 @@ def entity_name_needs_llm_review(value: Any) -> bool:
         return True
     if len(text) > MAX_ENTITY_NAME_LENGTH or "_" in text or "\n" in text:
         return True
-    if len(text.split()) >= 5:
-        return True
-    return bool(re.search(r"(?:합니다|한다|하여야|기능|요구사항|기본사항|정보를\s*관리)", text))
+    return bool(
+        re.search(
+            r"(?:합니다|됩니다|한다|된다|하여야|해야\s*함|기능|요구사항|기본사항|정보를\s*관리)",
+            text,
+        )
+    )
 
 
 def _normalize_column_flags(
@@ -225,7 +228,9 @@ def _inspect_entity_names(tables: list[dict[str, Any]], errors: list[dict[str, A
 def _inspect_semantic_duplicates(tables: list[dict[str, Any]], errors: list[dict[str, Any]]) -> None:
     by_key: dict[str, list[str]] = {}
     for table in tables:
-        key = re.sub(r"[\s_-]+", "", _entity_name(table)).lower()
+        name_key = re.sub(r"[\s_-]+", "", _entity_name(table)).lower()
+        role_key = _structural_role(table)
+        key = f"{name_key}:{role_key}" if name_key else ""
         if key:
             by_key.setdefault(key, []).append(str(table.get("entity_id") or _table_name(table)))
     for scopes in by_key.values():
@@ -241,6 +246,36 @@ def _inspect_semantic_duplicates(tables: list[dict[str, Any]], errors: list[dict
                     "LLM 카탈로그 검토에서 의미 중복 엔티티로 판정되었습니다.",
                 )
             )
+
+
+def _structural_role(table: dict[str, Any]) -> str:
+    explicit = str(table.get("table_type") or "").strip().upper()
+    if explicit:
+        return explicit
+    text = " ".join(
+        [
+            _table_name(table),
+            _entity_name(table),
+            str(table.get("entity_description") or table.get("description") or ""),
+        ]
+    ).lower()
+    role_patterns = (
+        ("JOB_STEP", r"(?:job[_\s-]?step|작업\s*단계)"),
+        ("VERSION", r"(?:version|ver(?:sion)?|버전)"),
+        ("HISTORY", r"(?:history|hist|이력)"),
+        ("LOG", r"(?:log|로그)"),
+        ("MAPPING", r"(?:mapping|map|매핑|연결)"),
+        ("DETAIL", r"(?:detail|상세|detail_item)"),
+        ("CONFIG", r"(?:config|setting|설정)"),
+        ("FILE", r"(?:file|파일|첨부)"),
+        ("APPROVAL", r"(?:approval|approve|승인|결재)"),
+        ("JOB", r"(?:job|task|작업)"),
+        ("CODE", r"(?:code|코드)"),
+    )
+    for role, pattern in role_patterns:
+        if re.search(pattern, text):
+            return role
+    return "MASTER"
 
 
 def _inspect_relation_consistency(
