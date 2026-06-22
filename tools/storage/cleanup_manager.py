@@ -65,6 +65,7 @@ def cleanup_workflow_resources(
         state.get("erd_file_path"),
         state.get("interface_file_path"),
         state.get("existing_output_path"),
+        state.get("requested_output_path"),
         state.get("mermaid_file_path"),
         config.temp_dir,
         config.extract_image_dir,

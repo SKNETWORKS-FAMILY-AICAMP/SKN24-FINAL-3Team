@@ -42,6 +42,66 @@ class DocsDetailRepository:
         ).mappings().first()
         return _normalize_docs_row(row)
 
+    def find_update_detail_context(
+        self,
+        project_sn: int,
+        docs_cd: DocsCode,
+        request_docs_detail_sn: int,
+    ) -> dict[str, Any] | None:
+        requested = self.session.execute(
+            text(
+                """
+                SELECT d.docs_sn, d.prj_sn, d.docs_cd,
+                       dd.docs_dtl_sn, dd.docs_dtl_cn, dd.docs_path,
+                       dd.del_yn, dd.crt_dt
+                FROM tbl_docs d
+                JOIN tbl_docs_detail dd ON dd.docs_sn = d.docs_sn
+                WHERE d.prj_sn = :project_sn
+                  AND d.docs_cd = :docs_cd
+                  AND dd.docs_dtl_sn = :request_docs_detail_sn
+                  AND dd.del_yn = 'N'
+                """
+            ),
+            {
+                "project_sn": project_sn,
+                "docs_cd": _to_db_docs_cd(docs_cd),
+                "request_docs_detail_sn": request_docs_detail_sn,
+            },
+        ).mappings().first()
+        if requested is None:
+            return None
+        before = self.session.execute(
+            text(
+                """
+                SELECT dd.docs_dtl_sn, dd.docs_dtl_cn, dd.docs_path,
+                       dd.del_yn, dd.crt_dt
+                FROM tbl_docs_detail dd
+                WHERE dd.docs_sn = :docs_sn
+                  AND dd.docs_dtl_sn <> :request_docs_detail_sn
+                  AND dd.del_yn = 'N'
+                  AND (
+                        dd.crt_dt < :request_crt_dt
+                        OR (
+                            dd.crt_dt = :request_crt_dt
+                            AND dd.docs_dtl_sn < :request_docs_detail_sn
+                        )
+                  )
+                ORDER BY dd.crt_dt DESC, dd.docs_dtl_sn DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "docs_sn": requested["docs_sn"],
+                "request_docs_detail_sn": request_docs_detail_sn,
+                "request_crt_dt": requested["crt_dt"],
+            },
+        ).mappings().first()
+        return {
+            "docs_sn": int(requested["docs_sn"]),
+            "requested": _normalize_docs_row(requested),
+            "before": _normalize_docs_row(before),
+        }
+
     def update_docs_status_generating(
         self,
         project_sn: int,

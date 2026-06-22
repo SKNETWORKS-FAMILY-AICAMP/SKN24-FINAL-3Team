@@ -85,7 +85,8 @@ def _semantic_conflicts(
 ) -> list[dict[str, Any]]:
     if not pairs:
         return []
-    client = llm_client or LLMClient()
+    pairs = pairs[:10]
+    client = llm_client or LLMClient(timeout=30)
     response = client.chat(
         [
             {"role": "system", "content": CONSISTENCY_SYSTEM_PROMPT},
@@ -95,6 +96,11 @@ def _semantic_conflicts(
             },
         ],
         temperature=0,
+        max_tokens=1200,
+        extra_body={
+            "think": False,
+            "response_format": {"type": "json_object"},
+        },
     )
     if not response["success"]:
         return []

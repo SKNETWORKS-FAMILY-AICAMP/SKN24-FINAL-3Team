@@ -59,13 +59,6 @@ class Settings(BaseSettings):
     llm_timeout: float = Field(default=300, gt=0)
     llm_temperature: float = Field(default=0.2, ge=0)
     llm_max_tokens: int = Field(default=8192, gt=0)
-    requirement_docs_codes: list[str] = Field(
-        default_factory=lambda: ["SRS", "REQUIREMENT"]
-    )
-    fixed_status_codes: list[str] = Field(
-        default_factory=lambda: ["FIXED", "DOCS_FIXED", "PRGRS_FIX"]
-    )
-
     # Storage
     local_storage_root: Path = Path("./storage")
     input_dir: Path = Path("./storage/input")
@@ -83,7 +76,8 @@ class Settings(BaseSettings):
     log_file: Path = Path("./logs/alpled.log")
 
     # Supervisor
-    max_round: int = Field(default=3, ge=1)
+    # 최초 실행 1회 + 검증 실패 시 REPLAN 1회
+    max_round: int = Field(default=2, ge=1)
 
     @property
     def resolved_database_url(self) -> str:
