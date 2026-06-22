@@ -23,6 +23,8 @@ from .models import Document, DocumentApproval
 from .services import (
     ARCHITECTURE_DOCUMENT_CODE,
     INTERFACE_REFERENCE_DOCUMENT_CODE,
+    FILE_INPUT_DOCUMENT_CODES,
+    DERIVED_DOCUMENT_CODES,
     PROGRESS_COMPLETED,
     PROGRESS_FAILED,
     PROGRESS_PENDING,
@@ -178,9 +180,9 @@ def _build_generation_step_guide(document_code):
             "help": "선택한 문서를 기반으로 요구사항을 추출하고 사용자 요구사항 정의서 초안을 생성합니다.",
         },
         "DOC_ITF": {
-            "title": "사용자 인터페이스 설계서 생성",
-            "description": "사용자 인터페이스 설계서 생성을 위해 화면 UI 이미지 파일을 업로드해 주세요.",
-            "help": "업로드 가능한 형식은 PNG, JPG, JPEG이며 화면 단위로 여러 장을 등록할 수 있습니다.",
+            "title": "화면 설계서(사용자 인터페이스 설계서) 생성",
+            "description": "화면 설계서 생성을 위해 화면 UI 이미지 또는 와이어프레임 이미지를 업로드해 주세요.",
+            "help": "업로드된 이미지는 FastAPI 생성 요청의 image_list로 전달되며, 아키텍처 단계로 넘어가기 전에 최소 1개 이상 필요합니다.",
         },
         "DOC_ARCH": {
             "title": "아키텍처 설계서 생성",
@@ -517,8 +519,11 @@ def document_history_list(request):
     ensure_initial_reference_data()
     current_project, _ = resolve_current_project(request)
     actor = get_actor(request)
-    document_code = resolve_document_code(request.GET.get("docs_cd"))
-    selected_document_label = get_document_label(document_code)
+    raw_document_code = request.GET.get("docs_cd") or "all"
+    document_code = None if raw_document_code in ("", "all") else resolve_document_code(raw_document_code)
+    selected_document_code = document_code or "all"
+    selected_document_label = get_document_label(document_code) if document_code else "전체 산출물"
+    page_title = get_document_label(document_code) if document_code else "산출물 버전이력"
     generation_state = get_generation_state(request.session, current_project)
 
     documents = get_document_history_queryset(current_project, document_code)
@@ -526,25 +531,27 @@ def document_history_list(request):
     document_rows = build_document_rows(documents)
     can_generate = can_access_initial_generation(current_project, actor, generation_state)
     active_job = None
-    active_job_kind, active_job_document = get_running_history_job(current_project, document_code)
-    if active_job_document is not None:
-        active_job = _build_active_job_context(
-            _serialize_job_status(
-                request,
-                current_project,
-                document_code,
-                active_job_kind,
-                tracking_document_sn=active_job_document.sn,
+    if document_code:
+        active_job_kind, active_job_document = get_running_history_job(current_project, document_code)
+        if active_job_document is not None:
+            active_job = _build_active_job_context(
+                _serialize_job_status(
+                    request,
+                    current_project,
+                    document_code,
+                    active_job_kind,
+                    tracking_document_sn=active_job_document.sn,
+                )
             )
-        )
     context = {
         "active_menu": "doc_history",
-        "title": f"{selected_document_label} 버전 이력",
+        "title": page_title,
         "current_project": current_project,
         "documents": document_rows,
         "has_documents": bool(document_rows),
-        "selected_document_code": document_code,
+        "selected_document_code": selected_document_code,
         "selected_document_label": selected_document_label,
+        "document_type_choices": get_document_type_choices(include_all=True),
         "can_generate": can_generate,
         "generation_help_text": _build_history_help_text(can_generate),
         "active_job": active_job,
@@ -726,10 +733,12 @@ def document_generate(request):
     elif selected_is_current_step and current_step_code == ARCHITECTURE_DOCUMENT_CODE:
         can_start_current_generation = bool(architecture_networks and current_step_code and not generation_context["current_draft"])
         start_button_label = "아키텍처 설계서 생성"
-    elif selected_is_current_step:
+    elif selected_is_current_step and current_step_code in FILE_INPUT_DOCUMENT_CODES:
         can_start_current_generation = bool(
             generation_context["selected_files"] and current_step_code and not generation_context["current_draft"]
         )
+    elif selected_is_current_step and current_step_code in DERIVED_DOCUMENT_CODES:
+        can_start_current_generation = bool(current_step_code and not generation_context["current_draft"])
 
     if current_step_code:
         tracking_document_sn = getattr(generation_context["current_draft"], "sn", None)
@@ -774,7 +783,7 @@ def document_generate(request):
         "architecture_networks": architecture_networks,
         "architecture_form": architecture_form,
         "open_arch_form": open_arch_form,
-        "show_file_selector": selected_is_current_step and current_step_code not in {INTERFACE_REFERENCE_DOCUMENT_CODE, ARCHITECTURE_DOCUMENT_CODE},
+        "show_file_selector": selected_is_current_step and current_step_code in FILE_INPUT_DOCUMENT_CODES,
         "show_itf_upload": selected_is_current_step and current_step_code == INTERFACE_REFERENCE_DOCUMENT_CODE,
         "show_architecture_inputs": selected_is_current_step and current_step_code == ARCHITECTURE_DOCUMENT_CODE,
         "can_start_current_generation": can_start_current_generation,

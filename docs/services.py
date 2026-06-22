@@ -28,6 +28,8 @@ from .models import Document, DocumentApproval, DocumentDetail
 
 
 DOCUMENT_CODE_SEQUENCE = ("DOC_SRS", "DOC_ITF", "DOC_ARCH", "DOC_ERD", "DOC_DB", "DOC_TS")
+FILE_INPUT_DOCUMENT_CODES = {"DOC_SRS"}
+DERIVED_DOCUMENT_CODES = {"DOC_ERD", "DOC_DB", "DOC_TS"}
 
 APPROVAL_STATUS_SEQUENCE = ("APRV_REQ", "APRV_COM", "APRV_RJT")
 PROJECT_ROLE_CODES = ("ROLE_MANAGER", "ROLE_MEMBER")
@@ -435,14 +437,16 @@ def latest_confirmed_document(project, document_code, *, exclude_document_sn=Non
     return queryset.order_by("-created_at", "-sn").first()
 
 
-def get_document_history_queryset(project, document_code):
+def get_document_history_queryset(project, document_code=None):
     if project is None:
         return Document.objects.none()
 
+    queryset = Document.objects.filter(project=project).exclude(version="0")
+    if document_code and document_code != "all":
+        queryset = queryset.filter(document_type_id=document_code)
+
     return (
-        Document.objects.filter(project=project, document_type_id=document_code)
-        .exclude(version="0")
-        .annotate(
+        queryset.annotate(
             version_rank=Window(
                 expression=RowNumber(),
                 partition_by=[F("document_type_id"), F("version")],
@@ -451,7 +455,7 @@ def get_document_history_queryset(project, document_code):
         )
         .filter(version_rank=1)
         .select_related("document_type", "created_by", "possession_user")
-        .order_by("-created_at", "-sn")
+        .order_by("document_type_id", "-created_at", "-sn")
     )
 
 
@@ -613,10 +617,12 @@ def get_generation_reference_uris(state):
 #### fast api 요청 payload 만들기
 def build_generation_request_payload(project, state, document_code, *, update_mode="N", selected_files=None):
     image_list = get_generation_reference_uris(state) if document_code == INTERFACE_REFERENCE_DOCUMENT_CODE else []
-    if document_code in {INTERFACE_REFERENCE_DOCUMENT_CODE, ARCHITECTURE_DOCUMENT_CODE}:
-        files = []
-    else:
+    if document_code in FILE_INPUT_DOCUMENT_CODES:
         files = selected_files if selected_files is not None else get_generation_selected_files(project, state)
+    else:
+        # DOC_ITF는 image_list, DOC_ARCH는 tbl_project_net, DOC_ERD/DOC_DB/DOC_TS는
+        # DB에 저장된 이전 확정 산출물을 FastAPI가 project_sn으로 조회하는 구조입니다.
+        files = []
     return {
         "project_sn": project.sn,
         "docs_cd": document_code,
@@ -906,6 +912,13 @@ def build_generation_lines(project, document_code, inputs):
         for project_net in inputs:
             description = project_net.purpose or "목적 미입력"
             rows.append(f"- {project_net.name} ({description})")
+    elif document_code in DERIVED_DOCUMENT_CODES:
+        rows = [
+            f"{project.name} 프로젝트의 {label} 초안입니다.",
+            "직전 단계의 생성 완료 산출물을 기준으로 더미 자동 생성 결과를 구성했습니다.",
+        ]
+        for previous_document in inputs:
+            rows.append(f"- {get_document_label(previous_document.document_type_id)} v{previous_document.version}")
     else:
         rows = [
             f"{project.name} 프로젝트의 {label} 초안입니다.",
@@ -1237,6 +1250,12 @@ def get_generation_source_inputs(project, state, document_code):
         return get_generation_itf_references(state)
     if document_code == ARCHITECTURE_DOCUMENT_CODE:
         return get_project_nets(project)
+    if document_code in FILE_INPUT_DOCUMENT_CODES:
+        return get_generation_selected_files(project, state)
+    if document_code in DERIVED_DOCUMENT_CODES:
+        previous_code = get_previous_document_code(document_code)
+        previous_document = latest_confirmed_document(project, previous_code) if previous_code else None
+        return [previous_document] if previous_document is not None else []
     return get_generation_selected_files(project, state)
 
 
@@ -1245,8 +1264,12 @@ def get_generation_prerequisite_error(project, state, document_code):
         return "사용자 인터페이스 참고 이미지를 하나 이상 업로드해 주세요."
     if document_code == ARCHITECTURE_DOCUMENT_CODE and not get_project_nets(project):
         return "아키텍처 구성요소를 하나 이상 추가해 주세요."
-    if document_code not in {INTERFACE_REFERENCE_DOCUMENT_CODE, ARCHITECTURE_DOCUMENT_CODE} and not get_generation_selected_files(project, state):
+    if document_code in FILE_INPUT_DOCUMENT_CODES and not get_generation_selected_files(project, state):
         return "생성에 사용할 문서를 먼저 선택해 주세요."
+    if document_code in DERIVED_DOCUMENT_CODES:
+        previous_code = get_previous_document_code(document_code)
+        if previous_code and latest_confirmed_document(project, previous_code) is None:
+            return f"직전 단계인 {get_document_label(previous_code)} 생성 완료본이 필요합니다."
     return None
 
 
@@ -1265,25 +1288,43 @@ def is_generation_complete(state):
 def get_generation_progress_rows(state):
     rows = []
     current_code = get_current_generation_code(state)
+    confirmed_documents = state.get("confirmed_documents", {}) or {}
+    draft_documents = state.get("draft_documents", {}) or {}
+
     for code in get_document_code_sequence():
-        if code in state.get("confirmed_documents", {}):
+        document_sn = None
+        detail_url = ""
+        download_url = ""
+
+        if code in confirmed_documents or str(code) in confirmed_documents:
             status = "confirmed"
-            status_label = "확정 완료"
-        elif code in state.get("draft_documents", {}):
+            status_label = "생성 완료"
+            document_sn = confirmed_documents.get(code) or confirmed_documents.get(str(code))
+            if document_sn:
+                detail_url = reverse("doc_detail", args=[document_sn])
+                download_url = f'{reverse("doc_content", args=[document_sn])}?download=1'
+        elif code in draft_documents or str(code) in draft_documents:
             status = "review"
             status_label = "검토 중"
+            document_sn = draft_documents.get(code) or draft_documents.get(str(code))
+            if document_sn:
+                detail_url = reverse("doc_detail", args=[document_sn])
         elif current_code == code:
             status = "pending"
             status_label = "생성 대기"
         else:
             status = "locked"
             status_label = "이전 단계 대기"
+
         rows.append(
             {
                 "code": code,
                 "label": get_document_label(code),
                 "status": status,
                 "status_label": status_label,
+                "document_sn": document_sn,
+                "detail_url": detail_url,
+                "download_url": download_url,
             }
         )
     return rows
@@ -1572,7 +1613,9 @@ def build_document_rows(queryset):
                 "modification_content": document.modification_content or "-",
                 "created_at": document.created_at,
                 "detail_url": reverse("doc_detail", args=[document.sn]),
+                "download_url": f'{reverse("doc_content", args=[document.sn])}?download=1',
                 "locked_by_name": getattr(document.possession_user, "name", ""),
+                "status_label": "확정본",
             }
         )
     return rows

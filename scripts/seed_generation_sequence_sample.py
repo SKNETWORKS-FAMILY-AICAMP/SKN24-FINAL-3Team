@@ -1,22 +1,29 @@
 """
-산출물 생성 흐름을 순차적으로 테스트하기 위한 샘플 데이터 생성 스크립트.
+산출물 생성 흐름을 단계별로 테스트하기 위한 샘플 데이터 생성 스크립트입니다.
 
 실행 전:
     python manage.py migrate --run-syncdb
 
-실행 예시(CMD/Git Bash):
-    set GEN_SAMPLE_STEP=srs
-    python -X utf8 manage.py shell -c "exec(open('scripts/seed_generation_sequence_sample.py', encoding='utf-8').read())"
+CMD / Anaconda Prompt 예시:
+    set GEN_SAMPLE_STEP=arch_done && python -X utf8 manage.py shell -c "exec(open('scripts/seed_generation_sequence_sample.py', encoding='utf-8').read())"
 
-PowerShell:
-    $env:GEN_SAMPLE_STEP="arch_input"
-    python -X utf8 manage.py shell -c 'exec(open("scripts/seed_generation_sequence_sample.py", encoding="utf-8").read())'
+PowerShell 예시:
+    $env:GEN_SAMPLE_STEP="arch_done"; python -X utf8 manage.py shell -c 'exec(open("scripts/seed_generation_sequence_sample.py", encoding="utf-8").read())'
 
 GEN_SAMPLE_STEP 값:
-    srs        : RFP/회의록만 넣고 사용자 요구사항 정의서 단계부터 테스트
-    itf        : 사용자 요구사항 정의서 확정본까지 넣고 사용자 인터페이스 설계서 단계부터 테스트
-    arch_input : 사용자 요구사항 정의서 + 사용자 인터페이스 설계서 확정본까지 넣고 아키텍처 구성요소 입력 단계 테스트
-    arch_ready : arch_input 상태에 샘플 아키텍처 구성요소까지 넣고 아키텍처 생성 버튼 테스트
+    srs_wait   : RFP/회의록만 넣고 사용자 요구사항 정의서 생성 단계 테스트
+    srs_done   : 사용자 요구사항 정의서 생성 완료 → 사용자 인터페이스 설계서 단계 테스트
+    itf_done   : 사용자 인터페이스 설계서 생성 완료 → 아키텍처 구성요소 입력 단계 테스트
+    arch_ready : itf_done 상태 + 아키텍처 구성요소 샘플 등록 → 아키텍처 생성 버튼 테스트
+    arch_done  : 아키텍처 설계서 생성 완료 → ERD 생성 단계 테스트
+    erd_done   : ERD 생성 완료 → DB 설계서 생성 단계 테스트
+    db_done    : DB 설계서 생성 완료 → 테스트 시나리오 생성 단계 테스트
+    all_done   : 테스트 시나리오까지 전체 산출물 생성 완료 상태 테스트
+
+이전 명령 호환 alias:
+    srs        = srs_wait
+    itf        = srs_done
+    arch_input = itf_done
 
 로그인 계정:
     USER001 / abc1234  (프로젝트 관리자)
@@ -57,18 +64,31 @@ SAMPLE_PASSWORD = "abc1234"
 LOCAL_SAMPLE_BUCKET = "alpled-local"
 DOCX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 TEXT_CONTENT_TYPE = "text/plain; charset=utf-8"
-PNG_CONTENT_TYPE = "image/png"
 
 STEP_ORDER = {
-    "srs": 1,
-    "itf": 2,
-    "arch_input": 3,
-    "arch_ready": 4,
+    "srs_wait": 0,
+    "srs_done": 1,
+    "itf_done": 2,
+    "arch_ready": 2,
+    "arch_done": 3,
+    "erd_done": 4,
+    "db_done": 5,
+    "all_done": 6,
 }
 
-SAMPLE_STEP = os.getenv("GEN_SAMPLE_STEP", "arch_input").strip().lower()
+STEP_ALIAS = {
+    "srs": "srs_wait",
+    "itf": "srs_done",
+    "arch_input": "itf_done",
+}
+
+raw_step = os.getenv("GEN_SAMPLE_STEP", "itf_done").strip().lower()
+SAMPLE_STEP = STEP_ALIAS.get(raw_step, raw_step)
 if SAMPLE_STEP not in STEP_ORDER:
-    raise ValueError("GEN_SAMPLE_STEP은 srs, itf, arch_input, arch_ready 중 하나여야 합니다.")
+    raise ValueError(
+        "GEN_SAMPLE_STEP은 srs_wait, srs_done, itf_done, arch_ready, "
+        "arch_done, erd_done, db_done, all_done 중 하나여야 합니다."
+    )
 
 
 def _ensure_bucket_for_local_storage():
@@ -195,7 +215,7 @@ def _create_sample_input_files(project, actor):
         """
 AI 기반 SDLC 산출물 자동 생성 서비스를 구축한다.
 사용자는 프로젝트를 생성하고 RFP 및 회의록을 업로드할 수 있어야 한다.
-시스템은 사용자 요구사항 정의서, 사용자 인터페이스 설계서, 아키텍처 설계서를 순차적으로 생성하여야 한다.
+시스템은 사용자 요구사항 정의서, 사용자 인터페이스 설계서, 아키텍처 설계서, ERD, DB 설계서, 테스트 시나리오를 순차적으로 생성하여야 한다.
 프로젝트 관리자는 산출물 수정본을 검토하고 승인 또는 반려할 수 있어야 한다.
 """.strip(),
     )
@@ -205,9 +225,9 @@ AI 기반 SDLC 산출물 자동 생성 서비스를 구축한다.
         "FILE_MEETING",
         "SEQ_회의록_샘플.txt",
         """
-회의 결과, 산출물 생성은 요구사항 정의서 → 인터페이스 설계서 → 아키텍처 설계서 순서로 진행한다.
+회의 결과, 산출물 생성은 요구사항 정의서 → 인터페이스 설계서 → 아키텍처 설계서 → ERD → DB 설계서 → 테스트 시나리오 순서로 진행한다.
 아키텍처 설계서 생성 전에는 웹 UI, Django 애플리케이션, FastAPI Agent, MySQL, S3, Qdrant 구성요소를 입력한다.
-아키텍처 구성요소 입력은 산출물 생성 화면에서 처리한다.
+ERD 이후 산출물은 이전 생성 완료 산출물을 기준으로 이어서 생성한다.
 """.strip(),
     )
 
@@ -219,7 +239,7 @@ def _create_document(project, actor, document_code, version, title, lines):
         document_type_id=document_code,
         progress_status_id="PRGRS_COMPLETED",
         version=version,
-        modification_content="순차 샘플 확정본",
+        modification_content="순차 샘플 생성 완료본",
         created_by=actor,
         updated_by=actor,
     )
@@ -245,7 +265,7 @@ def _create_confirmed_srs(project, actor):
         "1",
         "사용자 요구사항 정의서",
         [
-            "SEQ 산출물 생성 샘플 프로젝트의 사용자 요구사항 정의서 확정본입니다.",
+            "SEQ 산출물 생성 샘플 프로젝트의 사용자 요구사항 정의서 생성 완료본입니다.",
             "REQ-001 프로젝트 관리자는 산출물 생성을 순차적으로 진행할 수 있어야 한다.",
             "REQ-002 사용자는 산출물 생성 단계별 입력 자료를 등록할 수 있어야 한다.",
             "REQ-003 아키텍처 설계서 생성 전 시스템 구성요소를 입력할 수 있어야 한다.",
@@ -261,7 +281,7 @@ def _create_confirmed_itf(project, actor):
         "1",
         "사용자 인터페이스 설계서",
         [
-            "SEQ 산출물 생성 샘플 프로젝트의 사용자 인터페이스 설계서 확정본입니다.",
+            "SEQ 산출물 생성 샘플 프로젝트의 사용자 인터페이스 설계서 생성 완료본입니다.",
             "화면: 산출물 생성",
             "영역: 생성 진행 현황, 입력 자료 등록, 산출물 생성 버튼",
             "아키텍처 단계에서는 구성요소 입력 폼과 등록 목록을 표시한다.",
@@ -320,6 +340,75 @@ def _create_architecture_components(project, actor):
         ProjectNet.objects.create(project=project, created_by=actor, updated_by=actor, **row)
 
 
+def _ensure_architecture_components(project, actor):
+    if not ProjectNet.objects.filter(project=project).exists():
+        _create_architecture_components(project, actor)
+
+
+def _create_confirmed_arch(project, actor):
+    _ensure_architecture_components(project, actor)
+    return _create_document(
+        project,
+        actor,
+        "DOC_ARCH",
+        "1",
+        "아키텍처 설계서",
+        [
+            "SEQ 산출물 생성 샘플 프로젝트의 아키텍처 설계서 생성 완료본입니다.",
+            "웹 UI, Django 웹 애플리케이션, AI Agent 서버, 데이터/스토리지 계층으로 구성합니다.",
+            "FastAPI Agent는 산출물 생성 오케스트레이션을 담당하고 MySQL, S3, Qdrant와 연계합니다.",
+        ],
+    )
+
+
+def _create_confirmed_erd(project, actor):
+    return _create_document(
+        project,
+        actor,
+        "DOC_ERD",
+        "1",
+        "ERD",
+        [
+            "SEQ 산출물 생성 샘플 프로젝트의 ERD 생성 완료본입니다.",
+            "주요 엔티티: Project, ProjectFile, Document, DocumentDetail, DocumentApproval, ProjectNet",
+            "Project는 Document, ProjectFile, ProjectNet을 포함하며 Document는 여러 DocumentDetail 이력을 가진다.",
+        ],
+    )
+
+
+def _create_confirmed_db(project, actor):
+    return _create_document(
+        project,
+        actor,
+        "DOC_DB",
+        "1",
+        "DB 설계서",
+        [
+            "SEQ 산출물 생성 샘플 프로젝트의 DB 설계서 생성 완료본입니다.",
+            "tbl_project: 프로젝트 기본 정보",
+            "tbl_docs: 산출물 버전 및 상태 정보",
+            "tbl_docs_detail: 산출물 파일 상세 이력",
+            "tbl_project_net: 아키텍처 구성요소 입력 정보",
+        ],
+    )
+
+
+def _create_confirmed_ts(project, actor):
+    return _create_document(
+        project,
+        actor,
+        "DOC_TS",
+        "1",
+        "테스트 시나리오",
+        [
+            "SEQ 산출물 생성 샘플 프로젝트의 테스트 시나리오 생성 완료본입니다.",
+            "TS-001 RFP/회의록 선택 후 사용자 요구사항 정의서 생성 버튼이 활성화되는지 확인한다.",
+            "TS-002 사용자 인터페이스 설계서 단계에서 UI 이미지 업로드 후 생성이 가능한지 확인한다.",
+            "TS-003 아키텍처 설계서 단계에서 구성요소 등록 후 생성이 가능한지 확인한다.",
+        ],
+    )
+
+
 @transaction.atomic
 def run():
     _ensure_bucket_for_local_storage()
@@ -331,18 +420,31 @@ def run():
     project = _create_project(manager, member)
     _create_sample_input_files(project, manager)
 
-    if STEP_ORDER[SAMPLE_STEP] >= STEP_ORDER["itf"]:
+    order = STEP_ORDER[SAMPLE_STEP]
+    if order >= 1:
         _create_confirmed_srs(project, manager)
-    if STEP_ORDER[SAMPLE_STEP] >= STEP_ORDER["arch_input"]:
+    if order >= 2:
         _create_confirmed_itf(project, manager)
     if SAMPLE_STEP == "arch_ready":
-        _create_architecture_components(project, manager)
+        _ensure_architecture_components(project, manager)
+    if order >= 3:
+        _create_confirmed_arch(project, manager)
+    if order >= 4:
+        _create_confirmed_erd(project, manager)
+    if order >= 5:
+        _create_confirmed_db(project, manager)
+    if order >= 6:
+        _create_confirmed_ts(project, manager)
 
     next_urls = {
-        "srs": "/docs/generate/?docs_cd=DOC_SRS&resume=1",
-        "itf": "/docs/generate/?docs_cd=DOC_ITF&resume=1",
-        "arch_input": "/docs/generate/?docs_cd=DOC_ARCH&resume=1&arch_form=1",
+        "srs_wait": "/docs/generate/?docs_cd=DOC_SRS&resume=1",
+        "srs_done": "/docs/generate/?docs_cd=DOC_ITF&resume=1",
+        "itf_done": "/docs/generate/?docs_cd=DOC_ARCH&resume=1&arch_form=1",
         "arch_ready": "/docs/generate/?docs_cd=DOC_ARCH&resume=1",
+        "arch_done": "/docs/generate/?docs_cd=DOC_ERD&resume=1",
+        "erd_done": "/docs/generate/?docs_cd=DOC_DB&resume=1",
+        "db_done": "/docs/generate/?docs_cd=DOC_TS&resume=1",
+        "all_done": "/docs/generate/?resume=1",
     }
 
     print("순차 산출물 생성 샘플 데이터 생성 완료")
