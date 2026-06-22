@@ -193,7 +193,7 @@ def _fill_ts_template(
     scenario: dict[str, Any],
     metadata: dict[str, Any],
 ) -> None:
-    if len(document.tables) < 1:
+    if len(document.tables) < 3:
         _fill_generic_document(
             document,
             {
@@ -205,15 +205,121 @@ def _fill_ts_template(
 
     header = document.tables[0]
     _set_cell_safe(header, 1, 1, _pick(metadata, "system_name", "project_name"))
-    _set_cell_safe(header, 2, 5, str(date.today()))
-    _set_cell_safe(header, 2, 7, _pick(metadata, "version"))
-    _fill_generic_document(
-        document,
-        {
-            "title": "통합시험 시나리오",
-            "content": {"integrated_test_scenario_json": scenario},
-        },
-    )
+    _set_cell_safe(header, 2, 3, str(date.today()))
+    _set_cell_safe(header, 2, 5, _pick(metadata, "version"))
+
+    scenarios = scenario.get("scenario_json_list") or []
+    cases = scenario.get("test_case_json_list") or []
+    step_details = scenario.get("step_detail_json_list") or []
+
+    cases_by_scenario = _group_by(cases, "scenario_id")
+    steps_by_case = _group_by(step_details, "test_case_id")
+
+    scenario_template = document.tables[1]
+    case_template = document.tables[2]
+
+    if not scenarios:
+        _fill_ts_scenario_table(scenario_template, {}, [], {})
+        _fill_ts_case_table(case_template, {}, {}, [])
+        return
+
+    anchor = case_template._tbl
+    for s_index, scn in enumerate(scenarios):
+        scenario_cases = cases_by_scenario.get(scn.get("scenario_id"), [])
+
+        if s_index == 0:
+            scn_table = scenario_template
+            cs_table = case_template
+        else:
+            spacer = _insert_paragraph_after(document, anchor)
+            scn_table = _clone_table_after(spacer._p, scenario_template)
+            anchor = scn_table._tbl
+
+        _fill_ts_scenario_table(scn_table, scn, scenario_cases, steps_by_case)
+
+        for c_index, case in enumerate(scenario_cases):
+            case_steps = steps_by_case.get(case.get("test_case_id"), [])
+            if s_index == 0 and c_index == 0:
+                cs_table = case_template
+            else:
+                spacer = _insert_paragraph_after(document, anchor)
+                cs_table = _clone_table_after(spacer._p, case_template)
+            anchor = cs_table._tbl
+            _fill_ts_case_table(cs_table, scn, case, case_steps)
+
+        if not scenario_cases:
+            # 케이스가 없는 시나리오는 빈 케이스 테이블 1개로 자리만 유지
+            spacer = _insert_paragraph_after(document, anchor)
+            cs_table = _clone_table_after(spacer._p, case_template)
+            anchor = cs_table._tbl
+            _fill_ts_case_table(cs_table, scn, {}, [])
+
+
+def _fill_ts_scenario_table(
+    table: Table,
+    scenario: dict[str, Any],
+    cases: list[dict[str, Any]],
+    steps_by_case: dict[str, list[dict[str, Any]]],
+) -> None:
+    _set_cell_safe(table, 0, 2, _pick(scenario, "scenario_id"))
+    _set_cell_safe(table, 1, 2, _pick(scenario, "scenario_name"))
+    _set_cell_safe(table, 2, 2, _pick(scenario, "description", "scenario_description"))
+
+    base_row_idx = 4
+    if not cases:
+        for cell in table.rows[base_row_idx].cells:
+            _set_cell(cell, "")
+        return
+
+    for index, case in enumerate(cases):
+        row = table.rows[base_row_idx + index] if base_row_idx + index < len(table.rows) else table.add_row()
+        case_steps = steps_by_case.get(case.get("test_case_id"), [])
+        # "시험 절차"는 최종 확정된 step_detail 기준(없으면 test_procedure 초안으로 대체)
+        procedure_source = case_steps if case_steps else case.get("test_procedure")
+        values = [
+            _pick(case, "test_case_id"),
+            _pick(case, "test_case_name"),
+            _procedure_summary(procedure_source),
+            # "시나리오 설명"은 시험 절차의 명사형 요약 (scenario.description과는 별개 필드)
+            _pick(case, "scenario_description_summary", default=_procedure_summary(procedure_source)),
+            _pick(case, "note"),
+        ]
+        for cell, value in zip(row.cells, values):
+            _set_cell(cell, value)
+
+
+def _fill_ts_case_table(
+    table: Table,
+    scenario: dict[str, Any],
+    case: dict[str, Any],
+    steps: list[dict[str, Any]],
+) -> None:
+    _set_cell_safe(table, 0, 2, "")  # 차수: 사용자 직접 입력 영역
+    _set_cell_safe(table, 1, 2, _pick(scenario, "scenario_id"))
+    _set_cell_safe(table, 2, 2, _pick(scenario, "scenario_name"))
+    _set_cell_safe(table, 3, 2, _pick(case, "test_case_id"))
+
+    base_row_idx = 6
+    if not steps:
+        for cell in table.rows[base_row_idx].cells:
+            _set_cell(cell, "")
+        return
+
+    for index, step in enumerate(steps):
+        row = table.rows[base_row_idx + index] if base_row_idx + index < len(table.rows) else table.add_row()
+        values = [
+            _pick(step, "step_no", default=index + 1),
+            _pick(step, "처리내용"),
+            _pick(step, "시험항목"),
+            _pick(step, "사전조건"),
+            _pick(step, "입력값"),
+            _pick(step, "예상결과"),
+            _pick(step, "화면ID", "screen_id"),
+            _pick(step, "test_result", default=""),
+            _pick(step, "note"),
+        ]
+        for cell, value in zip(row.cells, values):
+            _set_cell(cell, value)
 
 
 def _fill_erd_template(
@@ -484,6 +590,27 @@ def _fill_repeating_table(table: Table, rows: list[list[Any]], base_row_idx: int
         row = table.rows[base_row_idx + row_idx] if base_row_idx + row_idx < len(table.rows) else table.add_row()
         for cell, value in zip(row.cells, values):
             _set_cell(cell, value)
+
+
+def _group_by(items: list[dict[str, Any]], key: str) -> dict[str, list[dict[str, Any]]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        grouped.setdefault(item.get(key), []).append(item)
+    return grouped
+
+
+def _procedure_summary(test_procedure: Any) -> str:
+    if not isinstance(test_procedure, list):
+        return _to_plain_text(test_procedure)
+    lines = []
+    for index, proc in enumerate(test_procedure, start=1):
+        if isinstance(proc, dict):
+            text = proc.get("처리내용") or proc.get("process") or proc.get("action") or ""
+        else:
+            text = str(proc)
+        if text:
+            lines.append(f"{index}. {text}")
+    return "\n".join(lines)
 
 
 def _set_cell_safe(table: Table, row_idx: int, col_idx: int, value: Any) -> None:
