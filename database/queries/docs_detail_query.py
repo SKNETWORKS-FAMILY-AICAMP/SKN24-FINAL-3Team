@@ -40,7 +40,7 @@ LIMIT 1
 INSERT_DOCS = """
 INSERT INTO tbl_docs (
     prj_sn,
-    psn_user_sn,
+    pssn_user_sn,
     docs_cd,
     docs_ver,
     docs_prgrs_stts_cd,
