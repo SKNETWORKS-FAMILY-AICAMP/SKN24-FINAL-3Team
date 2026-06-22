@@ -70,31 +70,62 @@
       </a>
 
       <a href="{% url 'doc_history_list' %}?docs_cd=DOC_SRS" class="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition {% if active_menu == 'doc_history' and selected_document_code == 'DOC_SRS' %}border-blue-200 bg-blue-50 text-blue-700{% else %}border-slate-200 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
+        <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M5.5 3.5h6.2L15 6.8v9.7A1.5 1.5 0 0 1 13.5 18h-7A1.5 1.5 0 0 1 5 16.5V5a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M11.7 3.5V7H15M7.5 10h5M7.5 13h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
         <span>사용자 요구사항 정의서</span>
       </a>
 
       <a href="{% url 'doc_history_list' %}?docs_cd=DOC_ITF" class="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition {% if active_menu == 'doc_history' and selected_document_code == 'DOC_ITF' %}border-blue-200 bg-blue-50 text-blue-700{% else %}border-slate-200 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
+        <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M3.5 5.5A1.5 1.5 0 0 1 5 4h10a1.5 1.5 0 0 1 1.5 1.5v7A1.5 1.5 0 0 1 15 14H5a1.5 1.5 0 0 1-1.5-1.5v-7Z" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M7.5 17h5M10 14v3M6.5 7h3M6.5 10h7" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
         <span>사용자 인터페이스 설계서</span>
       </a>
 
       <a href="{% url 'doc_history_list' %}?docs_cd=DOC_ARCH" class="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition {% if active_menu == 'doc_history' and selected_document_code == 'DOC_ARCH' %}border-blue-200 bg-blue-50 text-blue-700{% else %}border-slate-200 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
+        <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M10 4.2v4.2M6.2 13.8 10 10l3.8 3.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <circle cx="10" cy="3.5" r="1.8" stroke="currentColor" stroke-width="1.6"/>
+          <circle cx="5" cy="15" r="1.8" stroke="currentColor" stroke-width="1.6"/>
+          <circle cx="15" cy="15" r="1.8" stroke="currentColor" stroke-width="1.6"/>
+          <circle cx="10" cy="10" r="1.8" stroke="currentColor" stroke-width="1.6"/>
+        </svg>
         <span>아키텍처 설계서</span>
       </a>
 
       <a href="{% url 'doc_history_list' %}?docs_cd=DOC_ERD" class="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition {% if active_menu == 'doc_history' and selected_document_code == 'DOC_ERD' %}border-blue-200 bg-blue-50 text-blue-700{% else %}border-slate-200 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
+        <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M4 5.5h4v4H4v-4ZM12 4h4v4h-4V4ZM12 12h4v4h-4v-4Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="M8 7.5h4M8 9.5l4 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+        </svg>
         <span>엔티티 관계 모델 설계서</span>
       </a>
 
       <a href="{% url 'doc_history_list' %}?docs_cd=DOC_DB" class="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition {% if active_menu == 'doc_history' and selected_document_code == 'DOC_DB' %}border-blue-200 bg-blue-50 text-blue-700{% else %}border-slate-200 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
+        <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <ellipse cx="10" cy="5" rx="5.5" ry="2.5" stroke="currentColor" stroke-width="1.6"/>
+          <path d="M4.5 5v5c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5V5M4.5 10v5c0 1.4 2.5 2.5 5.5 2.5s5.5-1.1 5.5-2.5v-5" stroke="currentColor" stroke-width="1.6"/>
+        </svg>
         <span>데이터베이스 설계서</span>
       </a>
 
       <a href="{% url 'doc_history_list' %}?docs_cd=DOC_TS" class="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition {% if active_menu == 'doc_history' and selected_document_code == 'DOC_TS' %}border-blue-200 bg-blue-50 text-blue-700{% else %}border-slate-200 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
+        <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M6.5 5.5h8M6.5 10h8M6.5 14.5h8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          <path d="m3.5 5.5.8.8 1.3-1.6M3.5 10l.8.8 1.3-1.6M3.5 14.5l.8.8 1.3-1.6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
         <span>통합 테스트 시나리오</span>
       </a>
 
       <a href="{% url 'doc_approval_list' %}" class="flex items-center gap-3 rounded-xl border px-4 py-3 text-sm font-medium transition {% if active_menu == 'approvals' %}border-blue-200 bg-blue-50 text-blue-700{% else %}border-slate-200 bg-white text-slate-700 hover:bg-slate-50{% endif %}">
-        <span>산출물 확인요청</span>
+        <svg class="h-5 w-5 shrink-0" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M5.5 3.5h6.2L15 6.8v9.7A1.5 1.5 0 0 1 13.5 18h-7A1.5 1.5 0 0 1 5 16.5V5a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+          <path d="m7.5 11 1.8 1.8 3.7-4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>산출물 승인요청</span>
       </a>
     </nav>
 

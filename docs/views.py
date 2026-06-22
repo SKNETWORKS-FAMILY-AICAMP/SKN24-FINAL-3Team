@@ -586,7 +586,7 @@ def document_generate(request):
 
         if action == "reset_generation":
             clear_generation_state(request.session, current_project)
-            messages.success(request, "산출물 생성 진행 상태를 초기화했습니다.")
+            messages.success(request, "산출물 재생성을 시작할 수 있도록 진행 상태를 초기화했습니다.")
             return redirect(build_generation_redirect_url(document_code=document_code, resume=False))
 
         if action == "upload_itf_reference":
