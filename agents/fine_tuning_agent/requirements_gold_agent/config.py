@@ -12,14 +12,13 @@ HF_DATASET_REPO = os.getenv("REQ_HF_DATASET_REPO", "jaehoony/requirements-4task-
 BASE_MODEL = os.getenv("REQ_BASE_MODEL", "Qwen/Qwen3-VL-8B-Instruct")
 STAGE1_ADAPTER_REPO = os.getenv("REQ_STAGE1_ADAPTER_REPO", "jaehoony/req-qwen3vl-stage1-core")
 STAGE3_ADAPTER_REPO = os.getenv("REQ_STAGE3_ADAPTER_REPO", "jaehoony/req-qwen3vl-stage3-task3doc")
+STAGE1_SERVED_MODEL = os.getenv("REQ_STAGE1_SERVED_MODEL", "req-stage1")
+STAGE3_SERVED_MODEL = os.getenv("REQ_STAGE3_SERVED_MODEL", "req-stage3")
 OUTPUT_DIR = Path(os.getenv("REQ_AGENT_OUTPUT_DIR", "/workspace/requirements_gold_agent_outputs"))
 ENV_FILE = os.getenv("REQ_ENV_FILE", "/workspace/env")
 
-ATTN_IMPLEMENTATION = os.getenv("REQ_ATTN_IMPLEMENTATION", "sdpa")
-USE_4BIT = os.getenv("REQ_USE_4BIT", "0") == "1"
-MODEL_CONTEXT_LIMIT_FALLBACK = int(os.getenv("REQ_CONTEXT_LIMIT_FALLBACK", "262144"))
+MODEL_CONTEXT_LIMIT_FALLBACK = int(os.getenv("REQ_VLLM_CONTEXT_LIMIT", "32768"))
 GENERATION_SAFETY_MARGIN = int(os.getenv("REQ_GENERATION_SAFETY_MARGIN", "2048"))
-MINIMUM_FREE_GPU_GB = float(os.getenv("REQ_MINIMUM_FREE_GPU_GB", "8.0"))
 GENERATION_POLICY = {
     TASK1: {"multiplier": 1.5, "minimum": 4096, "maximum": 8192, "retry_growth": 1.5, "max_attempts": 2},
     TASK2: {"multiplier": 1.5, "minimum": 6144, "maximum": 12288, "retry_growth": 1.5, "max_attempts": 2},

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import gc
+import json
 import os
 import threading
 import time
@@ -8,29 +8,18 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-os.environ.setdefault("PYTORCH_ALLOC_CONF", "expandable_segments:True")
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-os.environ.pop("HF_HUB_ENABLE_HF_TRANSFER", None)
-os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
-os.environ.setdefault("HF_XET_HIGH_PERFORMANCE", "1")
-
-import torch
-from huggingface_hub import login
+from tools.llm.llm_client import LLMClient
 
 from .config import (
-    ATTN_IMPLEMENTATION,
-    BASE_MODEL,
     ENV_FILE,
     GENERATION_POLICY,
     GENERATION_SAFETY_MARGIN,
-    MINIMUM_FREE_GPU_GB,
     MODEL_CONTEXT_LIMIT_FALLBACK,
-    STAGE1_ADAPTER_REPO,
-    STAGE3_ADAPTER_REPO,
+    STAGE1_SERVED_MODEL,
+    STAGE3_SERVED_MODEL,
     TASK1,
     TASK2,
     TASK3,
-    USE_4BIT,
 )
 from .contracts import build_prompt_messages, get_training_contracts, normalize_messages
 from .env_loader import PROJECT_ENV_FILE, load_runtime_env
@@ -44,17 +33,15 @@ from .storage import dump_json
 
 
 class ModelRuntime:
-    """Load the base model once and switch adapters by task."""
+    """Run requirements Gold tasks through LoRA adapters served by vLLM."""
 
     def __init__(self) -> None:
         self._load_lock = threading.Lock()
         self._generate_lock = threading.RLock()
         self._loaded = False
         self.hf_token: str | None = None
-        self.processor: Any = None
-        self.tokenizer: Any = None
-        self.model: Any = None
         self.model_context_limit = MODEL_CONTEXT_LIMIT_FALLBACK
+        self._clients: dict[str, LLMClient] = {}
 
     @property
     def loaded(self) -> bool:
@@ -76,109 +63,36 @@ class ModelRuntime:
                     "REQUIREMENT_GOLD_HF_TOKEN_MISSING",
                     f"HF_TOKEN이 없습니다. 환경변수 또는 {env_hint}을 확인하세요.",
                 )
-            if not torch.cuda.is_available():
-                raise RequirementGoldError(
-                    "REQUIREMENT_GOLD_CUDA_UNAVAILABLE",
-                    "CUDA GPU가 필요합니다.",
-                )
-            login(token=self.hf_token, add_to_git_credential=False)
-            from peft import PeftModel
-            from transformers import (
-                AutoConfig,
-                AutoProcessor,
-                BitsAndBytesConfig,
-                Qwen3VLForConditionalGeneration,
-            )
 
+            # 학습 데이터셋에서 사용하던 system prompt 계약은 그대로 유지합니다.
             get_training_contracts(self.hf_token)
-            self.processor = AutoProcessor.from_pretrained(BASE_MODEL, token=self.hf_token)
-            self.tokenizer = self.processor.tokenizer
-            if self.tokenizer.pad_token is None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
-            base_config = AutoConfig.from_pretrained(BASE_MODEL, token=self.hf_token)
-            text_config = getattr(base_config, "text_config", base_config)
             self.model_context_limit = int(
-                getattr(text_config, "max_position_embeddings", MODEL_CONTEXT_LIMIT_FALLBACK)
-            )
-            kwargs: dict[str, Any] = {
-                "token": self.hf_token,
-                "device_map": {"": 0},
-                "attn_implementation": ATTN_IMPLEMENTATION,
-                "low_cpu_mem_usage": True,
-            }
-            if USE_4BIT:
-                kwargs["quantization_config"] = BitsAndBytesConfig(
-                    load_in_4bit=True,
-                    bnb_4bit_quant_type="nf4",
-                    bnb_4bit_compute_dtype=torch.bfloat16,
-                    bnb_4bit_use_double_quant=True,
+                os.getenv(
+                    "REQ_VLLM_CONTEXT_LIMIT",
+                    str(MODEL_CONTEXT_LIMIT_FALLBACK),
                 )
-            else:
-                kwargs["torch_dtype"] = torch.bfloat16
-            base_model = Qwen3VLForConditionalGeneration.from_pretrained(BASE_MODEL, **kwargs)
-            self.model = PeftModel.from_pretrained(
-                base_model,
-                STAGE1_ADAPTER_REPO,
-                adapter_name="stage1",
-                token=self.hf_token,
-                is_trainable=False,
-                low_cpu_mem_usage=True,
-                autocast_adapter_dtype=False,
             )
-            self.model.eval()
-            torch.backends.cuda.matmul.allow_tf32 = True
-            self.model.generation_config.do_sample = False
-            self.model.generation_config.temperature = None
-            self.model.generation_config.top_p = None
-            self.model.generation_config.top_k = None
-            self.model.generation_config.pad_token_id = self.tokenizer.pad_token_id
-            self.model.generation_config.eos_token_id = self.tokenizer.eos_token_id
+            self._clients = {
+                "stage1": LLMClient(model_name=STAGE1_SERVED_MODEL),
+                "stage3": LLMClient(model_name=STAGE3_SERVED_MODEL),
+            }
             self._loaded = True
         return self
-
-    def _ensure_stage3(self) -> None:
-        self.start()
-        if "stage3" not in self.model.peft_config:
-            self.model.load_adapter(
-                STAGE3_ADAPTER_REPO,
-                adapter_name="stage3",
-                token=self.hf_token,
-                is_trainable=False,
-                low_cpu_mem_usage=True,
-                autocast_adapter_dtype=False,
-            )
 
     def _select_adapter(self, task_type: str) -> str:
         self.start()
         if task_type in {TASK1, TASK2}:
-            self.model.set_adapter("stage1")
             return "stage1"
         if task_type == TASK3:
-            self._ensure_stage3()
-            self.model.set_adapter("stage3")
             return "stage3"
         raise ValueError(f"지원하지 않는 task_type: {task_type}")
 
-    def _tokenize(self, messages: list[dict]) -> dict[str, torch.Tensor]:
+    @staticmethod
+    def _estimate_prompt_tokens(messages: list[dict[str, Any]]) -> int:
         normalized = normalize_messages(messages, require_assistant=False)
-        inputs = self.tokenizer.apply_chat_template(
-            normalized,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pt",
-        )
-        inputs.pop("token_type_ids", None)
-        return inputs
-
-    def _gpu_status(self) -> dict[str, Any]:
-        free_b, total_b = torch.cuda.mem_get_info()
-        return {
-            "device": torch.cuda.get_device_name(0),
-            "free_gb": round(free_b / 1024**3, 2),
-            "used_gb": round((total_b - free_b) / 1024**3, 2),
-            "total_gb": round(total_b / 1024**3, 2),
-        }
+        rendered = json.dumps(normalized, ensure_ascii=False, separators=(",", ":"))
+        # 한글/JSON 혼합 프롬프트에 보수적인 근사치를 사용합니다. 실제 한도는 vLLM도 검증합니다.
+        return max(1, (len(rendered.encode("utf-8")) + 2) // 3)
 
     def _max_new_tokens(
         self,
@@ -188,7 +102,9 @@ class ModelRuntime:
     ) -> int:
         policy = GENERATION_POLICY[task_type]
         estimated = int(
-            explicit_cap if explicit_cap is not None else prompt_tokens * float(policy["multiplier"])
+            explicit_cap
+            if explicit_cap is not None
+            else prompt_tokens * float(policy["multiplier"])
         )
         estimated = max(estimated, int(policy["minimum"]))
         estimated = min(estimated, int(policy["maximum"]))
@@ -203,7 +119,27 @@ class ModelRuntime:
             )
         return int(actual)
 
-    @torch.inference_mode()
+    @staticmethod
+    def _completion(response: Any) -> tuple[str, int, str]:
+        try:
+            choice = response["choices"][0]
+            message = choice["message"]
+            raw_text = str(message.get("content") or "").strip()
+            finish_reason = str(choice.get("finish_reason") or "")
+            usage = response.get("usage") or {}
+            generated_tokens = int(usage.get("completion_tokens") or 0)
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise RequirementGoldError(
+                "REQUIREMENT_GOLD_VLLM_RESPONSE_INVALID",
+                f"vLLM 응답 형식이 올바르지 않습니다: {exc}",
+            ) from exc
+        if not raw_text:
+            raise RequirementGoldError(
+                "REQUIREMENT_GOLD_VLLM_RESPONSE_EMPTY",
+                "vLLM이 빈 응답을 반환했습니다.",
+            )
+        return raw_text, generated_tokens, finish_reason
+
     def run_task(
         self,
         task_type: str,
@@ -212,11 +148,18 @@ class ModelRuntime:
         raw_log_path: Path | None = None,
     ) -> tuple[dict[str, Any], str]:
         if user_obj.get("task_type") != task_type:
-            raise ValueError(f"task_type 불일치: {task_type} != {user_obj.get('task_type')}")
+            raise ValueError(
+                f"task_type 불일치: {task_type} != {user_obj.get('task_type')}"
+            )
         self.start()
         with self._generate_lock:
             adapter_name = self._select_adapter(task_type)
-            prompt_messages = build_prompt_messages(task_type, user_obj, self.hf_token or "")
+            client = self._clients[adapter_name]
+            prompt_messages = build_prompt_messages(
+                task_type,
+                user_obj,
+                self.hf_token or "",
+            )
             policy = GENERATION_POLICY[task_type]
             max_attempts = int(policy["max_attempts"])
             base_messages = list(prompt_messages)
@@ -229,60 +172,52 @@ class ModelRuntime:
                 raw_log_path.parent.mkdir(parents=True, exist_ok=True)
 
             for attempt in range(1, max_attempts + 1):
-                generated = generated_ids = None
-                inputs: dict[str, torch.Tensor] = {}
-                cpu_inputs: dict[str, torch.Tensor] = {}
                 raw_text = ""
                 hit_token_limit = False
                 try:
-                    gc.collect()
-                    torch.cuda.empty_cache()
-                    cpu_inputs = self._tokenize(current_messages)
-                    prompt_tokens = int(cpu_inputs["input_ids"].shape[-1])
-                    max_new_tokens = self._max_new_tokens(task_type, prompt_tokens, explicit_cap)
-                    status = self._gpu_status()
-                    if status["free_gb"] < MINIMUM_FREE_GPU_GB:
-                        raise RequirementGoldError(
-                            "REQUIREMENT_GOLD_GPU_MEMORY_LOW",
-                            f"{task_type}: GPU 여유 메모리 부족. free={status['free_gb']:.2f}GB",
-                        )
-                    inputs = {
-                        key: value.to(self.model.device)
-                        for key, value in cpu_inputs.items()
-                        if isinstance(value, torch.Tensor)
-                    }
-                    input_length = int(inputs["input_ids"].shape[-1])
+                    prompt_tokens = self._estimate_prompt_tokens(current_messages)
+                    max_new_tokens = self._max_new_tokens(
+                        task_type,
+                        prompt_tokens,
+                        explicit_cap,
+                    )
                     started = time.perf_counter()
-                    generated = self.model.generate(
-                        **inputs,
-                        max_new_tokens=max_new_tokens,
-                        do_sample=False,
-                        use_cache=True,
-                        eos_token_id=self.tokenizer.eos_token_id,
-                        pad_token_id=self.tokenizer.pad_token_id,
+                    response = client.chat(
+                        current_messages,
+                        temperature=0.0,
+                        max_tokens=max_new_tokens,
+                        extra_body={
+                            "response_format": {"type": "json_object"},
+                        },
                     )
                     elapsed = time.perf_counter() - started
-                    generated_ids = generated[0, input_length:]
-                    generated_count = int(generated_ids.shape[-1])
-                    raw_text = self.tokenizer.decode(
-                        generated_ids,
-                        skip_special_tokens=True,
-                        clean_up_tokenization_spaces=False,
-                    ).strip()
-                    hit_token_limit = generated_count >= max_new_tokens
+                    if not response["success"]:
+                        error = response.get("error") or {}
+                        raise RequirementGoldError(
+                            "REQUIREMENT_GOLD_VLLM_REQUEST_FAILED",
+                            str(error.get("message") or "vLLM 요청에 실패했습니다."),
+                        )
+                    raw_text, generated_count, finish_reason = self._completion(
+                        response["data"]
+                    )
+                    hit_token_limit = finish_reason == "length"
                     record = {
                         "attempt": attempt,
                         "adapter_name": adapter_name,
-                        "prompt_tokens": prompt_tokens,
+                        "served_model_name": client.model_name,
+                        "prompt_tokens_estimated": prompt_tokens,
                         "max_new_tokens": max_new_tokens,
                         "generated_tokens": generated_count,
+                        "finish_reason": finish_reason,
                         "hit_token_limit": hit_token_limit,
                         "elapsed_seconds": elapsed,
                         "raw_text": raw_text,
                     }
                     if raw_log_path:
                         dump_json(
-                            raw_log_path.with_name(f"{raw_log_path.stem}_attempt{attempt}.json"),
+                            raw_log_path.with_name(
+                                f"{raw_log_path.stem}_attempt{attempt}.json"
+                            ),
                             {"task_type": task_type, "user": user_obj, **record},
                         )
                     if hit_token_limit:
@@ -291,7 +226,9 @@ class ModelRuntime:
                             f"{task_type}: 생성 토큰 한도 도달",
                         )
                     obj, parse_mode = extract_complete_task_json(raw_text, task_type)
-                    if parse_mode.startswith("json_repair") and not raw_text.rstrip().endswith("}"):
+                    if parse_mode.startswith("json_repair") and not raw_text.rstrip().endswith(
+                        "}"
+                    ):
                         raise RequirementGoldError(
                             "REQUIREMENT_GOLD_OUTPUT_INVALID",
                             f"{task_type}: 불완전 json_repair 결과 거부",
@@ -307,6 +244,7 @@ class ModelRuntime:
                                 "status": "SUCCESS",
                                 "task_type": task_type,
                                 "adapter_name": adapter_name,
+                                "served_model_name": client.model_name,
                                 "user": user_obj,
                                 "attempts": attempts,
                                 "prediction": obj,
@@ -319,6 +257,8 @@ class ModelRuntime:
                     attempts.append(
                         {
                             "attempt": attempt,
+                            "adapter_name": adapter_name,
+                            "served_model_name": client.model_name,
                             "error_code": get_requirement_gold_error_code(exc),
                             "error_type": type(exc).__name__,
                             "error_message": str(exc),
@@ -327,7 +267,10 @@ class ModelRuntime:
                         }
                     )
                     if attempt < max_attempts:
-                        previous = locals().get("max_new_tokens", int(policy["minimum"]))
+                        previous = locals().get(
+                            "max_new_tokens",
+                            int(policy["minimum"]),
+                        )
                         explicit_cap = min(
                             int(previous * float(policy["retry_growth"])),
                             int(policy["maximum"]),
@@ -355,19 +298,12 @@ class ModelRuntime:
                                 "status": "FAILED",
                                 "task_type": task_type,
                                 "adapter_name": adapter_name,
+                                "served_model_name": client.model_name,
                                 "user": user_obj,
                                 "attempts": attempts,
                             },
                         )
                     raise
-                finally:
-                    for value in (generated, generated_ids):
-                        if value is not None:
-                            del value
-                    inputs.clear()
-                    cpu_inputs.clear()
-                    gc.collect()
-                    torch.cuda.empty_cache()
 
             raise RequirementGoldError(
                 "REQUIREMENT_GOLD_RETRY_EXHAUSTED",
