@@ -143,6 +143,19 @@ def get_generation_itf_references(state):
 def get_fastapi_base_url():
     return str(getattr(settings, "FASTAPI_BASE_URL", "") or "").rstrip("/")
 
+
+def get_fastapi_api_key():
+    return str(getattr(settings, "FASTAPI_API_KEY", "") or "").strip()
+
+
+def build_fastapi_json_headers():
+    headers = {"Content-Type": "application/json"}
+    api_key = get_fastapi_api_key()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
 def get_doc_job_poll_interval_seconds():
     raw_value = getattr(settings, "DOC_JOB_POLL_INTERVAL_SECONDS", 10)
     try:
@@ -660,16 +673,18 @@ def _build_fastapi_generate_url():
 def request_fastapi_generate(payload):
     url = _build_fastapi_generate_url()
     timeout_seconds = FASTAPI_GENERATE_TIMEOUT_SECONDS
+    headers = build_fastapi_json_headers()
     _debug_generation_log(
         "fastapi_request_prepare",
         url=url,
         timeout_seconds=timeout_seconds,
+        authorization_present="Authorization" in headers,
         payload=_summarize_generation_payload(payload),
     )
     request = Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
         method="POST",
     )
     try:
@@ -708,7 +723,7 @@ def request_fastapi_approval_review(approval_sn):
     request = Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers=build_fastapi_json_headers(),
         method="POST",
     )
     with urlopen(request, timeout=FASTAPI_APPROVAL_REVIEW_TIMEOUT_SECONDS) as response:
