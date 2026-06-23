@@ -22,7 +22,14 @@ logger = get_logger("main")
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    configure_logging(get_settings())
+    settings = get_settings()
+    configure_logging(settings)
+    logger.info(
+        "Application configured LLM base_url=%s model=%s",
+        settings.llm_base_url,
+        settings.llm_model_name,
+        extra=bind_log_extra("application_configured"),
+    )
     yield
 
 

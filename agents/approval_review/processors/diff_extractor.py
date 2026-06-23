@@ -10,6 +10,9 @@ IDENTITY_KEYS = (
     "screen_id",
     "component_id",
     "test_id",
+    "column_id",
+    "scenario_id",
+    "test_case_id",
     "name",
     "title",
 )
@@ -19,6 +22,50 @@ def extract_changes(before: Any, after: Any) -> list[dict[str, Any]]:
     changes: list[dict[str, Any]] = []
     _compare(before, after, "", changes)
     return changes
+
+
+def group_changes_for_review(
+    changes: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """필드 단위 diff를 요구사항/엔티티/컬럼/화면 등 업무 항목 단위로 묶습니다."""
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for change in changes:
+        anchor = _business_anchor(str(change.get("target_path") or "$"))
+        grouped.setdefault(anchor, []).append(change)
+
+    results = []
+    for anchor, items in grouped.items():
+        if len(items) == 1:
+            results.append(items[0])
+            continue
+        change_types = {str(item.get("change_type")) for item in items}
+        change_type = next(iter(change_types)) if len(change_types) == 1 else "modified"
+        results.append(
+            {
+                "change_type": change_type,
+                "target_path": anchor,
+                "title": _group_title(items, anchor),
+                "before": [
+                    {
+                        "path": item.get("target_path"),
+                        "value": item.get("before"),
+                    }
+                    for item in items
+                    if item.get("before") is not None
+                ],
+                "after": [
+                    {
+                        "path": item.get("target_path"),
+                        "value": item.get("after"),
+                    }
+                    for item in items
+                    if item.get("after") is not None
+                ],
+                "changed_field_count": len(items),
+            }
+        )
+    return results
 
 
 def _compare(before: Any, after: Any, path: str, changes: list[dict[str, Any]]) -> None:
@@ -109,3 +156,23 @@ def _title(value: Any, path: str) -> str:
 
 def _join(path: str, child: str) -> str:
     return f"{path}.{child}" if path else child
+
+
+def _business_anchor(path: str) -> str:
+    parts = path.split(".")
+    last_identity_index = None
+    for index, part in enumerate(parts):
+        key = part.split("=", 1)[0]
+        if "=" in part and key in IDENTITY_KEYS:
+            last_identity_index = index
+    if last_identity_index is not None:
+        return ".".join(parts[: last_identity_index + 1])
+    return ".".join(parts[:2]) if len(parts) > 1 else path
+
+
+def _group_title(items: list[dict[str, Any]], anchor: str) -> str:
+    for item in items:
+        title = str(item.get("title") or "").strip()
+        if title and title not in {"value", "$"}:
+            return title
+    return anchor.rsplit(".", 1)[-1].replace("=", " ")

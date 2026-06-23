@@ -120,6 +120,7 @@ class DocumentMergeAgent:
 
     def _update_artifact(self, state: WorkflowState, docs_cd: str) -> dict[str, Any]:
         existing_path = state.get("existing_output_path")
+        requested_path = state.get("requested_output_path")
         meeting_paths = list(state.get("input_file_paths") or [])
         if not existing_path:
             return self._failed("EXISTING_OUTPUT_MISSING", "existing_output_path가 필요합니다.")
@@ -135,9 +136,25 @@ class DocumentMergeAgent:
         changes = self._merge_search_results_with_llm(changes, warnings)
         raw_json = parsed["data"].get("raw_json", parsed["data"])
         if docs_cd in {"ERD", "DB", "ARCH"}:
+            requested_raw_json = None
+            if requested_path:
+                requested_parsed = self._parse_existing_artifact(
+                    str(requested_path),
+                    docs_cd,
+                )
+                if not requested_parsed["success"]:
+                    return self._tool_failed(
+                        "REQUESTED_OUTPUT_PARSE_FAILED",
+                        requested_parsed,
+                    )
+                requested_raw_json = requested_parsed["data"].get(
+                    "raw_json",
+                    requested_parsed["data"],
+                )
             return self._success(
                 warnings=warnings,
                 existing_output_raw_json=raw_json,
+                requested_output_raw_json=requested_raw_json,
                 meeting_change_items=changes,
                 existing_output_image_paths=image_paths,
             )
@@ -187,6 +204,7 @@ class DocumentMergeAgent:
                 state.get("erd_file_path"),
                 state.get("interface_file_path"),
                 state.get("existing_output_path"),
+                state.get("requested_output_path"),
             )
             if path
         }
@@ -197,6 +215,7 @@ class DocumentMergeAgent:
                 if str(path) not in excluded_paths
             ],
             llm_client=self.llm_client,
+            docs_cd=str(state.get("docs_cd") or ""),
         )
 
     def _enrich_changes_with_search(

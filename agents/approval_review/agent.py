@@ -4,7 +4,9 @@ from agents.approval_review.processors import (
     check_consistency,
     classify_impacts,
     extract_changes,
+    group_changes_for_review,
     load_detail_content,
+    structure_artifact_content,
 )
 from agents.approval_review.repository import ApprovalReviewRepository
 from tools.llm.llm_client import LLMClient
@@ -37,10 +39,22 @@ class ApprovalReviewAgent:
                 f"docs_sn={docs_sn}, docs_dtl_sn={approval_request_docs_dtl_sn}"
             )
 
-        before_content = load_detail_content(before_detail)["data"]
-        after_content = load_detail_content(after_detail)["data"]
-        raw_changes = extract_changes(before_content, after_content)
-        changes = classify_impacts(raw_changes, self.llm_client)
+        before_content = structure_artifact_content(
+            str(docs["docs_cd"]),
+            load_detail_content(before_detail)["data"],
+        )
+        after_content = structure_artifact_content(
+            str(docs["docs_cd"]),
+            load_detail_content(after_detail)["data"],
+        )
+        raw_changes = group_changes_for_review(
+            extract_changes(before_content, after_content)
+        )
+        changes = classify_impacts(
+            raw_changes,
+            str(docs["docs_cd"]),
+            self.llm_client,
+        )
         counts = {
             f"{change_type}_count": sum(
                 item["change_type"] == change_type for item in changes
@@ -48,7 +62,7 @@ class ApprovalReviewAgent:
             for change_type in ("added", "modified", "deleted")
         }
 
-        reference = self.repository.get_latest_fixed_requirement_detail(
+        reference = self.repository.get_latest_requirement_json(
             int(docs["prj_sn"])
         )
         if reference is None:
@@ -63,7 +77,7 @@ class ApprovalReviewAgent:
                 "messages": [
                     {
                         "type": "skipped",
-                        "text": "같은 프로젝트의 최신 fix 요구사항 정의서가 없어 정합성 검토를 생략했습니다.",
+                        "text": "같은 프로젝트의 최신 요구사항 JSON 파일이 없어 정합성 검토를 생략했습니다.",
                     }
                 ],
             }
@@ -83,10 +97,13 @@ class ApprovalReviewAgent:
             "before_docs_dtl_sn": before_detail["docs_dtl_sn"],
             "after_docs_dtl_sn": after_detail["docs_dtl_sn"],
             "reference_requirement_docs_sn": (
-                reference["docs_sn"] if reference else None
+                reference.get("docs_sn") if reference else None
             ),
             "reference_requirement_docs_dtl_sn": (
-                reference["docs_dtl_sn"] if reference else None
+                reference.get("docs_dtl_sn") if reference else None
+            ),
+            "reference_requirement_file_sn": (
+                reference.get("file_sn") if reference else None
             ),
             "change_review": {"summary": counts, "changes": changes},
             "consistency_check": consistency,

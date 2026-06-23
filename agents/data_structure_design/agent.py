@@ -39,6 +39,9 @@ from agents.data_structure_design.pipeline.relationship_inferer import (
 from agents.data_structure_design.pipeline.validator import validate_erd
 from agents.data_structure_design.meeting_erd_requirements import (
     apply_meeting_erd_requirements,
+    build_change_requirements_json,
+    build_erd_diff,
+    build_requirement_coverage,
     evaluate_meeting_erd_requirements,
     extract_meeting_erd_requirements,
 )
@@ -192,6 +195,7 @@ class DataStructureDesignAgent:
 
     def _update_erd(self, document_merge: dict[str, Any], state: WorkflowState) -> dict[str, Any]:
         existing = document_merge.get("existing_output_raw_json")
+        requested = document_merge.get("requested_output_raw_json")
         changes = document_merge.get("meeting_change_items")
         if not isinstance(existing, dict) or not existing:
             return self._failed("ERD_EXISTING_OUTPUT_MISSING", "existing_output_raw_json이 필요합니다.")
@@ -199,7 +203,12 @@ class DataStructureDesignAgent:
             return self._failed("ERD_MEETING_CHANGE_MISSING", "meeting_change_items가 필요합니다.")
         existing_analysis = self._llm_dict("기존 ERD 구조를 분석하세요.", {"existing_output_raw_json": existing}, "ERD_EXISTING_ANALYSIS_LLM_FAILED")
         existing_tables = normalize_erd_tables(_extract_tables(existing_analysis or existing))
-        tables = deepcopy(existing_tables)
+        requested_tables = (
+            normalize_erd_tables(_extract_tables(requested))
+            if isinstance(requested, dict) and requested
+            else []
+        )
+        tables = deepcopy(requested_tables or existing_tables)
         llm_analysis, warnings = self._parallel_llm_analysis(changes, "회의록 변경사항의 ERD 엔티티, 컬럼, 관계 영향을 분석하세요.")
         tables = _apply_table_changes(tables, changes)
         redesign = self._llm_dict(
@@ -208,8 +217,23 @@ class DataStructureDesignAgent:
             "ERD_REDESIGN_LLM_FAILED",
         )
         redesigned_tables = normalize_erd_tables(_extract_tables(redesign) or tables)
-        tables = _repair_update_table_contracts(redesigned_tables, existing_tables)
+        preservation_source = requested_tables or existing_tables
+        tables = _repair_update_table_contracts(
+            redesigned_tables,
+            preservation_source,
+        )
+        requested_relationships = (
+            requested.get("relationships", [])
+            if isinstance(requested, dict)
+            and isinstance(requested.get("relationships"), list)
+            else []
+        )
         relationships, relationship_warnings = self._build_relationships(tables)
+        if requested_relationships:
+            relationships = _merge_relationship_lists(
+                requested_relationships,
+                relationships,
+            )
         meeting_requirements = extract_meeting_erd_requirements(changes)
         if meeting_requirements:
             tables, relationships, meeting_report = apply_meeting_erd_requirements(
@@ -260,6 +284,20 @@ class DataStructureDesignAgent:
             erd_entity_json
         )
         warnings.extend(relation_resolution_warnings)
+        if meeting_requirements:
+            repaired_tables, repaired_relationships, final_meeting_report = (
+                apply_meeting_erd_requirements(
+                    erd_entity_json.get("tables", []),
+                    erd_entity_json.get("relationships", []),
+                    meeting_requirements,
+                )
+            )
+            erd_entity_json["tables"] = normalize_erd_tables(repaired_tables)
+            erd_entity_json["relationships"] = repaired_relationships
+            meeting_report = _merge_meeting_apply_reports(
+                meeting_report,
+                final_meeting_report,
+            )
         erd_entity_json, quality_result = prepare_erd_quality(erd_entity_json)
         erd_entity_json["tables"] = enrich_table_metadata(
             erd_entity_json.get("tables", []),
@@ -271,6 +309,40 @@ class DataStructureDesignAgent:
             erd_entity_json.get("relationships", []),
             meeting_requirements,
         )
+        diff_summary = build_erd_diff(
+            existing_tables,
+            existing.get("relationships", [])
+            if isinstance(existing.get("relationships"), list)
+            else [],
+            erd_entity_json.get("tables", []),
+            erd_entity_json.get("relationships", []),
+        )
+        requirement_coverage = build_requirement_coverage(
+            erd_entity_json.get("tables", []),
+            erd_entity_json.get("relationships", []),
+            meeting_requirements,
+        )
+        impact_analysis = {
+            "before_docs_detail_sn": state.get("before_docs_detail_sn"),
+            "after_docs_detail_sn": state.get("request_docs_detail_sn"),
+            "meeting_minutes_file_sn": (
+                state.get("file_list", [None])[0]
+                if state.get("file_list")
+                else None
+            ),
+            "change_requirements": build_change_requirements_json(
+                meeting_requirements
+            ),
+            "diff_summary": diff_summary,
+            "requirement_coverage": {
+                key: requirement_coverage[key]
+                for key in ("total", "applied", "partial", "missing")
+            },
+            "requirement_validation_results": requirement_coverage[
+                "requirement_validation_results"
+            ],
+            "final_erd_json": erd_entity_json,
+        }
         erd_mermaid_json, mermaid_warnings = self._build_erd_mermaid_json(erd_entity_json)
         warnings.extend([
             *relationship_warnings,
@@ -292,6 +364,7 @@ class DataStructureDesignAgent:
                 "meeting_change_apply_report": meeting_report,
                 "erd_quality_result": quality_result,
                 "entity_name_resolution_trace": self._entity_name_resolution_trace,
+                "impact_analysis": impact_analysis,
             },
         )
 
@@ -1752,7 +1825,12 @@ class DataStructureDesignAgent:
             "warnings": warnings,
             "errors": [],
         }
-        for key in ("meeting_change_requirements", "meeting_change_reflection", "meeting_change_apply_report"):
+        for key in (
+            "meeting_change_requirements",
+            "meeting_change_reflection",
+            "meeting_change_apply_report",
+            "impact_analysis",
+        ):
             if key in debug:
                 output[key] = debug[key]
         if bool(state.get("etc", {}).get("debug")):
@@ -2672,6 +2750,82 @@ def _extract_tables(document: dict[str, Any]) -> list[Any]:
             if nested:
                 return nested
     return []
+
+
+def _merge_relationship_lists(
+    primary: list[Any],
+    secondary: list[Any],
+) -> list[dict[str, Any]]:
+    merged: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str]] = set()
+    for relation in [*primary, *secondary]:
+        if not isinstance(relation, dict):
+            continue
+        parent_table = str(
+            relation.get("parent_table")
+            or relation.get("to_table")
+            or relation.get("source")
+            or ""
+        )
+        child_table = str(
+            relation.get("child_table")
+            or relation.get("from_table")
+            or relation.get("target")
+            or ""
+        )
+        parent_column = str(
+            relation.get("parent_column")
+            or relation.get("to_column")
+            or ""
+        )
+        child_column = str(
+            relation.get("child_column")
+            or relation.get("from_column")
+            or ""
+        )
+        key = (parent_table, parent_column, child_table, child_column)
+        if not parent_table or not child_table or key in seen:
+            continue
+        seen.add(key)
+        merged.append(deepcopy(relation))
+    return merged
+
+
+def _merge_meeting_apply_reports(
+    first: dict[str, Any],
+    second: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "meeting_change_requirements": list(
+            second.get("meeting_change_requirements")
+            or first.get("meeting_change_requirements")
+            or []
+        ),
+        "added_tables": list(
+            dict.fromkeys(
+                [
+                    *first.get("added_tables", []),
+                    *second.get("added_tables", []),
+                ]
+            )
+        ),
+        "added_columns": list(
+            dict.fromkeys(
+                [
+                    *first.get("added_columns", []),
+                    *second.get("added_columns", []),
+                ]
+            )
+        ),
+        "added_relationships": list(
+            dict.fromkeys(
+                [
+                    *first.get("added_relationships", []),
+                    *second.get("added_relationships", []),
+                ]
+            )
+        ),
+    }
 
 
 def _extract_db_design_tables(value: Any) -> list[dict[str, Any]]:
