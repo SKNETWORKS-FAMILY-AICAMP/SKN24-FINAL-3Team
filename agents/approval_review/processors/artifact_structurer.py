@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from agents.document_merge.processors.artifact_parser import artifact_items
 from config.constants import normalize_docs_cd
 
 
@@ -40,28 +41,176 @@ def _normalize_json_content(docs_cd: str, content: Any) -> dict[str, Any]:
         return {_root_key(docs_cd): content}
     if not isinstance(content, dict):
         return {_root_key(docs_cd): [content]}
-    for wrapper in ("final_document_json", "result", "content"):
-        nested = content.get(wrapper)
-        if isinstance(nested, dict):
-            content = nested
-    aliases = {
-        "SRS": ("requirements", "requirement_json_list", "final_requirement_json_list"),
-        "UI": ("screens", "interface_json_list", "reference_interface_json_list"),
-        "ERD": ("entities", "tables", "erd_entity_json"),
-        "DB": ("tables", "db_design_json"),
-        "ARCH": ("components", "requirements", "architecture_document_json"),
-        "TS": ("scenarios", "scenario_json_list", "integrated_test_scenario_json"),
+    content = _unwrap_json_content(content)
+    normalizer = {
+        "SRS": _normalize_srs_json,
+        "UI": _normalize_interface_json,
+        "ERD": _normalize_erd_json,
+        "DB": _normalize_db_json,
+        "ARCH": _normalize_arch_json,
+        "TS": _normalize_ts_json,
+    }.get(docs_cd)
+    if normalizer is None:
+        return {_root_key(docs_cd): [content]}
+    return normalizer(content)
+
+
+def _unwrap_json_content(content: dict[str, Any]) -> dict[str, Any]:
+    current = content
+    for _ in range(4):
+        nested = next(
+            (
+                current.get(key)
+                for key in ("final_document_json", "result", "content")
+                if isinstance(current.get(key), dict)
+            ),
+            None,
+        )
+        if nested is None:
+            break
+        current = nested
+    return current
+
+
+def _normalize_srs_json(content: dict[str, Any]) -> dict[str, Any]:
+    requirements = _find_list(
+        content,
+        "requirements",
+        "requirement_json_list",
+        "final_requirement_json_list",
+        "integrated_requirement_json_list",
+    )
+    return {"requirements": requirements or _shared_artifact_items(content)}
+
+
+def _normalize_interface_json(content: dict[str, Any]) -> dict[str, Any]:
+    screens = _find_list(
+        content,
+        "screens",
+        "interface_json_list",
+        "reference_interface_json_list",
+        "interface_image_analysis_json_list",
+    )
+    return {"screens": screens or _shared_artifact_items(content)}
+
+
+def _normalize_erd_json(content: dict[str, Any]) -> dict[str, Any]:
+    document = _find_dict(content, "erd_entity_json") or content
+    result: dict[str, Any] = {
+        "entities": _find_list(document, "tables", "entities", "erd_entity_json_list")
+        or _shared_artifact_items(document),
     }
-    root_key = _root_key(docs_cd)
-    for key in aliases.get(docs_cd, ()):
-        value = content.get(key)
-        if isinstance(value, list):
-            return {root_key: value}
-        if isinstance(value, dict):
-            nested = _normalize_json_content(docs_cd, value)
-            if _has_business_items(nested):
-                return nested
-    return {root_key: [content]}
+    relationships = _find_list(document, "relationships", "relations")
+    if relationships is not None:
+        result["relationships"] = relationships
+    return result
+
+
+def _normalize_db_json(content: dict[str, Any]) -> dict[str, Any]:
+    document = _find_dict(content, "db_design_json") or content
+    result: dict[str, Any] = {
+        "tables": _find_list(document, "tables", "entities", "db_table_json_list")
+        or _shared_artifact_items(document),
+    }
+    for output_key, aliases in {
+        "relationships": ("relationships", "relations"),
+        "indexes": ("indexes", "index_json_list"),
+        "constraints": ("constraints", "constraint_json_list"),
+    }.items():
+        value = _find_list(document, *aliases)
+        if value is not None:
+            result[output_key] = value
+    return result
+
+
+def _normalize_arch_json(content: dict[str, Any]) -> dict[str, Any]:
+    structure = _find_dict(content, "architecture_structure_json") or content
+    document = _find_dict(content, "architecture_document_json") or {}
+    result: dict[str, Any] = {
+        "components": _find_list(structure, "components") or [],
+    }
+    list_fields = {
+        "relations": ("relations", "edges"),
+        "layers": ("layers", "subgraphs"),
+        "drivers": ("drivers",),
+    }
+    for output_key, aliases in list_fields.items():
+        value = _find_list(structure, *aliases)
+        if value is not None:
+            result[output_key] = value
+    for output_key, aliases in {
+        "deployment_environment": ("deployment_environment", "deployment"),
+    }.items():
+        value = _find_value(structure, *aliases)
+        if value is not None:
+            result[output_key] = value
+    for key in (
+        "overview",
+        "security",
+        "performance",
+        "operation",
+        "integration",
+        "architecture_config_reflected",
+    ):
+        if key in structure:
+            result[key] = structure[key]
+    requirement_implementations = _find_list(
+        document,
+        "requirement_implementations",
+    )
+    if requirement_implementations is not None:
+        result["requirement_implementations"] = requirement_implementations
+    return result
+
+
+def _normalize_ts_json(content: dict[str, Any]) -> dict[str, Any]:
+    document = _find_dict(content, "integrated_test_scenario_json") or content
+    result: dict[str, Any] = {}
+    fields = {
+        "scenarios": ("scenario_json_list", "scenarios"),
+        "test_cases": ("test_case_json_list", "test_cases", "cases"),
+        "steps": ("step_json_list", "steps"),
+        "step_details": ("step_detail_json_list", "step_details"),
+    }
+    for output_key, aliases in fields.items():
+        value = _find_list(document, *aliases)
+        if value is not None:
+            result[output_key] = value
+    result.setdefault("scenarios", [])
+    return result
+
+
+def _find_dict(content: Any, *keys: str) -> dict[str, Any] | None:
+    value = _find_value(content, *keys)
+    return value if isinstance(value, dict) else None
+
+
+def _find_list(content: Any, *keys: str) -> list[Any] | None:
+    value = _find_value(content, *keys)
+    return value if isinstance(value, list) else None
+
+
+def _find_value(content: Any, *keys: str) -> Any | None:
+    if not isinstance(content, dict):
+        return None
+    for key in keys:
+        if key in content and content[key] is not None:
+            return content[key]
+    for wrapper in ("final_document_json", "result", "content", "data"):
+        nested = content.get(wrapper)
+        value = _find_value(nested, *keys)
+        if value is not None:
+            return value
+    return None
+
+
+def _shared_artifact_items(content: Any) -> list[Any]:
+    """Document Merge와 동일한 기본 항목 추출 규칙을 재사용합니다."""
+
+    items = artifact_items(content)
+    if len(items) == 1 and items[0] is content:
+        return []
+    return items
 
 
 def _structure_srs(tables: list[Any], _: list[Any]) -> dict[str, Any]:
@@ -309,9 +458,12 @@ def _parse_ts_steps(rows: list[list[str]]) -> list[dict[str, Any]]:
 
 
 def _is_document_content(value: Any) -> bool:
-    return isinstance(value, dict) and any(
-        isinstance(value.get(key), list) for key in ("tables", "paragraphs", "pages")
-    )
+    if not isinstance(value, dict):
+        return False
+    if any(isinstance(value.get(key), list) for key in ("paragraphs", "pages")):
+        return True
+    tables = value.get("tables")
+    return isinstance(tables, list) and any(isinstance(table, list) for table in tables)
 
 
 def _root_key(docs_cd: str) -> str:

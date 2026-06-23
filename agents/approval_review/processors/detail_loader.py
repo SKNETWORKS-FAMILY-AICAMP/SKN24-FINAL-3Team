@@ -5,6 +5,7 @@ from xml.etree import ElementTree
 from zipfile import BadZipFile, ZipFile
 
 from agents.approval_review.processors.json_loader import parse_content_text
+from agents.document_merge.processors.artifact_parser import parse_existing_artifact
 from tools.result import ToolResult
 from tools.storage.downloader import download_file
 
@@ -15,6 +16,7 @@ DetailDownloader = Callable[..., ToolResult]
 def load_detail_content(
     detail: dict[str, Any],
     *,
+    docs_cd: str | None = None,
     downloader: DetailDownloader = download_file,
 ) -> dict[str, Any]:
     blob = detail.get("docs_dtl_cn")
@@ -41,6 +43,18 @@ def load_detail_content(
     local_path = _resolve_local_path(docs_path, downloader)
     suffix = local_path.suffix.lower()
     if suffix == ".docx":
+        if docs_cd:
+            parsed = parse_existing_artifact(str(local_path), docs_cd)
+            if not parsed["success"]:
+                error = parsed.get("error") or {}
+                raise ValueError(
+                    f"docs_path parse failed: {docs_path}: "
+                    f"{error.get('message') or 'document merge parser failed'}"
+                )
+            return {
+                "content_type": "document",
+                "data": parsed["data"].get("raw_json", parsed["data"]),
+            }
         return {
             "content_type": "document",
             "data": _parse_docx(local_path, docs_path),

@@ -4,8 +4,12 @@ import json
 from pathlib import Path
 from typing import Any
 
+from config.constants import normalize_docs_cd
+from tools.parser.db_design_docx_parser import parse_db_design_docx
 from tools.parser.docx_parser import parse_docx
+from tools.parser.erd_docx_parser import parse_erd_docx
 from tools.parser.pdf_parser import parse_pdf
+from tools.parser.ts_docx_parser import parse_ts_docx
 from tools.result import ToolResult, error_result, success_result
 
 
@@ -26,6 +30,23 @@ def parse_artifact(file_path: str) -> ToolResult:
         return error_result("ARTIFACT_FORMAT_UNSUPPORTED", f"지원하지 않는 문서 형식입니다: {path.suffix}")
     except Exception as exc:
         return error_result("ARTIFACT_PARSE_FAILED", str(exc), {"file_path": file_path})
+
+
+def parse_existing_artifact(file_path: str, docs_cd: str) -> ToolResult:
+    """산출물 종류에 맞는 Document Merge 공용 파서로 기존 문서를 읽습니다."""
+
+    normalized = normalize_docs_cd(docs_cd)
+    if str(file_path).lower().endswith(".docx"):
+        specialized = {
+            "ERD": parse_erd_docx,
+            "DB": parse_db_design_docx,
+            "TS": parse_ts_docx,
+        }.get(normalized)
+        if specialized is not None:
+            parsed = specialized(str(file_path))
+            if parsed["success"]:
+                return parsed
+    return parse_artifact(str(file_path))
 
 
 def artifact_items(data: Any) -> list[Any]:

@@ -59,11 +59,17 @@ class ApprovalReviewAgent:
 
         before_content = structure_artifact_content(
             str(docs["docs_cd"]),
-            load_detail_content(before_detail)["data"],
+            load_detail_content(
+                before_detail,
+                docs_cd=str(docs["docs_cd"]),
+            )["data"],
         )
         after_content = structure_artifact_content(
             str(docs["docs_cd"]),
-            load_detail_content(after_detail)["data"],
+            load_detail_content(
+                after_detail,
+                docs_cd=str(docs["docs_cd"]),
+            )["data"],
         )
         if self.snapshot_callback is not None:
             self.snapshot_callback(

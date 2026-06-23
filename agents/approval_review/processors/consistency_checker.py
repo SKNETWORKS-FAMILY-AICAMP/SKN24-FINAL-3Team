@@ -67,9 +67,9 @@ def extract_requirement_items(value: Any) -> dict[str, Any]:
 
     def visit(node: Any) -> None:
         if isinstance(node, dict):
-            requirement_id = node.get("requirement_id")
-            if requirement_id not in (None, ""):
-                result[str(requirement_id)] = node
+            requirement_ids = _requirement_ids(node)
+            for requirement_id in requirement_ids:
+                result[requirement_id] = node
             for child in node.values():
                 visit(child)
         elif isinstance(node, list):
@@ -78,6 +78,30 @@ def extract_requirement_items(value: Any) -> dict[str, Any]:
 
     visit(value)
     return result
+
+
+def _requirement_ids(node: dict[str, Any]) -> set[str]:
+    values: list[Any] = []
+    for key in (
+        "requirement_id",
+        "req_id",
+        "source_requirement_id",
+        "requirement_source_id",
+        "source_requirement_ids",
+        "source_req_ids",
+        "matched_requirement_ids",
+        "requirement_ids",
+    ):
+        value = node.get(key)
+        if isinstance(value, list):
+            values.extend(value)
+        elif value not in (None, ""):
+            values.append(value)
+    return {
+        text
+        for value in values
+        if (text := str(value).strip()) and text.upper() != "UNKNOWN"
+    }
 
 
 def _semantic_conflicts(

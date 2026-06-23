@@ -5,11 +5,17 @@ from typing import Any
 
 IDENTITY_KEYS = (
     "requirement_id",
+    "requirement_name",
     "entity_id",
     "table_id",
     "screen_id",
     "component_id",
+    "relation_id",
+    "layer_id",
+    "driver_id",
     "test_id",
+    "step_id",
+    "step_no",
     "column_id",
     "scenario_id",
     "test_case_id",

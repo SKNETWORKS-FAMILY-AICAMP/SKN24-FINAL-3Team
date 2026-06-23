@@ -4,15 +4,19 @@ from collections.abc import Callable
 import json
 from typing import Any
 
-from agents.document_merge.processors import analyze_meetings, artifact_items, merge_items, parse_artifact
+from agents.document_merge.processors import (
+    analyze_meetings,
+    artifact_items,
+    merge_items,
+    parse_artifact,
+    parse_existing_artifact,
+)
 from tools.llm.llm_client import LLMClient
 from tools.llm.response_parser import parse_json_response
 from tools.llm.send_api import send_parallel
-from tools.parser.db_design_docx_parser import parse_db_design_docx
 from tools.parser.erd_docx_parser import parse_erd_docx
 from tools.parser.image_extractor import extract_images
 from tools.parser.rfp_rule_parser import parse_rfp_requirements
-from tools.parser.ts_docx_parser import parse_ts_docx
 from tools.result import ToolResult
 from tools.search.search_router import search
 from tools.vector.embedding_writer import write_non_functional_requirements
@@ -181,19 +185,7 @@ class DocumentMergeAgent:
         )
 
     def _parse_existing_artifact(self, existing_path: str, docs_cd: str) -> ToolResult:
-        if docs_cd == "ERD" and str(existing_path).lower().endswith(".docx"):
-            parsed_erd = parse_erd_docx(str(existing_path))
-            if parsed_erd["success"]:
-                return parsed_erd
-        if docs_cd == "DB" and str(existing_path).lower().endswith(".docx"):
-            parsed_db = parse_db_design_docx(str(existing_path))
-            if parsed_db["success"] and parsed_db["data"].get("tables"):
-                return parsed_db
-        if docs_cd == "TS" and str(existing_path).lower().endswith(".docx"):
-            parsed_ts = parse_ts_docx(str(existing_path))
-            if parsed_ts["success"]:
-                return parsed_ts
-        return parse_artifact(existing_path)
+        return parse_existing_artifact(existing_path, docs_cd)
 
     def _meeting_changes(self, state: WorkflowState) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         excluded_paths = {
