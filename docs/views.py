@@ -729,6 +729,10 @@ def document_generate(request):
     architecture_networks = get_project_nets(current_project)
     active_generation_job = None
     can_start_current_generation = False
+    can_reset_generation = bool(
+        selected_progress_row
+        and selected_progress_row.get("status") in {"confirmed", "review"}
+    )
     start_button_label = f"{generation_context['current_label']} 생성" if generation_context["current_label"] else "산출물 생성"
 
     if selected_is_current_step and current_step_code == INTERFACE_REFERENCE_DOCUMENT_CODE:
@@ -791,6 +795,7 @@ def document_generate(request):
         "show_itf_upload": selected_is_current_step and current_step_code == INTERFACE_REFERENCE_DOCUMENT_CODE,
         "show_architecture_inputs": selected_is_current_step and current_step_code == ARCHITECTURE_DOCUMENT_CODE,
         "can_start_current_generation": can_start_current_generation,
+        "can_reset_generation": can_reset_generation,
         "start_button_label": start_button_label,
         "has_active_generation_session": has_active_generation_session(generation_context["state"]),
         "active_job": active_generation_job,
@@ -875,6 +880,7 @@ def document_detail(request, document_sn):
         }
         for detail in revisions
     ]
+    can_view_revision_history = (not is_history_view) and is_working_document(document) and bool(revision_rows)
 
     generation_state = get_generation_state(request.session, current_project)
     current_generation_code = get_current_generation_code(generation_state)
@@ -903,6 +909,7 @@ def document_detail(request, document_sn):
         "preview_detail": preview_detail,
         "preview_text": preview_text,
         "revision_rows": revision_rows,
+        "can_view_revision_history": can_view_revision_history,
         "can_confirm": is_generation_draft and (is_project_manager(current_project, actor) or document.created_by_id == actor.sn),
         "can_edit": (not is_history_view) and state == "view" and pending_approval is None,
         "can_cancel_approval": can_cancel_approval,

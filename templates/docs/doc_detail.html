@@ -37,9 +37,6 @@
             회의 내용 자동 적용
           </button>
           {% endif %}
-          <button type="button" data-modal-target="history-modal" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-            수정이력 보기
-          </button>
         {% elif document_state == "view" and can_edit %}
           <form method="post" action="{% url 'doc_lock' document.sn %}">
             {% csrf_token %}
@@ -54,6 +51,11 @@
               승인 요청 취소
             </button>
           </form>
+        {% endif %}
+        {% if can_view_revision_history %}
+          <button type="button" data-modal-target="history-modal" class="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
+            수정이력 보기
+          </button>
         {% endif %}
         {% if can_request_approval %}
           <button type="button" data-modal-target="approval-request-modal" class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700">

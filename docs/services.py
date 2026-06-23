@@ -503,6 +503,18 @@ def is_working_document(document):
 
 
 def get_generation_saved_document(project, document_code, state=None):
+    confirmed_document = (
+        _exclude_working_versions(
+            Document.objects.filter(
+                project=project,
+                document_type_id=document_code,
+                progress_status_id=PROGRESS_COMPLETED,
+            )
+        )
+        .select_related("project", "document_type", "created_by", "updated_by", "possession_user")
+        .order_by("-updated_at", "-created_at", "-sn")
+        .first()
+    )
     if state:
         document_sn = (state.get("confirmed_documents", {}) or {}).get(document_code) or (
             state.get("confirmed_documents", {}) or {}
@@ -518,20 +530,11 @@ def get_generation_saved_document(project, document_code, state=None):
                 .first()
             )
             if document is not None:
+                if is_working_document(document) and confirmed_document is not None:
+                    return confirmed_document
                 return document
 
-    return (
-        _filter_working_versions(
-            Document.objects.filter(
-                project=project,
-                document_type_id=document_code,
-                progress_status_id=PROGRESS_COMPLETED,
-            )
-        )
-        .select_related("project", "document_type", "created_by", "updated_by", "possession_user")
-        .order_by("-updated_at", "-created_at", "-sn")
-        .first()
-    )
+    return confirmed_document
 
 
 def get_document_history_queryset(project, document_code=None):
@@ -1312,6 +1315,9 @@ def hydrate_generation_state_from_existing_documents(project, state):
 
     for code in hydration_sequence:
         if str(code) in confirmed:
+            confirmed_document = get_generation_saved_document(project, code, state)
+            if confirmed_document is not None:
+                confirmed[str(code)] = confirmed_document.sn
             continue
         if str(code) in draft_documents:
             break

@@ -290,6 +290,44 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(len(documents), 1)
         self.assertEqual(documents[0]["sn"], newer.sn)
 
+    def test_generate_state_hydration_ignores_stale_working_saved_documents(self):
+        approved_srs = self._create_document(sn=1, version="1.0", document_type=self.srs_code)
+        approved_srs.progress_status = self.progress_completed
+        approved_srs.save(update_fields=["progress_status"])
+        for index, code in enumerate([self.itf_code, self.arch_code, self.erd_code, self.db_code, self.ts_code], start=2):
+            stale_working = self._create_document(sn=index, version="0.0", document_type=code)
+            stale_working.progress_status = self.progress_completed
+            stale_working.save(update_fields=["progress_status"])
+
+        response = self.client.get(reverse("doc_generate"), {"docs_cd": "DOC_SRS", "resume": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        progress_by_code = {row["code"]: row for row in response.context["progress_rows"]}
+        self.assertEqual(progress_by_code["DOC_SRS"]["status"], "confirmed")
+        self.assertEqual(progress_by_code["DOC_ITF"]["status"], "pending")
+        self.assertEqual(progress_by_code["DOC_ARCH"]["status"], "locked")
+        self.assertFalse(response.context["is_complete"])
+
+    def test_generate_state_replaces_saved_working_document_with_approved_version(self):
+        working_srs = self._create_document(sn=10, version="0", document_type=self.srs_code)
+        working_srs.progress_status = self.progress_completed
+        working_srs.save(update_fields=["progress_status"])
+        approved_srs = self._create_document(sn=11, version="1.0", document_type=self.srs_code)
+        approved_srs.progress_status = self.progress_completed
+        approved_srs.save(update_fields=["progress_status"])
+        self._set_generation_state(confirmed_documents={"DOC_SRS": working_srs.sn})
+
+        response = self.client.get(reverse("doc_generate"), {"docs_cd": "DOC_SRS", "resume": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        progress_by_code = {row["code"]: row for row in response.context["progress_rows"]}
+        self.assertEqual(progress_by_code["DOC_SRS"]["document_sn"], approved_srs.sn)
+        self.assertEqual(
+            progress_by_code["DOC_SRS"]["detail_url"],
+            reverse("doc_detail", args=[approved_srs.sn]),
+        )
+        self.assertEqual(self.client.session["docs_initial_generation"]["confirmed_documents"]["DOC_SRS"], approved_srs.sn)
+
     def test_generate_view_initially_shows_only_file_load_ui(self):
         response = self.client.get(reverse("doc_generate"))
 
@@ -308,6 +346,26 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, f'action="{reverse("doc_generate")}"', html=False)
         self.assertContains(response, f'data-submit-url="{reverse("doc_generate")}"', html=False)
+
+    def test_generate_view_shows_regeneration_button_when_saved_flow_is_complete(self):
+        confirmed_documents = {}
+        for index, code in enumerate(
+            [self.srs_code, self.itf_code, self.arch_code, self.erd_code, self.db_code, self.ts_code],
+            start=1,
+        ):
+            document = self._create_document(sn=index, version="0.0", document_type=code)
+            document.progress_status = self.progress_completed
+            document.save(update_fields=["progress_status"])
+            confirmed_documents[code.code] = document.sn
+
+        self._set_generation_state(confirmed_documents=confirmed_documents)
+
+        response = self.client.get(reverse("doc_generate"), {"docs_cd": "DOC_SRS", "resume": "1"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["is_complete"])
+        self.assertTrue(response.context["can_reset_generation"])
+        self.assertContains(response, 'name="action" value="reset_generation"', html=False)
 
     def test_selecting_files_updates_generation_session_and_redirects_to_clean_url(self):
         project_file = self._create_project_file()
@@ -784,6 +842,69 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(DocumentDetail.objects.filter(document=document).count(), 2)
         document.refresh_from_db()
         self.assertIsNone(document.possession_user)
+
+    def test_saved_working_document_history_is_visible_after_save(self):
+        document = self._create_document(sn=44, version="0", user=self.user)
+        self._create_detail(sn=44, document=document)
+
+        self.client.post(
+            reverse("doc_save", args=[document.sn]),
+            {"content_text": "saved revision text"},
+        )
+
+        with patch("docs.views.extract_text_from_docx", return_value="saved revision text"):
+            response = self.client.get(reverse("doc_detail", args=[document.sn]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["document_state"], "view")
+        self.assertTrue(response.context["can_view_revision_history"])
+        self.assertContains(response, 'data-modal-target="history-modal"', html=False)
+        self.assertEqual(len(response.context["revision_rows"]), 2)
+
+    def test_pending_approval_working_document_history_is_visible(self):
+        document = self._create_document(sn=45, version="0", user=None)
+        detail = self._create_detail(sn=45, document=document)
+        DocumentApproval.objects.create(
+            approval_sn=45,
+            detail=detail,
+            approval_status=self.approval_requested,
+            request_content="please approve",
+            rejection_reason=None,
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        with patch("docs.views.extract_text_from_docx", return_value="pending revision text"):
+            response = self.client.get(reverse("doc_detail", args=[document.sn]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["document_state"], "waiting")
+        self.assertTrue(response.context["can_view_revision_history"])
+        self.assertContains(response, 'data-modal-target="history-modal"', html=False)
+
+    def test_document_locked_by_other_user_is_readonly_and_cannot_be_saved(self):
+        document = self._create_document(sn=43, version="1.0", user=self.user)
+        self._create_detail(sn=43, document=document)
+        self.client.force_login(self.other_user)
+        session = self.client.session
+        session["current_project_sn"] = self.project.sn
+        session.save()
+
+        detail_response = self.client.get(reverse("doc_detail", args=[document.sn]))
+
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(detail_response.context["document_state"], "readonly")
+        self.assertNotContains(detail_response, reverse("doc_lock", args=[document.sn]), html=False)
+
+        save_response = self.client.post(
+            reverse("doc_save", args=[document.sn]),
+            {"content_text": "other user edit"},
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(save_response.status_code, 403)
+        document.refresh_from_db()
+        self.assertEqual(document.possession_user_id, self.user.sn)
 
     def test_document_save_waits_for_onlyoffice_revision_when_form_has_no_text(self):
         document = self._create_document(sn=1, version="1.0", user=self.user)
