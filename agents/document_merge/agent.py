@@ -12,6 +12,7 @@ from tools.parser.db_design_docx_parser import parse_db_design_docx
 from tools.parser.erd_docx_parser import parse_erd_docx
 from tools.parser.image_extractor import extract_images
 from tools.parser.rfp_rule_parser import parse_rfp_requirements
+from tools.parser.ts_docx_parser import parse_ts_docx
 from tools.result import ToolResult
 from tools.search.search_router import search
 from tools.vector.embedding_writer import write_non_functional_requirements
@@ -157,6 +158,18 @@ class DocumentMergeAgent:
                 meeting_change_items=changes,
                 existing_output_image_paths=image_paths,
             )
+        if docs_cd == "TS":
+            # parse_ts_docx가 이미 scenario/case/step으로 구조화했으므로
+            # artifact_items()로 평탄화하지 않고 구조를 그대로 유지
+            return self._success(
+                warnings=warnings,
+                integrated_artifact_json_list=self._apply_changes_to_items(
+                    [raw_json],
+                    changes,
+                    warnings,
+                ),
+                existing_output_image_paths=image_paths,
+            )
         return self._success(
             warnings=warnings,
             integrated_artifact_json_list=self._apply_changes_to_items(
@@ -176,6 +189,10 @@ class DocumentMergeAgent:
             parsed_db = parse_db_design_docx(str(existing_path))
             if parsed_db["success"] and parsed_db["data"].get("tables"):
                 return parsed_db
+        if docs_cd == "TS" and str(existing_path).lower().endswith(".docx"):
+            parsed_ts = parse_ts_docx(str(existing_path))
+            if parsed_ts["success"]:
+                return parsed_ts
         return parse_artifact(existing_path)
 
     def _meeting_changes(self, state: WorkflowState) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
