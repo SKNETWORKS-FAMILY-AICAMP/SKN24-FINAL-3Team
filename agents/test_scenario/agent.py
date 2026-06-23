@@ -107,9 +107,25 @@ class TestScenarioGenerationAgent:
         warnings.extend(scenario_warnings)
         warnings.extend(case_warnings)
         warnings.extend(step_warnings)
-        # TODO: _update(udt_yn=Y) 경로에는 아직 6단계(시나리오 설명 요약, generate_scenario_descriptions)가
-        # 적용되어 있지 않음. _create와 동일하게 step_detail 확정 후 케이스별 요약을 추가해야 함.
+
+        # 6단계: step_detail 확정 → 케이스별 시나리오 설명 요약 생성 (_create와 동일)
         step_details = build_step_detail_list(steps)
+        steps_by_case: dict[str, list[dict[str, Any]]] = {}
+        for detail in step_details:
+            steps_by_case.setdefault(detail.get("test_case_id"), []).append(detail)
+        cases, description_warnings = generate_scenario_descriptions(
+            cases, steps_by_case, llm_client=self.llm_client
+        )
+        warnings.extend(description_warnings)
+
+        # 모든 LLM 처리 이후 case_type 강제 재추론:
+        # apply_scenario_rules/refine_test_cases 등의 LLM이 case_type을 임의 변경할 수 있으므로
+        # 최종 출력 전에 케이스 이름/설명 기반으로 재추론하여 6종 화이트리스트를 보장
+        for case in cases:
+            name = case.get("test_case_name", "")
+            desc = case.get("scenario_description_summary", "")
+            case["case_type"] = _infer_case_type_from_text(name, desc)
+        
         return self._success(
             state,
             scenarios,
@@ -173,3 +189,17 @@ def _collect_list(artifacts: list[Any], *keys: str) -> list[dict[str, Any]]:
             if isinstance(value, list):
                 collected.extend(item for item in value if isinstance(item, dict))
     return collected
+
+def _infer_case_type_from_text(name: str, description: str) -> str:
+    text = f"{name} {description}".lower()
+    if any(kw in text for kw in ("예외", "오류", "에러", "실패", "비정상", "장애", "fallback", "exception", "error")):
+        return "EXCEPTION"
+    if any(kw in text for kw in ("경계", "한계", "최대", "최소", "초과", "미만", "boundary", "limit")):
+        return "BOUNDARY"
+    if any(kw in text for kw in ("성능", "부하", "응답시간", "처리량", "동시", "performance", "load")):
+        return "PERFORMANCE"
+    if any(kw in text for kw in ("보안", "권한", "인증", "접근", "암호", "토큰", "비인가", "security", "auth")):
+        return "SECURITY"
+    if any(kw in text for kw in ("데이터", "유효성", "무결성", "일관성", "validation", "integrity")):
+        return "DATA_VALIDATION"
+    return "NORMAL"
