@@ -55,12 +55,23 @@ class GenerationJobRepository:
             select(GenerationJob).where(GenerationJob.job_id == job_id)
         )
 
-    def find_active(self, project_sn: int, docs_cd: str) -> GenerationJob | None:
+    def find_active(
+        self,
+        project_sn: int,
+        docs_cd: str,
+        *,
+        legacy_docs_cd: str | None = None,
+    ) -> GenerationJob | None:
+        docs_codes = (
+            (docs_cd, legacy_docs_cd)
+            if legacy_docs_cd is not None and legacy_docs_cd != docs_cd
+            else (docs_cd,)
+        )
         return self.session.scalar(
             select(GenerationJob)
             .where(
                 GenerationJob.prj_sn == project_sn,
-                GenerationJob.docs_cd == docs_cd,
+                GenerationJob.docs_cd.in_(docs_codes),
                 GenerationJob.job_stts_cd.in_(ACTIVE_JOB_STATUSES),
             )
             .order_by(GenerationJob.job_sn.desc())

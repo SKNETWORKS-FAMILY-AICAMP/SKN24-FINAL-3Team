@@ -4,6 +4,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from config.constants import DOCS_CODE_DB_MAP, normalize_docs_cd
 from database.models.generation_job import GenerationJob
 from database.repositories.generation_job_repository import GenerationJobRepository
 from schemas.request.generation_request import GenerationRequest
@@ -22,7 +23,13 @@ def create_generation_job(
     request_id: str | None,
 ) -> GenerationJob:
     repository = GenerationJobRepository(session)
-    active_job = repository.find_active(request.project_sn, str(request.docs_cd))
+    api_docs_cd = str(request.docs_cd)
+    db_docs_cd = DOCS_CODE_DB_MAP.get(api_docs_cd, api_docs_cd)
+    active_job = repository.find_active(
+        request.project_sn,
+        db_docs_cd,
+        legacy_docs_cd=api_docs_cd,
+    )
     if active_job is not None:
         raise ActiveGenerationJobError(active_job)
 
@@ -30,7 +37,7 @@ def create_generation_job(
         job = repository.create(
             job_id=str(uuid4()),
             project_sn=request.project_sn,
-            docs_cd=str(request.docs_cd),
+            docs_cd=db_docs_cd,
             docs_sn=request.docs_sn,
             request_json=jsonable_encoder(request.model_dump(mode="json")),
             request_id=request_id,
@@ -40,7 +47,11 @@ def create_generation_job(
         return job
     except IntegrityError as exc:
         session.rollback()
-        active_job = repository.find_active(request.project_sn, str(request.docs_cd))
+        active_job = repository.find_active(
+            request.project_sn,
+            db_docs_cd,
+            legacy_docs_cd=api_docs_cd,
+        )
         if active_job is not None:
             raise ActiveGenerationJobError(active_job) from exc
         raise
@@ -57,7 +68,7 @@ def build_status_response(job: GenerationJob) -> dict:
     return {
         "job_id": job.job_id,
         "project_sn": job.prj_sn,
-        "docs_cd": job.docs_cd,
+        "docs_cd": normalize_docs_cd(job.docs_cd),
         "status": job.job_stts_cd,
         "progress": job.progress_rate,
         "requested_at": job.requested_dt,
