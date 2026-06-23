@@ -39,6 +39,13 @@ class DocsProgressStatus(StrEnum):
     DONE = "DONE"
 
 
+class GenerationJobStatus(StrEnum):
+    PENDING = "PRGRS_PENDING"
+    PROCESSING = "PRGRS_PROCESSING"
+    COMPLETED = "PRGRS_COMPLETED"
+    FAILED = "PRGRS_FAILED"
+
+
 DOCS_CODES = tuple(code.value for code in DocsCode)
 UPDATE_YN_VALUES = tuple(value.value for value in UpdateYn)
 
@@ -70,11 +77,12 @@ def normalize_docs_cd(docs_cd: str | DocsCode) -> str:
                 return normalized
     return value
 
+
 DOCS_PROGRESS_DB_MAP = {
-    DocsProgressStatus.READY.value: "PRGRS_PENDING",
-    DocsProgressStatus.GENERATING.value: "PRGRS_PROCESSING",
-    DocsProgressStatus.DONE.value: "PRGRS_COMPLETED",
-    DocsProgressStatus.FAILED.value: "PRGRS_FAILED",
+    DocsProgressStatus.READY.value: GenerationJobStatus.PENDING.value,
+    DocsProgressStatus.GENERATING.value: GenerationJobStatus.PROCESSING.value,
+    DocsProgressStatus.DONE.value: GenerationJobStatus.COMPLETED.value,
+    DocsProgressStatus.FAILED.value: GenerationJobStatus.FAILED.value,
 }
 
 DB_DOCS_PROGRESS_MAP = {value: key for key, value in DOCS_PROGRESS_DB_MAP.items()}

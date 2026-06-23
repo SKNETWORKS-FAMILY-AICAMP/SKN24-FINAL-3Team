@@ -32,7 +32,6 @@ def create_generation_job(
             project_sn=request.project_sn,
             docs_cd=str(request.docs_cd),
             docs_sn=request.docs_sn,
-            request_docs_detail_sn=request.request_docs_detail_sn,
             request_json=jsonable_encoder(request.model_dump(mode="json")),
             request_id=request_id,
         )
@@ -60,9 +59,7 @@ def build_status_response(job: GenerationJob) -> dict:
         "project_sn": job.prj_sn,
         "docs_cd": job.docs_cd,
         "status": job.job_stts_cd,
-        "step": job.job_step_cd,
         "progress": job.progress_rate,
-        "message": job.message_cn,
         "requested_at": job.requested_dt,
         "started_at": job.started_dt,
         "completed_at": job.completed_dt,

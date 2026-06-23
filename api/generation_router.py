@@ -3,6 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
+from config.constants import GenerationJobStatus
 from config.logging_config import get_logger
 from config.logging_context import bind_log_extra
 from database.repositories.generation_job_repository import GenerationJobRepository
@@ -80,7 +81,7 @@ async def generate(
         job_id=job.job_id,
         project_sn=job.prj_sn,
         docs_cd=job.docs_cd,
-        status="QUEUED",
+        status=GenerationJobStatus.PENDING.value,
         status_url=f"/generation-jobs/{job.job_id}",
         message="산출물 생성 작업이 접수되었습니다.",
     )

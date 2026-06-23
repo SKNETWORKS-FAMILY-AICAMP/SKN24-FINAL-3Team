@@ -81,7 +81,7 @@ class GenerationWorker:
                     requeued,
                     failed,
                 )
-            job = repository.claim_next(self.worker_id)
+            job = repository.claim_next()
             if job is None:
                 session.commit()
                 return False
@@ -101,7 +101,7 @@ class GenerationWorker:
         state["etc"]["job_id"] = job_id
         state["etc"]["request_id"] = request_id
 
-        logger.info("Generation job started job_id=%s", job_id)
+        logger.info("Generation job started job_id=%s worker_id=%s", job_id, self.worker_id)
         try:
             with JobHeartbeat(job_id, self.heartbeat_interval):
                 result_state = workflow.invoke(state)

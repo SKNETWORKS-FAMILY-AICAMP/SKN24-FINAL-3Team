@@ -7,12 +7,10 @@ from schemas.common.common_schema import DocsCode
 
 
 JobStatus = Literal[
-    "QUEUED",
-    "RUNNING",
-    "SUCCEEDED",
-    "FAILED",
-    "CANCEL_REQUESTED",
-    "CANCELED",
+    "PRGRS_PENDING",
+    "PRGRS_PROCESSING",
+    "PRGRS_COMPLETED",
+    "PRGRS_FAILED",
 ]
 
 
@@ -30,9 +28,7 @@ class GenerationJobStatusResponse(BaseModel):
     project_sn: int
     docs_cd: DocsCode
     status: JobStatus
-    step: str | None = None
     progress: int
-    message: str | None = None
     requested_at: datetime
     started_at: datetime | None = None
     completed_at: datetime | None = None
