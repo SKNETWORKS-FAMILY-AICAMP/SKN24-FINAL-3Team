@@ -1232,8 +1232,8 @@ def restore_revision(document, actor, source_detail):
     )
 
 
-def can_request_approval(document, actor, *, pending_approval=None, is_generation_draft=False):
-    if actor is None or is_generation_draft or pending_approval is not None:
+def can_request_approval(document, actor, *, pending_approval=None):
+    if actor is None or pending_approval is not None:
         return False
     return document.updated_by_id == actor.sn
 

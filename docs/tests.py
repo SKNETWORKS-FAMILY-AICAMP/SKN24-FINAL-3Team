@@ -1142,6 +1142,18 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertNotContains(response, 'data-modal-target="approval-request-modal"', html=False)
 
+    def test_generation_draft_detail_shows_approval_request_button_after_save(self):
+        document = self._create_document(sn=46, version="0", document_type=self.srs_code, user=None)
+        self._create_detail(sn=46, document=document)
+        self._set_generation_state(draft_documents={"DOC_SRS": document.sn})
+
+        response = self.client.get(reverse("doc_detail", args=[document.sn]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["is_generation_draft"])
+        self.assertTrue(response.context["can_request_approval"])
+        self.assertContains(response, 'data-modal-target="approval-request-modal"', html=False)
+
     def test_document_request_approval_allows_last_editor_from_detail_view(self):
         document = self._create_document(sn=1, version="1.0", user=None)
         detail = self._create_detail(sn=1, document=document)
@@ -1154,6 +1166,20 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 302)
         approval = DocumentApproval.objects.get(detail=detail)
         self.assertEqual(approval.request_content, "승인 요청입니다.")
+
+    def test_generation_draft_request_approval_allows_last_editor(self):
+        document = self._create_document(sn=47, version="0", document_type=self.srs_code, user=None)
+        detail = self._create_detail(sn=47, document=document)
+        self._set_generation_state(draft_documents={"DOC_SRS": document.sn})
+
+        response = self.client.post(
+            reverse("doc_request_approval", args=[document.sn]),
+            {"request_content": "draft approval request"},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        approval = DocumentApproval.objects.get(detail=detail)
+        self.assertEqual(approval.request_content, "draft approval request")
 
     def test_approval_detail_uses_modal_buttons_instead_of_inline_forms(self):
         document = self._create_document(sn=1, version="1.0", user=None)

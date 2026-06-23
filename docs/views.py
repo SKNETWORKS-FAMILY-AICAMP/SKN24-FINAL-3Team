@@ -919,7 +919,6 @@ def document_detail(request, document_sn):
             document,
             actor,
             pending_approval=pending_approval,
-            is_generation_draft=is_generation_draft,
         ),
         "can_auto_apply": can_auto_apply,
         "locked_by_name": getattr(document.possession_user, "name", ""),
@@ -1189,13 +1188,6 @@ def document_request_approval(request, document_sn):
         document,
         actor,
         pending_approval=pending_approval,
-        is_generation_draft=(
-            is_working_document(document)
-            and get_generation_state(request.session, current_project)
-            .get("draft_documents", {})
-            .get(document.document_type_id)
-            == document.sn
-        ),
     ):
         messages.error(request, "현재 화면에서 승인 요청할 수 없습니다.")
         return redirect(reverse("doc_detail", args=[document.sn]))
