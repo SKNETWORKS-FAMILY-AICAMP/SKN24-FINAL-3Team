@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
 
+    # Generation job worker
+    job_worker_enabled: bool = True
+    job_worker_poll_interval: float = Field(default=1.0, gt=0)
+    job_worker_heartbeat_interval: float = Field(default=30.0, gt=0)
+    job_worker_stale_timeout: float = Field(default=300.0, gt=0)
+    job_auto_create_table: bool = False
+
     # Database
     db_driver: str = "mysql+pymysql"
     db_host: str | None = None

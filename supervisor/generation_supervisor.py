@@ -2,6 +2,7 @@ from typing import Any
 
 from config.logging_config import get_logger
 from config.logging_context import bind_state_log_extra
+from services.generation_job_progress import update_generation_job_progress
 from supervisor.evaluate.evaluator import evaluate_step
 from supervisor.plan.plan_builder import build_plan
 from supervisor.reduce.reduce_builder import reduce_outputs
@@ -105,6 +106,13 @@ class GenerationSupervisor:
             agent_name = step["agent"]
             retry_count = 0
             while True:
+                if agent_name == "validation_agent":
+                    update_generation_job_progress(
+                        state,
+                        step="VALIDATING",
+                        progress=75,
+                        message="생성된 산출물의 품질을 검증하고 있습니다.",
+                    )
                 step["status"] = "RUNNING"
                 step["retry_count"] = retry_count
                 state["supervisor_decision"] = {

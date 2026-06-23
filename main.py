@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
+from contextlib import suppress
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -15,6 +17,9 @@ from api.approval_review_router import router as approval_review_router
 from config.logging_config import configure_logging, get_logger
 from config.logging_context import bind_log_extra, reset_request_id, set_request_id
 from config.settings import get_settings
+from database.engine import engine
+from database.models.generation_job import GenerationJob
+from workers.generation_worker import run_generation_worker_loop
 
 
 logger = get_logger("main")
@@ -24,13 +29,31 @@ logger = get_logger("main")
 async def lifespan(_: FastAPI):
     settings = get_settings()
     configure_logging(settings)
+    if settings.job_auto_create_table:
+        GenerationJob.__table__.create(bind=engine, checkfirst=True)
+
+    worker_stop_event = asyncio.Event()
+    worker_task: asyncio.Task | None = None
+    if settings.job_worker_enabled:
+        worker_task = asyncio.create_task(
+            run_generation_worker_loop(worker_stop_event),
+            name="generation-job-worker",
+        )
+
     logger.info(
         "Application configured LLM base_url=%s model=%s",
         settings.llm_base_url,
         settings.llm_model_name,
         extra=bind_log_extra("application_configured"),
     )
-    yield
+    try:
+        yield
+    finally:
+        worker_stop_event.set()
+        if worker_task is not None:
+            worker_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker_task
 
 
 app = FastAPI(title="ALPLED Core", lifespan=lifespan)
