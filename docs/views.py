@@ -846,7 +846,7 @@ def document_detail(request, document_sn):
 
     preview_detail_sn = request.GET.get("preview_detail")
     preview_detail = get_detail_by_sn(document, preview_detail_sn) if preview_detail_sn else None
-    is_history_view = request.GET.get("from") == "history"
+    is_history_view = request.GET.get("from") == "history" and not is_working_document(document)
     if preview_detail:
         try:
             preview_text = extract_text_from_docx(get_document_detail_bytes(preview_detail))

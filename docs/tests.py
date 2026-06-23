@@ -1154,6 +1154,19 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertTrue(response.context["can_request_approval"])
         self.assertContains(response, 'data-modal-target="approval-request-modal"', html=False)
 
+    def test_working_document_from_history_url_still_shows_edit_and_approval_buttons(self):
+        document = self._create_document(sn=48, version="0", document_type=self.srs_code, user=None)
+        self._create_detail(sn=48, document=document)
+        self._set_generation_state(draft_documents={"DOC_SRS": document.sn})
+
+        response = self.client.get(reverse("doc_detail", args=[document.sn]), {"from": "history"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["can_edit"])
+        self.assertTrue(response.context["can_request_approval"])
+        self.assertContains(response, reverse("doc_lock", args=[document.sn]), html=False)
+        self.assertContains(response, 'data-modal-target="approval-request-modal"', html=False)
+
     def test_document_request_approval_allows_last_editor_from_detail_view(self):
         document = self._create_document(sn=1, version="1.0", user=None)
         detail = self._create_detail(sn=1, document=document)
