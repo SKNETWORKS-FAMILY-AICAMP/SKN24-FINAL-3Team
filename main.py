@@ -18,7 +18,9 @@ from config.logging_config import configure_logging, get_logger
 from config.logging_context import bind_log_extra, reset_request_id, set_request_id
 from config.settings import get_settings
 from database.engine import engine
+from database.models.approval_review_job import ApprovalReviewJob
 from database.models.generation_job import GenerationJob
+from workers.approval_review_worker import run_approval_review_worker_loop
 from workers.generation_worker import run_generation_worker_loop
 
 
@@ -31,14 +33,21 @@ async def lifespan(_: FastAPI):
     configure_logging(settings)
     if settings.job_auto_create_table:
         GenerationJob.__table__.create(bind=engine, checkfirst=True)
+        ApprovalReviewJob.__table__.create(bind=engine, checkfirst=True)
 
     worker_stop_event = asyncio.Event()
-    worker_task: asyncio.Task | None = None
+    worker_tasks: list[asyncio.Task] = []
     if settings.job_worker_enabled:
-        worker_task = asyncio.create_task(
-            run_generation_worker_loop(worker_stop_event),
-            name="generation-job-worker",
-        )
+        worker_tasks = [
+            asyncio.create_task(
+                run_generation_worker_loop(worker_stop_event),
+                name="generation-job-worker",
+            ),
+            asyncio.create_task(
+                run_approval_review_worker_loop(worker_stop_event),
+                name="approval-review-job-worker",
+            ),
+        ]
 
     logger.info(
         "Application configured LLM base_url=%s model=%s",
@@ -50,8 +59,9 @@ async def lifespan(_: FastAPI):
         yield
     finally:
         worker_stop_event.set()
-        if worker_task is not None:
+        for worker_task in worker_tasks:
             worker_task.cancel()
+        for worker_task in worker_tasks:
             with suppress(asyncio.CancelledError):
                 await worker_task
 

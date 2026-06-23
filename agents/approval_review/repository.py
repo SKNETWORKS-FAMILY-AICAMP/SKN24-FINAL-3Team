@@ -27,6 +27,30 @@ class ApprovalReviewRepository:
         ).mappings().first()
         return dict(row) if row is not None else None
 
+    def get_approval_request(self, docs_aprv_sn: int) -> dict[str, Any] | None:
+        row = self.session.execute(
+            text(
+                """
+                SELECT a.docs_aprv_sn,
+                       a.docs_dtl_sn AS approval_request_docs_dtl_sn,
+                       a.aprv_stts_cd,
+                       a.dmnd_cn,
+                       dd.docs_sn,
+                       d.prj_sn,
+                       d.docs_cd
+                FROM tbl_docs_approve a
+                JOIN tbl_docs_detail dd
+                  ON dd.docs_dtl_sn = a.docs_dtl_sn
+                 AND dd.del_yn = 'N'
+                JOIN tbl_docs d
+                  ON d.docs_sn = dd.docs_sn
+                WHERE a.docs_aprv_sn = :docs_aprv_sn
+                """
+            ),
+            {"docs_aprv_sn": docs_aprv_sn},
+        ).mappings().first()
+        return dict(row) if row is not None else None
+
     def get_first_docs_detail(self, docs_sn: int) -> dict[str, Any] | None:
         row = self.session.execute(
             text(
@@ -41,6 +65,31 @@ class ApprovalReviewRepository:
                 """
             ),
             {"docs_sn": docs_sn},
+        ).mappings().first()
+        return dict(row) if row is not None else None
+
+    def get_previous_docs_detail(
+        self,
+        docs_sn: int,
+        after_docs_dtl_sn: int,
+    ) -> dict[str, Any] | None:
+        row = self.session.execute(
+            text(
+                """
+                SELECT docs_dtl_sn, docs_sn, docs_dtl_cn, docs_path,
+                       del_yn, crt_dt, creatr_sn
+                FROM tbl_docs_detail
+                WHERE docs_sn = :docs_sn
+                  AND docs_dtl_sn < :after_docs_dtl_sn
+                  AND del_yn = 'N'
+                ORDER BY docs_dtl_sn DESC
+                LIMIT 1
+                """
+            ),
+            {
+                "docs_sn": docs_sn,
+                "after_docs_dtl_sn": after_docs_dtl_sn,
+            },
         ).mappings().first()
         return dict(row) if row is not None else None
 

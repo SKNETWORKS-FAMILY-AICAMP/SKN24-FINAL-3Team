@@ -4,6 +4,7 @@ from typing import Any
 
 
 REPAIRABLE_FAILURE_TYPES = {
+    "ERD_PK_MISSING",
     "ENTITY_GENERIC_NAME",
     "ENTITY_NAME_MISMATCH",
     "ENTITY_NAME_OVERLONG",
@@ -14,6 +15,10 @@ REPAIRABLE_FAILURE_TYPES = {
 }
 
 _RULES: dict[str, dict[str, list[str]]] = {
+    "ERD_PK_MISSING": {
+        "must_fix": ["대상 테이블의 식별자 컬럼을 규칙 기반 PK로 지정"],
+        "must_preserve": ["table_name", "physical_name", "entity_name", "entity_description", "relationships"],
+    },
     "ENTITY_GENERIC_NAME": {
         "must_fix": ["generic entity_name을 실제 업무 엔티티명으로 재추론"],
         "must_preserve": ["table_name", "physical_name", "entity_description", "columns", "relationships"],
@@ -64,6 +69,7 @@ def build_repair_instruction(
     failure_types = list(dict.fromkeys(str(check["failure_type"]) for check in checks))
     scopes = [str(scope) for check in checks for scope in check.get("target_scope", [])]
     entity_ids = list(dict.fromkeys(_entity_id(scope) for scope in scopes if _entity_id(scope)))
+    table_ids = list(dict.fromkeys(_table_id(scope) for scope in scopes if _table_id(scope)))
     column_scopes = list(
         dict.fromkeys(
             scope
@@ -114,6 +120,7 @@ def build_repair_instruction(
         "failure_types": failure_types,
         "target_scope": {
             "entity_ids": entity_ids,
+            "table_ids": table_ids,
             "column_scopes": column_scopes,
             "relationship_scopes": relationship_scopes,
         },
@@ -129,3 +136,8 @@ def _entity_id(scope: str) -> str:
     if value.lower() == "all":
         return ""
     return value if value.upper().startswith(("ENT-", "ENTITY-")) else ""
+
+
+def _table_id(scope: str) -> str:
+    value = str(scope or "").split(".", 1)[0].strip()
+    return value if value.upper().startswith("TABLE-") else ""

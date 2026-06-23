@@ -103,7 +103,18 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
 
 def _is_pk(column: dict[str, Any]) -> bool:
     constraints = column.get("constraints")
-    return bool(column.get("is_pk") or column.get("primary_key") or "PK" in str(constraints).upper())
+    return bool(
+        _key_flag(column.get("pk"))
+        or _key_flag(column.get("is_pk"))
+        or _key_flag(column.get("primary_key"))
+        or "PK" in str(constraints).upper()
+    )
+
+
+def _key_flag(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().upper() in {"Y", "YES", "TRUE", "1", "PK"}
+    return bool(value)
 
 
 def _missing_table_contract(table: dict[str, Any]) -> bool:

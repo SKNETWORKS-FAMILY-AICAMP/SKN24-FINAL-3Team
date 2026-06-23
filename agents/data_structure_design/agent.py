@@ -47,6 +47,7 @@ from agents.data_structure_design.meeting_erd_requirements import (
 )
 from agents.data_structure_design.erd_quality import (
     entity_name_needs_llm_review,
+    ensure_primary_keys,
     inspect_erd_quality,
     prepare_erd_quality,
 )
@@ -928,11 +929,22 @@ class DataStructureDesignAgent:
         if not isinstance(current, dict) or not current.get("tables"):
             return self._failed("REPAIR_SOURCE_MISSING", "제한 수정할 기존 erd_entity_json이 없습니다.")
 
-        target_ids = set(instruction.get("target_scope", {}).get("entity_ids") or [])
+        entity_target_ids = set(
+            instruction.get("target_scope", {}).get("entity_ids") or []
+        )
+        table_target_ids = set(
+            instruction.get("target_scope", {}).get("table_ids") or []
+        )
         scoped_tables = [
             table
             for table in current.get("tables", [])
-            if isinstance(table, dict) and str(table.get("entity_id")) in target_ids
+            if isinstance(table, dict)
+            and {
+                str(table.get("entity_id") or ""),
+                str(table.get("table_id") or ""),
+                _physical_table_name(table),
+            }
+            & entity_target_ids
         ]
         failure_types = set(
             instruction.get("failure_types") or [instruction.get("failure_type")]
@@ -940,13 +952,59 @@ class DataStructureDesignAgent:
         relationship_scopes = set(
             instruction.get("target_scope", {}).get("relationship_scopes") or []
         )
-        if not scoped_tables and "FK_RELATION_MISSING" not in failure_types:
-            return self._failed("REPAIR_SCOPE_INVALID", "repair_instruction의 대상 엔티티를 찾을 수 없습니다.")
+        if (
+            not scoped_tables
+            and not table_target_ids
+            and "FK_RELATION_MISSING" not in failure_types
+        ):
+            return self._failed(
+                "REPAIR_SCOPE_INVALID",
+                "repair_instruction의 대상 테이블 또는 엔티티를 찾을 수 없습니다.",
+            )
 
         repaired = deepcopy(current)
         candidate_tables: list[dict[str, Any]] = []
         repair_warnings: list[dict[str, Any]] = []
-        if scoped_tables:
+        if "ERD_PK_MISSING" in failure_types:
+            repaired, pk_corrections = ensure_primary_keys(
+                repaired,
+                table_target_ids or entity_target_ids,
+            )
+            repair_warnings.extend(
+                {
+                    "code": "ERD_PK_INFERRED",
+                    "message": f"{item['target']} 컬럼을 PK로 보정했습니다.",
+                }
+                for item in pk_corrections
+                if item.get("type") == "PRIMARY_KEY_INFERRED"
+            )
+            remaining_pk_targets = [
+                str(table.get("table_id") or table.get("entity_id") or _physical_table_name(table))
+                for table in repaired.get("tables", [])
+                if isinstance(table, dict)
+                and (
+                    not (table_target_ids or entity_target_ids)
+                    or {
+                        str(table.get("table_id") or ""),
+                        str(table.get("entity_id") or ""),
+                        _physical_table_name(table),
+                    }
+                    & (table_target_ids or entity_target_ids)
+                )
+                and not any(
+                    _has_column_key(column, "PK")
+                    for column in table.get("columns", [])
+                    if isinstance(column, dict)
+                )
+            ]
+            if remaining_pk_targets:
+                return self._repair_failed(
+                    previous,
+                    "ERD_REPAIR_PK_UNRESOLVED",
+                    "PK 후보를 규칙으로 확정하지 못했습니다: "
+                    + ", ".join(remaining_pk_targets),
+                )
+        if scoped_tables and failure_types != {"ERD_PK_MISSING"}:
             candidate_tables, repair_errors = self._repair_erd_candidates_parallel(
                 instruction,
                 scoped_tables,
@@ -2202,6 +2260,26 @@ def _clear_unsubstantiated_fk(column: dict[str, Any]) -> None:
 
 def _physical_column_name(column: dict[str, Any]) -> str:
     return str(column.get("column_name") or column.get("physical_name") or "")
+
+
+def _has_column_key(column: dict[str, Any], marker: str) -> bool:
+    value = column.get(marker.lower())
+    if isinstance(value, str):
+        explicit = value.strip().upper() in {
+            "Y",
+            "YES",
+            "TRUE",
+            "1",
+            marker,
+        }
+    else:
+        explicit = bool(value)
+    constraints = {
+        str(item).upper()
+        for item in column.get("constraints", [])
+        if str(item)
+    }
+    return explicit or marker in constraints
 
 
 def _extract_relationship_selection(value: dict[str, Any]) -> dict[str, Any]:

@@ -23,6 +23,7 @@ def prepare_erd_quality(document: dict[str, Any]) -> tuple[dict[str, Any], dict[
         for column in table.get("columns", []):
             if isinstance(column, dict):
                 _normalize_column_flags(table, column, corrections)
+        _ensure_primary_key(table, corrections)
 
     relationships = _complete_inferable_relationships(tables, relationships, corrections)
     _synchronize_relationship_flags(tables, relationships, corrections)
@@ -31,6 +32,32 @@ def prepare_erd_quality(document: dict[str, Any]) -> tuple[dict[str, Any], dict[
     report = inspect_erd_quality(result)
     report["corrections"] = corrections
     return result, report
+
+
+def ensure_primary_keys(
+    document: dict[str, Any],
+    target_scopes: list[str] | set[str] | None = None,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """PK가 없는 대상 테이블만 규칙 기반으로 보정합니다."""
+
+    result = deepcopy(document)
+    corrections: list[dict[str, Any]] = []
+    targets = {str(value) for value in (target_scopes or []) if str(value)}
+    for table in result.get("tables", []):
+        if not isinstance(table, dict):
+            continue
+        scope_values = {
+            str(table.get("table_id") or ""),
+            str(table.get("entity_id") or ""),
+            _table_name(table),
+        }
+        if targets and not (targets & scope_values):
+            continue
+        for column in table.get("columns", []):
+            if isinstance(column, dict):
+                _normalize_column_flags(table, column, corrections)
+        _ensure_primary_key(table, corrections)
+    return result, corrections
 
 
 def inspect_erd_quality(document: dict[str, Any]) -> dict[str, Any]:
@@ -121,6 +148,74 @@ def _normalize_column_flags(
                 "after": after,
             }
         )
+
+
+def _ensure_primary_key(
+    table: dict[str, Any],
+    corrections: list[dict[str, Any]],
+) -> None:
+    columns = [
+        column
+        for column in table.get("columns", [])
+        if isinstance(column, dict)
+    ]
+    if not columns or any(_is_key(column, "PK") for column in columns):
+        return
+
+    ranked = sorted(
+        (
+            (_primary_key_candidate_score(column, index), -index, column)
+            for index, column in enumerate(columns)
+        ),
+        key=lambda item: (item[0], item[1]),
+        reverse=True,
+    )
+    score, _, candidate = ranked[0]
+    if score < 70:
+        return
+
+    candidate["nullable"] = False
+    _set_key_flag(candidate, "PK")
+    corrections.append(
+        {
+            "type": "PRIMARY_KEY_INFERRED",
+            "target": f"{_table_name(table)}.{_column_name(candidate)}",
+        }
+    )
+
+
+def _primary_key_candidate_score(column: dict[str, Any], index: int) -> int:
+    name = _column_name(column).lower()
+    logical_name = str(
+        column.get("attribute_name")
+        or column.get("logical_name")
+        or ""
+    ).lower()
+    score = 0
+    if column.get("nullable") is False:
+        score += 30
+    if name.endswith("_sn"):
+        score += 100
+    elif name.endswith("_mng_no"):
+        score += 95
+    elif name.endswith("_id"):
+        score += 90
+    elif name.endswith("_no"):
+        score += 80
+    elif re.search(r"(?:일련번호|관리번호|식별자|아이디|id)$", logical_name):
+        score += 75
+    if index == 0:
+        score += 10
+    if str(column.get("data_type") or "").upper() in {
+        "BIGINT",
+        "INTEGER",
+        "INT",
+        "NUMERIC",
+        "VARCHAR",
+        "CHAR",
+    }:
+        score += 10
+    return score
 
 
 def _complete_inferable_relationships(
