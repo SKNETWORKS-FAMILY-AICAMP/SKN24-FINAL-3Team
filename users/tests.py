@@ -90,6 +90,17 @@ class UserViewTests(TestCase):
         self.assertTemplateUsed(response, "users/login.html")
         self.assertIn("no-store", response.headers.get("Cache-Control", ""))
 
+    def test_authenticated_home_renders_common_main_page(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "home.html")
+        self.assertContains(response, "ALPLED 개발 산출물")
+        self.assertContains(response, "서비스 사용 흐름")
+        self.assertNotContains(response, "border-blue-200 bg-blue-50 text-blue-700")
+
     def test_authenticated_user_is_logged_out_when_login_page_is_loaded(self):
         self.client.force_login(self.admin)
 
@@ -113,16 +124,16 @@ class UserViewTests(TestCase):
         self.assertIn("no-store", response.headers.get("Cache-Control", ""))
         self.assertContains(response, "alpledAuthenticatedSession", html=False)
 
-    def test_admin_login_redirects_to_user_list(self):
+    def test_admin_login_redirects_to_home(self):
         response = self.client.post(
             reverse("login"),
             {"user_id": "admin", "password": "abc1234"},
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], reverse("user_list"))
+        self.assertEqual(response["Location"], reverse("home"))
 
-    def test_admin_login_with_root_referer_redirects_to_user_list(self):
+    def test_admin_login_with_root_referer_redirects_to_home(self):
         response = self.client.post(
             reverse("home"),
             {"user_id": "admin", "password": "abc1234"},
@@ -130,16 +141,16 @@ class UserViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], reverse("user_list"))
+        self.assertEqual(response["Location"], reverse("home"))
 
-    def test_non_admin_login_redirects_to_document_history(self):
+    def test_non_admin_login_redirects_to_home(self):
         response = self.client.post(
             reverse("login"),
             {"user_id": "member", "password": "abc1234"},
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], self._doc_history_url())
+        self.assertEqual(response["Location"], reverse("home"))
 
     def test_temp_password_login_redirects_to_notice_and_stores_next_url(self):
         temp_user = self._create_temp_user()
@@ -200,7 +211,7 @@ class UserViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], reverse("user_list"))
+        self.assertEqual(response["Location"], reverse("home"))
 
         self.admin.refresh_from_db()
         self.assertEqual(self.admin.name, "Updated Admin")
@@ -238,13 +249,13 @@ class UserViewTests(TestCase):
         follow_response = self.client.get(self._doc_history_url())
         self.assertEqual(follow_response.status_code, 200)
 
-    def test_non_admin_access_to_user_list_redirects_to_document_history(self):
+    def test_non_admin_access_to_user_list_redirects_to_home(self):
         self.client.force_login(self.member)
 
         response = self.client.get(reverse("user_list"))
 
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], self._doc_history_url())
+        self.assertEqual(response["Location"], reverse("home"))
 
     def test_sidebar_console_label_depends_on_user_role(self):
         self.client.force_login(self.admin)
@@ -252,6 +263,7 @@ class UserViewTests(TestCase):
 
         self.assertContains(admin_response, "Admin Console")
         self.assertNotContains(admin_response, "User Console")
+        self.assertContains(admin_response, f'href="{reverse("home")}"', html=False)
 
         self.client.force_login(self.member)
         member_response = self.client.get(self._doc_history_url())

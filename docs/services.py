@@ -46,6 +46,7 @@ PROGRESS_FAILED = "PRGRS_FAILED"
 RUNNING_PROGRESS_CODES = (PROGRESS_PENDING, PROGRESS_PROCESSING)
 TERMINAL_PROGRESS_CODES = (PROGRESS_COMPLETED, PROGRESS_FAILED)
 FASTAPI_GENERATE_TIMEOUT_SECONDS = 10
+WORKING_DOCUMENT_VERSIONS = ("0", "0.0")
 
 
 def _truncate_log_value(value, *, limit=600):
@@ -477,8 +478,7 @@ def get_latest_pending_approval(document):
 
 def latest_confirmed_document(project, document_code, *, exclude_document_sn=None):
     queryset = (
-        Document.objects.filter(project=project, document_type_id=document_code)
-        .exclude(version="0")
+        _exclude_working_versions(Document.objects.filter(project=project, document_type_id=document_code))
         .select_related("document_type", "created_by", "possession_user")
     )
     if exclude_document_sn is not None:
@@ -486,11 +486,55 @@ def latest_confirmed_document(project, document_code, *, exclude_document_sn=Non
     return queryset.order_by("-created_at", "-sn").first()
 
 
+def _exclude_working_versions(queryset):
+    return queryset.exclude(version__in=WORKING_DOCUMENT_VERSIONS)
+
+
+def _filter_working_versions(queryset):
+    return queryset.filter(version__in=WORKING_DOCUMENT_VERSIONS)
+
+
+def is_working_document(document):
+    return str(getattr(document, "version", "") or "") in WORKING_DOCUMENT_VERSIONS
+
+
+def get_generation_saved_document(project, document_code, state=None):
+    if state:
+        document_sn = (state.get("confirmed_documents", {}) or {}).get(document_code) or (
+            state.get("confirmed_documents", {}) or {}
+        ).get(str(document_code))
+        if document_sn:
+            document = (
+                Document.objects.filter(
+                    sn=document_sn,
+                    project=project,
+                    document_type_id=document_code,
+                )
+                .select_related("project", "document_type", "created_by", "updated_by", "possession_user")
+                .first()
+            )
+            if document is not None:
+                return document
+
+    return (
+        _filter_working_versions(
+            Document.objects.filter(
+                project=project,
+                document_type_id=document_code,
+                progress_status_id=PROGRESS_COMPLETED,
+            )
+        )
+        .select_related("project", "document_type", "created_by", "updated_by", "possession_user")
+        .order_by("-updated_at", "-created_at", "-sn")
+        .first()
+    )
+
+
 def get_document_history_queryset(project, document_code=None):
     if project is None:
         return Document.objects.none()
 
-    queryset = Document.objects.filter(project=project).exclude(version="0")
+    queryset = _exclude_working_versions(Document.objects.filter(project=project))
     if document_code and document_code != "all":
         queryset = queryset.filter(document_type_id=document_code)
 
@@ -511,21 +555,24 @@ def get_document_history_queryset(project, document_code=None):
 def has_any_confirmed_initial_document(project):
     if project is None:
         return False
-    return Document.objects.filter(
-        project=project,
-        document_type_id__in=get_document_code_sequence(),
-    ).exclude(version="0").exists()
+    return _exclude_working_versions(
+        Document.objects.filter(
+            project=project,
+            document_type_id__in=get_document_code_sequence(),
+        )
+    ).exists()
 
 
 def has_all_generated_document_types(project):
     if project is None:
         return False
     generated_count = (
-        Document.objects.filter(
-            project=project,
-            document_type_id__in=get_document_code_sequence(),
+        _exclude_working_versions(
+            Document.objects.filter(
+                project=project,
+                document_type_id__in=get_document_code_sequence(),
+            )
         )
-        .exclude(version="0")
         .values_list("document_type_id", flat=True)
         .distinct()
         .count()
@@ -709,7 +756,7 @@ def _document_job_queryset(project, document_code, *, initial_only=False):
         "possession_user",
     )
     if initial_only:
-        queryset = queryset.filter(version="0")
+        queryset = queryset.filter(version__in=WORKING_DOCUMENT_VERSIONS)
     return queryset
 
 
@@ -971,7 +1018,7 @@ def build_generation_lines(project, document_code, inputs):
     elif document_code in DERIVED_DOCUMENT_CODES:
         rows = [
             f"{project.name} 프로젝트의 {label} 초안입니다.",
-            "직전 단계의 생성 완료 산출물을 기준으로 더미 자동 생성 결과를 구성했습니다.",
+            "직전 단계의 저장 완료 산출물을 기준으로 더미 자동 생성 결과를 구성했습니다.",
         ]
         for previous_document in inputs:
             rows.append(f"- {get_document_label(previous_document.document_type_id)} v{previous_document.version}")
@@ -986,9 +1033,9 @@ def build_generation_lines(project, document_code, inputs):
     previous_document_code = get_previous_document_code(document_code)
     if previous_document_code:
         rows.append(
-            f"이 문서는 직전 단계인 {get_document_label(previous_document_code)} 확정본을 이어받아 작성됩니다."
+            f"이 문서는 직전 단계인 {get_document_label(previous_document_code)} 저장본을 이어받아 작성됩니다."
         )
-    rows.append("내용을 검토한 뒤 OnlyOffice에서 수정하고 파일 확정을 진행해 주세요.")
+    rows.append("내용을 검토한 뒤 OnlyOffice에서 수정하고 저장하기를 진행해 주세요.")
     return rows
 
 
@@ -1043,7 +1090,7 @@ def create_draft_document(project, document_code, actor, source_inputs):
         project=project,
         document_code=document_code,
         actor=actor,
-        version="0",
+        version="0.0",
         modification_content="최초 생성",
         content_bytes=content_bytes,
         locked_user=None,
@@ -1071,7 +1118,8 @@ def get_next_document_version(project, document_code):
     versions = Document.objects.filter(
         project=project,
         document_type_id=document_code,
-    ).exclude(version="0").values_list("version", flat=True)
+    )
+    versions = _exclude_working_versions(versions).values_list("version", flat=True)
     for version in versions:
         number = _parse_document_version_number(version)
         if number is not None:
@@ -1082,21 +1130,14 @@ def get_next_document_version(project, document_code):
 @transaction.atomic
 def confirm_document(document, actor):
     latest_detail = get_latest_detail(document)
-    confirmed_document, confirmed_detail = create_document_with_detail(
-        project=document.project,
-        document_code=document.document_type_id,
-        actor=actor,
-        version=get_next_document_version(document.project, document.document_type_id),
-        modification_content="파일 확정",
-        content_bytes=get_document_detail_bytes(latest_detail),
-        locked_user=None,
-        progress_status_id=PROGRESS_COMPLETED,
-    )
+    if latest_detail is None:
+        raise ValueError("Document detail is required.")
     document.possession_user = None
     document.progress_status_id = PROGRESS_COMPLETED
     document.updated_by = actor
-    document.save(update_fields=["possession_user", "progress_status", "updated_by"])
-    return confirmed_document, confirmed_detail
+    document.modification_content = "저장하기"
+    document.save(update_fields=["possession_user", "progress_status", "updated_by", "modification_content"])
+    return document, latest_detail
 
 
 @transaction.atomic
@@ -1247,11 +1288,11 @@ def reject_request(approval, actor, reason):
 
 def hydrate_generation_state_from_existing_documents(project, state):
     """
-    브라우저 세션이 비어 있어도 DB에 이미 확정된 산출물이 있으면
+    브라우저 세션이 비어 있어도 DB에 이미 저장 완료된 산출물이 있으면
     순차 생성 진행 상태를 이어받습니다.
 
     단, 재생성 모드(regeneration_from)가 있으면 선택한 산출물 이전까지만
-    확정 상태로 복구합니다. 예를 들어 DOC_ARCH 재생성이면 DOC_SRS, DOC_ITF만
+    저장 완료 상태로 복구합니다. 예를 들어 DOC_ARCH 재생성이면 DOC_SRS, DOC_ITF만
     완료 상태로 유지하고 DOC_ARCH부터 다시 생성 대기로 둡니다.
     """
     if project is None:
@@ -1271,7 +1312,7 @@ def hydrate_generation_state_from_existing_documents(project, state):
         if str(code) in draft_documents:
             break
 
-        confirmed_document = latest_confirmed_document(project, code)
+        confirmed_document = get_generation_saved_document(project, code, state)
         if confirmed_document is None:
             break
         confirmed[str(code)] = confirmed_document.sn
@@ -1353,7 +1394,7 @@ def get_generation_source_inputs(project, state, document_code):
         return get_generation_selected_files(project, state)
     if document_code in DERIVED_DOCUMENT_CODES:
         previous_code = get_previous_document_code(document_code)
-        previous_document = latest_confirmed_document(project, previous_code) if previous_code else None
+        previous_document = get_generation_saved_document(project, previous_code, state) if previous_code else None
         return [previous_document] if previous_document is not None else []
     return get_generation_selected_files(project, state)
 
@@ -1367,8 +1408,8 @@ def get_generation_prerequisite_error(project, state, document_code):
         return "생성에 사용할 문서를 먼저 선택해 주세요."
     if document_code in DERIVED_DOCUMENT_CODES:
         previous_code = get_previous_document_code(document_code)
-        if previous_code and latest_confirmed_document(project, previous_code) is None:
-            return f"직전 단계인 {get_document_label(previous_code)} 생성 완료본이 필요합니다."
+        if previous_code and get_generation_saved_document(project, previous_code, state) is None:
+            return f"직전 단계인 {get_document_label(previous_code)} 저장본이 필요합니다."
     return None
 
 
@@ -1397,7 +1438,7 @@ def get_generation_progress_rows(state):
 
         if code in confirmed_documents or str(code) in confirmed_documents:
             status = "confirmed"
-            status_label = "생성 완료"
+            status_label = "저장 완료"
             document_sn = confirmed_documents.get(code) or confirmed_documents.get(str(code))
             if document_sn:
                 detail_url = reverse("doc_detail", args=[document_sn])
@@ -1441,7 +1482,7 @@ def ensure_generation_draft(project, actor, state):
                 sn=existing_sn,
                 project=project,
                 document_type_id=document_code,
-                version="0",
+                version__in=WORKING_DOCUMENT_VERSIONS,
             )
             .select_related("project", "document_type", "created_by", "updated_by", "possession_user")
             .first()

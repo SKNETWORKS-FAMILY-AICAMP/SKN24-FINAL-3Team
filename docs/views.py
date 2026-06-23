@@ -81,6 +81,7 @@ from .services import (
     has_document_version,
     has_active_generation_session,
     is_generation_complete,
+    is_working_document,
     is_latest_detail_for_document,
     is_latest_document_for_type,
     is_project_manager,
@@ -170,8 +171,8 @@ def _legacy_detail_error_message():
 
 def _build_history_help_text(can_generate):
     if can_generate:
-        return '"산출물 생성" 버튼을 눌러 산출물 생성을 시작해 주세요.'
-    return "산출물 생성은 프로젝트에 할당된 구성원만 진행할 수 있으며, 확정본이 모두 있으면 재생성으로 다시 시작할 수 있습니다."
+        return '"산출물 생성" 버튼을 눌러 초안을 생성한 뒤 승인요청을 진행해 주세요.'
+    return "산출물 생성은 프로젝트에 할당된 구성원만 진행할 수 있으며, 버전이력에는 승인 완료된 산출물만 표시됩니다."
 
 
 def _build_generation_step_guide(document_code):
@@ -877,7 +878,7 @@ def document_detail(request, document_sn):
     generation_state = get_generation_state(request.session, current_project)
     current_generation_code = get_current_generation_code(generation_state)
     is_generation_draft = (
-        document.version == "0"
+        is_working_document(document)
         and generation_state.get("draft_documents", {}).get(document.document_type_id) == document.sn
     )
     generation_return_url = (
@@ -1066,24 +1067,23 @@ def document_confirm(request, document_sn):
         return redirect(reverse("doc_detail", args=[document.sn]))
 
     try:
-        confirmed_document, _ = confirm_document(document, actor)
+        saved_document, _ = confirm_document(document, actor)
     except ValueError:
         messages.error(request, _legacy_detail_error_message())
         return redirect(reverse("doc_detail", args=[document.sn]))
     generation_state = get_generation_state(request.session, current_project)
     if generation_state.get("draft_documents", {}).get(document.document_type_id) == document.sn:
-        mark_generation_confirmed(generation_state, document, confirmed_document)
+        mark_generation_confirmed(generation_state, document, saved_document)
         save_generation_state(request.session, generation_state)
         if is_generation_complete(generation_state):
-            messages.success(request, "모든 최초 산출물 생성을 완료했습니다.")
-            clear_generation_state(request.session, current_project)
-            return redirect(f"{reverse('doc_history_list')}?docs_cd={confirmed_document.document_type_id}")
+            messages.success(request, "모든 산출물 초안을 저장했습니다. 필요한 산출물은 승인요청을 진행해 주세요.")
+            return redirect(build_generation_redirect_url(document_code=saved_document.document_type_id, resume=True))
 
-        messages.success(request, f"{get_document_label(document.document_type_id)} 확정본을 생성했습니다.")
+        messages.success(request, f"{get_document_label(document.document_type_id)} 저장을 완료했습니다.")
         return redirect(_build_generation_redirect(None, auto_start=True, resume=True))
 
-    messages.success(request, "산출물을 확정했습니다.")
-    return redirect(reverse("doc_detail", args=[confirmed_document.sn]))
+    messages.success(request, "산출물을 저장했습니다.")
+    return redirect(reverse("doc_detail", args=[saved_document.sn]))
 
 
 @login_required(login_url="home")
@@ -1180,7 +1180,13 @@ def document_request_approval(request, document_sn):
         document,
         actor,
         pending_approval=pending_approval,
-        is_generation_draft=(document.version == "0"),
+        is_generation_draft=(
+            is_working_document(document)
+            and get_generation_state(request.session, current_project)
+            .get("draft_documents", {})
+            .get(document.document_type_id)
+            == document.sn
+        ),
     ):
         messages.error(request, "현재 화면에서 승인 요청할 수 없습니다.")
         return redirect(reverse("doc_detail", args=[document.sn]))

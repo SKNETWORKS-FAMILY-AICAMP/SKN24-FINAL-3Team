@@ -30,9 +30,7 @@ USER_TEXT_MAX_LENGTH = 100
 
 
 def _get_authenticated_home_url(user):
-    if getattr(user, "is_staff", False):
-        return reverse("user_list")
-    return f"{reverse('doc_history_list')}?docs_cd={DEFAULT_DOCUMENT_CODE}"
+    return reverse("home")
 
 
 def _is_login_destination(url):
@@ -51,6 +49,24 @@ def _require_admin(request):
     if getattr(request.user, "is_staff", False):
         return None
     return _redirect_non_admin(request)
+
+
+@never_cache
+def home_view(request):
+    ensure_initial_reference_data()
+
+    if request.method == "POST" or not request.user.is_authenticated:
+        return login_view(request)
+
+    return render(
+        request,
+        "home.html",
+        {
+            "title": "메인",
+            "active_menu": "",
+            "selected_document_code": "",
+        },
+    )
 
 
 @never_cache

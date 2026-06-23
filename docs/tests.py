@@ -360,7 +360,8 @@ class DocumentWorkflowViewTests(TestCase):
             )
 
         self.assertEqual(response.status_code, 302)
-        self.assertNotIn("docs_initial_generation", self.client.session)
+        self.assertIn("docs_initial_generation", self.client.session)
+        self.assertEqual(self.client.session["docs_initial_generation"]["itf_reference_files"], [])
         self.assertTrue(reference_key.endswith(".png"))
 
     def test_start_current_generation_ajax_returns_job_payload(self):
@@ -399,13 +400,13 @@ class DocumentWorkflowViewTests(TestCase):
 
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.url.startswith(reverse("doc_generate")))
-        self.assertTrue(Document.objects.filter(document_type=self.srs_code, version="1").exists())
+        self.assertFalse(Document.objects.filter(document_type=self.srs_code, version="1").exists())
         draft.refresh_from_db()
         self.assertEqual(draft.progress_status_id, "PRGRS_COMPLETED")
-        confirmed = Document.objects.get(document_type=self.srs_code, version="1")
-        self.assertEqual(confirmed.progress_status_id, "PRGRS_COMPLETED")
+        self.assertEqual(draft.modification_content, "저장하기")
         updated_session = self.client.session["docs_initial_generation"]
         self.assertIn("DOC_SRS", updated_session["confirmed_documents"])
+        self.assertEqual(updated_session["confirmed_documents"]["DOC_SRS"], draft.sn)
         self.assertNotIn("DOC_SRS", updated_session["draft_documents"])
 
     def test_itf_start_requires_uploaded_references(self):

@@ -69,7 +69,7 @@
           <form method="post" action="{% url 'doc_confirm' document.sn %}">
             {% csrf_token %}
             <button type="submit" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700">
-              파일 확정
+              저장하기
             </button>
           </form>
         {% endif %}

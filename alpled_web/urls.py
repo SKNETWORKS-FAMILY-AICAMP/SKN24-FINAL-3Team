@@ -45,10 +45,10 @@ from docs.views import (
 )
 from files.views import file_list
 from projects.views import project_list
-from users.views import login_view, logout_view, temp_password_notice, user_list, user_profile
+from users.views import home_view, login_view, logout_view, temp_password_notice, user_list, user_profile
 
 urlpatterns = [
-    path("", login_view, name="home"),
+    path("", home_view, name="home"),
     path("login/", login_view, name="login"),
     path("logout/", logout_view, name="logout"),
     path("users/profile/", user_profile, name="user_profile"),
