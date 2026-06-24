@@ -250,8 +250,8 @@
     return document.querySelector("[data-doc-job-inline-elapsed]");
   }
 
-  function getDocJobCtaElapsed() {
-    return document.querySelector("[data-doc-job-cta-elapsed]");
+  function getDocJobCtaElapsedNodes() {
+    return document.querySelectorAll("[data-doc-job-cta-elapsed]");
   }
 
   function getDocProgressBadge(documentCode) {
@@ -293,10 +293,17 @@
     if (inlineElapsedNode) {
       inlineElapsedNode.textContent = formatted;
     }
-    const ctaElapsedNode = getDocJobCtaElapsed();
-    if (ctaElapsedNode) {
+    getDocJobCtaElapsedNodes().forEach((ctaElapsedNode) => {
       ctaElapsedNode.textContent = formatted;
+    });
+  }
+
+  function resolveElapsedSeconds(payload = {}, fallbackSeconds = 0) {
+    const startedAt = Date.parse(payload.started_at || "");
+    if (!Number.isNaN(startedAt)) {
+      return Math.max(Math.floor((Date.now() - startedAt) / 1000), 0);
     }
+    return Math.max(Number.parseInt(payload.elapsed_seconds ?? fallbackSeconds ?? 0, 10) || 0, 0);
   }
 
   function startElapsedTimer(initialSeconds = 0) {
@@ -349,7 +356,7 @@
     if (payload.status === "completed") {
       return "PRGRS_COMPLETED";
     }
-    if (payload.status === "running" || payload.status === "started") {
+    if (payload.status === "running" || payload.status === "started" || payload.status === "accepted") {
       return "PRGRS_PROCESSING";
     }
     return "PRGRS_PENDING";
@@ -434,6 +441,36 @@
     updateDocProgressBadge(payload);
   }
 
+  function showDocJobCtaNotice(form, payload = {}) {
+    const root = form?.closest("[data-doc-job-cta-root]");
+    if (!root) return;
+    const formNode = root.querySelector("[data-doc-job-form]");
+    const noticeNode = root.querySelector("[data-doc-job-cta-notice]");
+    const messageNode = root.querySelector("[data-doc-job-cta-message]");
+    if (formNode) {
+      formNode.classList.add("hidden");
+    }
+    if (noticeNode) {
+      noticeNode.classList.remove("hidden");
+    }
+    if (messageNode) {
+      messageNode.textContent = payload.cta_message || "산출물을 생성중입니다.";
+    }
+  }
+
+  function restoreDocJobCtaForm(form) {
+    const root = form?.closest("[data-doc-job-cta-root]");
+    if (!root) return;
+    const formNode = root.querySelector("[data-doc-job-form]");
+    const noticeNode = root.querySelector("[data-doc-job-cta-notice]");
+    if (formNode) {
+      formNode.classList.remove("hidden");
+    }
+    if (noticeNode) {
+      noticeNode.classList.add("hidden");
+    }
+  }
+
   function resolveFormSubmitUrl(form, fallbackUrl = window.location.href) {
     if (!form) return fallbackUrl;
 
@@ -481,7 +518,7 @@
         title: payload.title || title,
         message: payload.message || "작업을 처리하고 있습니다.",
       });
-      startElapsedTimer(payload.elapsed_seconds ?? fallbackElapsedSeconds);
+      startElapsedTimer(resolveElapsedSeconds(payload, fallbackElapsedSeconds));
 
       if (payload.status === "running") {
         clearDocJobPollTimer();
@@ -557,21 +594,25 @@
         title: payload.title || fallbackTitle,
         message: payload.message || "요청을 처리하고 있습니다.",
       });
+      startElapsedTimer(resolveElapsedSeconds(payload, 0));
 
       if (payload.status === "completed") {
         window.location.reload();
         return;
       }
 
+      showDocJobCtaNotice(form, payload);
+
       await pollDocJob(payload.poll_url, {
         title: payload.title || fallbackTitle,
         pollIntervalMs: payload.poll_interval_ms || 10000,
         fallbackRedirectUrl: payload.redirect_url || "",
-        fallbackElapsedSeconds: payload.elapsed_seconds || 0,
+        fallbackElapsedSeconds: resolveElapsedSeconds(payload, 0),
       });
     } catch (error) {
       clearDocJobPollTimer();
       clearDocJobElapsedTimer();
+      restoreDocJobCtaForm(form);
       showAppAlert(error.message || "문서 작업 요청 중 오류가 발생했습니다.", "error");
     } finally {
       delete form.dataset.submitting;
@@ -590,7 +631,10 @@
       job_status_code: pageState.dataset.jobStatusCode || "PRGRS_PENDING",
       job_status_label: pageState.dataset.jobStatusLabel || "생성 대기",
     });
-    startElapsedTimer(Number.parseInt(pageState.dataset.jobElapsedSeconds || "0", 10) || 0);
+    startElapsedTimer(resolveElapsedSeconds({
+      started_at: pageState.dataset.jobStartedAt || "",
+      elapsed_seconds: pageState.dataset.jobElapsedSeconds || "0",
+    }));
     pollDocJob(pageState.dataset.pollUrl, {
       title: pageState.dataset.jobTitle || "문서 작업 진행 중",
       pollIntervalMs: Number.parseInt(pageState.dataset.pollIntervalMs || "10000", 10) || 10000,

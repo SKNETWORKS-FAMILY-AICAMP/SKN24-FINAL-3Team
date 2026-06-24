@@ -468,6 +468,23 @@ class DocumentWorkflowViewTests(TestCase):
         }
         session.save()
 
+    def _prepare_generation_state_until(self, target_code, *, sn_offset=0):
+        sequence = [
+            ("DOC_SRS", self.srs_code),
+            ("DOC_ITF", self.itf_code),
+            ("DOC_ARCH", self.arch_code),
+            ("DOC_ERD", self.erd_code),
+            ("DOC_DB", self.db_code),
+            ("DOC_TS", self.ts_code),
+        ]
+        confirmed_documents = {}
+        for index, (code, document_type) in enumerate(sequence, start=sn_offset + 100):
+            if code == target_code:
+                break
+            document = self._create_completed_initial_document(sn=index, document_type=document_type)
+            confirmed_documents[code] = document.sn
+        self._set_generation_state(confirmed_documents=confirmed_documents)
+
     def test_history_list_shows_generation_button_before_any_confirmed_document_exists(self):
         response = self.client.get(reverse("doc_history_list"), {"docs_cd": "DOC_ITF"})
 
@@ -593,6 +610,9 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, f'action="{reverse("doc_generate")}"', html=False)
         self.assertContains(response, f'data-submit-url="{reverse("doc_generate")}"', html=False)
+        self.assertContains(response, 'data-doc-job-cta-root', html=False)
+        self.assertContains(response, 'data-doc-job-cta-notice', html=False)
+        self.assertContains(response, "산출물을 생성중입니다.")
 
     def test_generate_view_shows_regeneration_button_when_saved_flow_is_complete(self):
         confirmed_documents = {}
@@ -694,24 +714,34 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertIn(reverse("doc_job_status"), payload["poll_url"])
         start_job_mock.assert_called_once()
 
-    def test_doc_generate_replaces_start_button_with_running_notice_when_job_is_active(self):
-        project_file = self._create_project_file()
-        self._set_generation_state(selected_file_ids=[project_file.sn])
-        self._create_generation_job(
-            sn=12,
-            job_id="job-srs-running-notice",
-            document=None,
-            document_type=self.srs_code,
-            job_status=self.progress_processing,
-        )
+    def test_doc_generate_replaces_start_button_with_running_notice_for_all_document_types(self):
+        sequence = [
+            ("DOC_SRS", self.srs_code),
+            ("DOC_ITF", self.itf_code),
+            ("DOC_ARCH", self.arch_code),
+            ("DOC_ERD", self.erd_code),
+            ("DOC_DB", self.db_code),
+            ("DOC_TS", self.ts_code),
+        ]
+        for index, (code, document_type) in enumerate(sequence, start=1):
+            with self.subTest(code=code):
+                self._prepare_generation_state_until(code, sn_offset=index * 1000)
+                self._create_generation_job(
+                    sn=200 + index,
+                    job_id=f"job-{code.lower()}-running-notice",
+                    document=None,
+                    document_type=document_type,
+                    job_status=self.progress_processing,
+                )
 
-        response = self.client.get(reverse("doc_generate"), {"docs_cd": "DOC_SRS", "resume": 1})
+                response = self.client.get(reverse("doc_generate"), {"docs_cd": code, "resume": 1})
 
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "사용자 요구사항 정의서 생성 중입니다. 잠시만 기다려 주세요.")
-        self.assertContains(response, "경과 시간")
-        self.assertContains(response, 'data-doc-job-cta-elapsed', html=False)
-        self.assertNotContains(response, 'data-doc-job-form', html=False)
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, "산출물을 생성중입니다.")
+                self.assertContains(response, "경과 시간")
+                self.assertContains(response, 'data-doc-job-cta-root', html=False)
+                self.assertContains(response, 'data-doc-job-cta-elapsed', html=False)
+                self.assertNotContains(response, 'data-doc-job-form', html=False)
 
     def test_confirming_initial_draft_advances_to_next_document_step(self):
         project_file = self._create_project_file()
