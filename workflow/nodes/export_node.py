@@ -192,7 +192,7 @@ def export_node(
             else None
         )
 
-        dependencies.docs_detail_repository.insert_docs_detail(
+        docs_detail_record = dependencies.docs_detail_repository.insert_docs_detail(
             project_sn=project_sn,
             docs_cd=docs_cd,
             docs_path=storage_file_path,
@@ -212,6 +212,11 @@ def export_node(
             "status": "SUCCESS",
             "project_sn": project_sn,
             "docs_cd": docs_cd,
+            "docs_sn": (
+                docs_detail_record.get("docs_sn")
+                if isinstance(docs_detail_record, dict)
+                else None
+            ),
             "file_sn": None,
             "final_json_file_sn": (
                 requirement_json_record.get("file_sn")

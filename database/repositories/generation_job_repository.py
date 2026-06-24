@@ -158,6 +158,8 @@ class GenerationJobRepository:
         self,
         job_id: str,
         result: dict[str, Any],
+        *,
+        docs_sn: int | None = None,
     ) -> GenerationJob | None:
         job = self.find_by_job_id(job_id)
         if job is None:
@@ -166,6 +168,8 @@ class GenerationJobRepository:
         job.job_stts_cd = GenerationJobStatus.COMPLETED.value
         job.progress_rate = 100
         job.result_json = result
+        if docs_sn is not None:
+            job.docs_sn = docs_sn
         job.error_cd = None
         job.error_msg = None
         job.completed_dt = now
