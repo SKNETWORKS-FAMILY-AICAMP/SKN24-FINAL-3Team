@@ -147,6 +147,24 @@ class DataStructureDesignAgent:
             rag_results,
         )
         warnings.extend(final_naming_warnings)
+        all_entity_scopes = {
+            str(scope)
+            for table in erd_entity_json.get("tables", [])
+            if isinstance(table, dict)
+            for scope in (
+                table.get("entity_id"),
+                table.get("table_id"),
+                _physical_table_name(table),
+            )
+            if scope
+        }
+        erd_entity_json, duplicate_name_corrections = (
+            _resolve_remaining_semantic_duplicates(
+                erd_entity_json,
+                all_entity_scopes,
+            )
+        )
+        warnings.extend(duplicate_name_corrections)
         unresolved_names = _unresolved_entity_name_scopes(erd_entity_json)
         if unresolved_names:
             return self._failed(
@@ -1621,7 +1639,9 @@ class DataStructureDesignAgent:
                 "너는 범용 SI 논리 데이터 모델 품질 검토자입니다. 전체 엔티티 카탈로그를 함께 검토하여 entity_name을 통일하세요. "
                 "이름은 24자 이내의 짧은 업무 객체 명사형이어야 하며 요구사항 문장, 카테고리명, 화면명은 금지합니다. "
                 "RAG/LLMOps/AgentOps 같은 기술어는 독립적으로 저장·식별·관리되는 객체일 때만 유지하세요. "
-                "동일 의미 엔티티는 같은 canonical entity_name을 제시하고 duplicate_of에 대표 table_id를 표시하세요. "
+                "각 물리 테이블은 서로 다른 저장 역할을 가지므로 entity_name도 전체 카탈로그에서 고유해야 합니다. "
+                "개념이 겹치면 물리 테이블명, 설명, 대표 속성에 근거하여 원본·버전·분류·이력·매핑처럼 역할을 구분하세요. "
+                "서로 다른 테이블에 같은 entity_name을 제시하거나 duplicate_of를 반환하지 마세요. "
                 "물리 테이블명, 컬럼, 관계는 변경하지 마세요. JSON으로 entity_reviews 배열을 반환하세요."
             ),
             {
@@ -1658,9 +1678,7 @@ class DataStructureDesignAgent:
                 table["entity_description"] = description
                 table["description"] = description
                 table["table_description"] = description
-            duplicate_of = str(review.get("duplicate_of") or "").strip()
-            if duplicate_of and duplicate_of != str(table.get("table_id") or ""):
-                table["semantic_duplicate_of"] = duplicate_of
+            table.pop("semantic_duplicate_of", None)
         return result, warnings
 
     def _standard_search(
