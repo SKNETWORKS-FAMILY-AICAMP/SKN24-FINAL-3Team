@@ -1,8 +1,12 @@
 """RFP 문서에서 사용자 요구사항 정의서 입력 JSON을 추출하는 Rule Parser입니다."""
 
+import copy
 import json
 import re
+import zipfile
 from collections.abc import Callable
+from contextlib import contextmanager
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -145,7 +149,8 @@ def extract_requirements_from_rfp_docx(file_path: str) -> list[dict[str, Any]]:
     """DOCX 표를 순회하며 요구사항 ID 기준으로 항목을 구성합니다."""
 
     path = Path(file_path)
-    document = Document(str(path))
+    with _normalized_docx_package(path) as readable_path:
+        document = Document(readable_path)
     requirements_map: dict[str, dict[str, Any]] = {}
 
     for table_index, table in enumerate(document.tables):
@@ -204,6 +209,45 @@ def extract_requirements_from_rfp_docx(file_path: str) -> list[dict[str, Any]]:
             current["detail_parts"].extend(cell for cell in cells if cell not in BLACKLIST)
 
     return [_build_requirement(data) for data in requirements_map.values() if _is_valid_requirement(data)]
+
+
+@contextmanager
+def _normalized_docx_package(path: Path):
+    """Linux에서 열 수 없는 역슬래시 ZIP 경로를 메모리에서 표준화합니다.
+
+    DOCX는 ZIP 내부 경로에 POSIX 구분자(`/`)를 사용해야 합니다. 일부
+    Windows 생성기가 `word\\document.xml`, `_rels\\.rels` 형태로 저장한
+    파일은 Windows에서는 열리지만 Linux의 python-docx에서는 실패합니다.
+    이 경우에만 원본 내용은 그대로 두고 엔트리 경로만 바꾼 메모리 버퍼를 사용합니다.
+    """
+
+    normalized_buffer: BytesIO | None = None
+    try:
+        with zipfile.ZipFile(path) as source:
+            members = source.infolist()
+            if not any("\\" in member.filename for member in members):
+                yield path
+                return
+
+            normalized_buffer = BytesIO()
+            normalized_names: set[str] = set()
+            with zipfile.ZipFile(normalized_buffer, "w") as target:
+                for member in members:
+                    normalized_name = member.filename.replace("\\", "/")
+                    if normalized_name in normalized_names:
+                        raise ValueError(
+                            f"DOCX 경로 표준화 중 중복 엔트리가 발생했습니다: {normalized_name}"
+                        )
+                    normalized_names.add(normalized_name)
+                    normalized_member = copy.copy(member)
+                    normalized_member.filename = normalized_name
+                    target.writestr(normalized_member, source.read(member.filename))
+
+        normalized_buffer.seek(0)
+        yield normalized_buffer
+    finally:
+        if normalized_buffer is not None:
+            normalized_buffer.close()
 
 
 def extract_requirements_from_rfp_pdf(file_path: str) -> list[dict[str, Any]]:
