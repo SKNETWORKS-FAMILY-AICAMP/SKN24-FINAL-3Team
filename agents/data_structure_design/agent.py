@@ -1052,6 +1052,12 @@ class DataStructureDesignAgent:
                     "FK 관계를 확정하지 못했습니다: "
                     + ", ".join(remaining_targets),
                 )
+        if "ENTITY_SEMANTIC_DUPLICATED" in failure_types:
+            repaired, semantic_corrections = _resolve_remaining_semantic_duplicates(
+                repaired,
+                entity_target_ids | table_target_ids,
+            )
+            repair_warnings.extend(semantic_corrections)
         if "FK_RELATION_MISSING" in failure_types:
             repaired, quality_result = prepare_erd_quality(repaired)
         else:
@@ -2911,6 +2917,104 @@ def _scoped_repair_instruction(
 
 def _normalized_entity_name_key(value: Any) -> str:
     return re.sub(r"[\s_-]+", "", str(value or "")).lower()
+
+
+def _resolve_remaining_semantic_duplicates(
+    document: dict[str, Any],
+    target_scopes: set[str],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """LLM Repair 후 남은 중복 논리명을 근거 후보로 분리합니다."""
+
+    result = deepcopy(document)
+    tables = [table for table in result.get("tables", []) if isinstance(table, dict)]
+    table_by_scope: dict[str, dict[str, Any]] = {}
+    for table in tables:
+        scopes = {
+            str(table.get("entity_id") or ""),
+            str(table.get("table_id") or ""),
+            _physical_table_name(table),
+        }
+        for scope in scopes:
+            if scope:
+                table_by_scope[scope] = table
+        if not target_scopes or target_scopes & scopes:
+            table.pop("semantic_duplicate_of", None)
+
+    corrections: list[dict[str, Any]] = []
+    used_name_keys = {
+        _normalized_entity_name_key(
+            table.get("entity_name") or table.get("logical_name")
+        )
+        for table in tables
+        if _normalized_entity_name_key(
+            table.get("entity_name") or table.get("logical_name")
+        )
+    }
+
+    for _ in range(max(1, len(tables))):
+        report = inspect_erd_quality(result)
+        duplicate_issues = [
+            issue
+            for issue in report.get("errors", [])
+            if isinstance(issue, dict)
+            and issue.get("code") == "ENTITY_SEMANTIC_DUPLICATED"
+        ]
+        if not duplicate_issues:
+            break
+
+        changed = False
+        for issue in duplicate_issues:
+            duplicate_tables: list[dict[str, Any]] = []
+            for scope in issue.get("target_scope", []):
+                table = table_by_scope.get(str(scope))
+                if table is not None and table not in duplicate_tables:
+                    duplicate_tables.append(table)
+            eligible = [
+                table
+                for table in duplicate_tables
+                if not target_scopes
+                or target_scopes
+                & {
+                    str(table.get("entity_id") or ""),
+                    str(table.get("table_id") or ""),
+                    _physical_table_name(table),
+                }
+            ]
+            # 중복 그룹의 첫 이름은 보존하고 나머지만 근거 기반으로 분리합니다.
+            for table in eligible[1:]:
+                previous_name = str(
+                    table.get("entity_name") or table.get("logical_name") or ""
+                ).strip()
+                candidates = _scored_grounded_entity_name_candidates(
+                    table,
+                    _compact_entity_name_evidence(table, []),
+                )
+                selected_name = next(
+                    (
+                        str(candidate.get("name") or "").strip()
+                        for candidate in candidates
+                        if _normalized_entity_name_key(candidate.get("name"))
+                        and _normalized_entity_name_key(candidate.get("name"))
+                        not in used_name_keys
+                    ),
+                    "",
+                )
+                if not selected_name:
+                    continue
+                table["entity_name"] = selected_name
+                table["logical_name"] = selected_name
+                table.pop("semantic_duplicate_of", None)
+                used_name_keys.add(_normalized_entity_name_key(selected_name))
+                corrections.append(
+                    {
+                        "code": "ENTITY_SEMANTIC_DUPLICATE_RESOLVED",
+                        "message": f"{table.get('entity_id') or table.get('table_id')}: {previous_name} -> {selected_name}",
+                    }
+                )
+                changed = True
+        if not changed:
+            break
+    return result, corrections
 
 
 def _source_items_for_table(table: dict[str, Any], source_items: list[Any]) -> list[Any]:
