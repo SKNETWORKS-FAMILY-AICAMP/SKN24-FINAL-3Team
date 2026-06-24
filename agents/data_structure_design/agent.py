@@ -57,6 +57,8 @@ from agents.data_structure_design.db_quality import (
     valid_table_identifier,
 )
 from agents.document_merge.processors.artifact_parser import artifact_items
+from agents.validation.validators.erd_validator import inspect_entity_consistency
+from supervisor.repair import build_repair_instruction
 
 
 class DataStructureDesignAgent:
@@ -165,6 +167,10 @@ class DataStructureDesignAgent:
             )
         )
         warnings.extend(duplicate_name_corrections)
+        erd_entity_json, consistency_warnings = self._repair_initial_entity_consistency(
+            erd_entity_json
+        )
+        warnings.extend(consistency_warnings)
         unresolved_names = _unresolved_entity_name_scopes(erd_entity_json)
         if unresolved_names:
             return self._failed(
@@ -1080,8 +1086,15 @@ class DataStructureDesignAgent:
             repaired, quality_result = prepare_erd_quality(repaired)
         else:
             quality_result = inspect_erd_quality(repaired)
+        repair_validation_report = {
+            **quality_result,
+            "errors": [
+                *quality_result.get("errors", []),
+                *_entity_consistency_quality_issues(repaired.get("tables", [])),
+            ],
+        }
         remaining_repair_issues = _remaining_repair_quality_issues(
-            quality_result,
+            repair_validation_report,
             failure_types,
             entity_target_ids | table_target_ids,
         )
@@ -1680,6 +1693,130 @@ class DataStructureDesignAgent:
                 table["table_description"] = description
             table.pop("semantic_duplicate_of", None)
         return result, warnings
+
+    def _repair_initial_entity_consistency(
+        self,
+        document: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """최종 Validator 전에 이름·속성·설명 불일치를 대상 제한형으로 보정합니다."""
+
+        result = deepcopy(document)
+        warnings: list[dict[str, Any]] = []
+        for repair_pass in range(1, 4):
+            before = inspect_entity_consistency(result.get("tables", []))
+            if not any(before.values()):
+                break
+            repaired, pass_warnings = self._repair_initial_entity_consistency_once(
+                result
+            )
+            warnings.extend(pass_warnings)
+            after = inspect_entity_consistency(repaired.get("tables", []))
+            result = repaired
+            if after == before:
+                warnings.append(
+                    {
+                        "code": "ERD_INITIAL_CONSISTENCY_NO_PROGRESS",
+                        "message": f"최초 생성 정합성 보정 {repair_pass}회차에서 더 이상 개선되지 않았습니다.",
+                    }
+                )
+                break
+        return result, warnings
+
+    def _repair_initial_entity_consistency_once(
+        self,
+        document: dict[str, Any],
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        result = deepcopy(document)
+        tables = [table for table in result.get("tables", []) if isinstance(table, dict)]
+        consistency = inspect_entity_consistency(tables)
+        issue_specs = (
+            ("ENTITY_GENERIC_NAME", "generic_names"),
+            ("ENTITY_NAME_MISMATCH", "name_mismatches"),
+            ("ENTITY_ATTRIBUTE_MISMATCH", "attribute_mismatches"),
+            ("ENTITY_DESCRIPTION_MISMATCH", "description_mismatches"),
+        )
+        failed_checks = [
+            {
+                "failure_type": failure_type,
+                "target_agent": "data_structure_design_agent",
+                "target_scope": list(consistency.get(key) or []),
+            }
+            for failure_type, key in issue_specs
+            if consistency.get(key)
+        ]
+        if not failed_checks:
+            return result, []
+        instruction = build_repair_instruction(
+            {"failed_checks": failed_checks},
+            repair_round=0,
+        )
+        if instruction is None:
+            return result, []
+
+        target_entity_ids = set(
+            instruction.get("target_scope", {}).get("entity_ids") or []
+        )
+        scoped_tables = [
+            table
+            for table in tables
+            if str(table.get("entity_id") or "") in target_entity_ids
+        ]
+        if not scoped_tables:
+            return result, [
+                {
+                    "code": "ERD_INITIAL_REPAIR_SCOPE_EMPTY",
+                    "message": "최초 생성 정합성 보정 대상 엔티티를 찾지 못했습니다.",
+                }
+            ]
+
+        candidates, repair_errors = self._repair_erd_candidates_parallel(
+            instruction,
+            scoped_tables,
+        )
+        warnings = [
+            {
+                "code": "ERD_INITIAL_REPAIR_PARTIAL",
+                "message": message,
+            }
+            for message in repair_errors
+        ]
+        if candidates:
+            partial_instruction = deepcopy(instruction)
+            partial_instruction.setdefault("target_scope", {})["entity_ids"] = [
+                str(table.get("entity_id"))
+                for table in candidates
+                if table.get("entity_id")
+            ]
+            result, merge_error = _merge_scoped_erd_repair(
+                result,
+                candidates,
+                partial_instruction,
+            )
+            if merge_error:
+                return document, [
+                    *warnings,
+                    {
+                        "code": "ERD_INITIAL_REPAIR_CONSTRAINT_VIOLATION",
+                        "message": merge_error,
+                    },
+                ]
+
+        all_scopes = {
+            str(scope)
+            for table in result.get("tables", [])
+            if isinstance(table, dict)
+            for scope in (
+                table.get("entity_id"),
+                table.get("table_id"),
+                _physical_table_name(table),
+            )
+            if scope
+        }
+        result, duplicate_corrections = _resolve_remaining_semantic_duplicates(
+            result,
+            all_scopes,
+        )
+        return result, [*warnings, *duplicate_corrections]
 
     def _standard_search(
         self,
@@ -2844,11 +2981,32 @@ def _remaining_repair_quality_issues(
         if code not in failure_types:
             continue
         scopes = {str(value) for value in issue.get("target_scope", []) if str(value)}
-        if target_scopes and scopes and not (target_scopes & scopes):
+        scope_roots = {scope.split(".", 1)[0] for scope in scopes}
+        target_roots = {scope.split(".", 1)[0] for scope in target_scopes}
+        if target_roots and scope_roots and not (target_roots & scope_roots):
             continue
         scope_text = ", ".join(sorted(scopes)) or "unknown"
         remaining.append(f"{code}({scope_text})")
     return remaining
+
+
+def _entity_consistency_quality_issues(tables: list[Any]) -> list[dict[str, Any]]:
+    consistency = inspect_entity_consistency(tables)
+    issue_specs = (
+        ("ENTITY_GENERIC_NAME", "generic_names"),
+        ("ENTITY_NAME_MISMATCH", "name_mismatches"),
+        ("ENTITY_ATTRIBUTE_MISMATCH", "attribute_mismatches"),
+        ("ENTITY_DESCRIPTION_MISMATCH", "description_mismatches"),
+    )
+    return [
+        {
+            "code": failure_type,
+            "message": "엔티티 의미 정합성 보정이 필요합니다.",
+            "target_scope": list(consistency.get(key) or []),
+        }
+        for failure_type, key in issue_specs
+        if consistency.get(key)
+    ]
 
 
 def _scoped_repair_instruction(

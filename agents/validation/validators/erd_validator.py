@@ -29,36 +29,17 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
         return checks + _mermaid_checks(outputs)
 
     table_missing, column_missing, column_duplicates, pk_missing, naming_errors = [], [], [], [], []
-    generic_names, name_mismatches, attribute_mismatches, description_mismatches = [], [], [], []
+    consistency = inspect_entity_consistency(tables)
+    generic_names = consistency["generic_names"]
+    name_mismatches = consistency["name_mismatches"]
+    attribute_mismatches = consistency["attribute_mismatches"]
+    description_mismatches = consistency["description_mismatches"]
     for index, table in enumerate(tables):
         scope = str(table.get("table_id") or table.get("physical_name") or index) if isinstance(table, dict) else str(index)
-        entity_scope = _entity_scope(table, scope) if isinstance(table, dict) else scope
         if not isinstance(table, dict) or _missing_table_contract(table):
             table_missing.append(scope)
             continue
-        entity_name = _entity_name(table)
-        if _is_generic_entity_name(entity_name):
-            generic_names.append(entity_scope)
         columns = table["columns"] if isinstance(table["columns"], list) else []
-        inferred = _infer_entity_name_from_table(table)
-        description_mismatch = _description_mismatch(entity_name, table)
-        mismatched_columns = [
-            _column_scope(entity_scope, column)
-            for column in columns
-            if isinstance(column, dict) and _attribute_mismatch(entity_name, column)
-        ]
-        # 물리명은 보조 근거입니다. 설명과 대표 속성이 모두 일치한다면 물리명 토큰만으로
-        # 논리 엔티티명을 실패시키지 않습니다.
-        if (
-            inferred
-            and entity_name
-            and not _same_concept(entity_name, inferred)
-            and (description_mismatch or bool(mismatched_columns))
-        ):
-            name_mismatches.append(entity_scope)
-        if description_mismatch:
-            description_mismatches.append(entity_scope)
-        attribute_mismatches.extend(mismatched_columns)
         if any(
             not isinstance(column, dict)
             or _missing_column_contract(column)
@@ -99,6 +80,47 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
         checks.append(meeting_check)
     checks.extend(_erd_quality_checks(entity_doc, mermaid_doc))
     return checks + _mermaid_checks(outputs)
+
+
+def inspect_entity_consistency(tables: list[Any]) -> dict[str, list[str]]:
+    """생성·Repair·최종 Validator가 동일하게 사용하는 엔티티 의미 정합성 검사입니다."""
+
+    generic_names: list[str] = []
+    name_mismatches: list[str] = []
+    attribute_mismatches: list[str] = []
+    description_mismatches: list[str] = []
+    for index, table in enumerate(tables):
+        if not isinstance(table, dict):
+            continue
+        fallback = str(table.get("table_id") or table.get("physical_name") or index)
+        entity_scope = _entity_scope(table, fallback)
+        entity_name = _entity_name(table)
+        if _is_generic_entity_name(entity_name):
+            generic_names.append(entity_scope)
+        columns = table.get("columns") if isinstance(table.get("columns"), list) else []
+        inferred = _infer_entity_name_from_table(table)
+        description_mismatch = _description_mismatch(entity_name, table)
+        mismatched_columns = [
+            _column_scope(entity_scope, column)
+            for column in columns
+            if isinstance(column, dict) and _attribute_mismatch(entity_name, column)
+        ]
+        if (
+            inferred
+            and entity_name
+            and not _same_concept(entity_name, inferred)
+            and (description_mismatch or bool(mismatched_columns))
+        ):
+            name_mismatches.append(entity_scope)
+        if description_mismatch:
+            description_mismatches.append(entity_scope)
+        attribute_mismatches.extend(mismatched_columns)
+    return {
+        "generic_names": generic_names,
+        "name_mismatches": name_mismatches,
+        "attribute_mismatches": attribute_mismatches,
+        "description_mismatches": description_mismatches,
+    }
 
 
 def _is_pk(column: dict[str, Any]) -> bool:
