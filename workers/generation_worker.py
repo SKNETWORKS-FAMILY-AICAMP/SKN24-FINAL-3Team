@@ -130,11 +130,18 @@ class GenerationWorker:
             response_result["repair_history"] = result_state.get("repair_history", [])
 
         if result_state.get("status") == "DONE":
+            export_result = result_state.get("export_result")
+            docs_sn = (
+                export_result.get("docs_sn")
+                if isinstance(export_result, dict) and isinstance(export_result.get("docs_sn"), int)
+                else None
+            )
             session = SessionLocal()
             try:
                 GenerationJobRepository(session).mark_succeeded(
                     job_id,
                     jsonable_encoder(response_result),
+                    docs_sn=docs_sn,
                 )
                 session.commit()
                 logger.info("Generation job succeeded job_id=%s", job_id)
