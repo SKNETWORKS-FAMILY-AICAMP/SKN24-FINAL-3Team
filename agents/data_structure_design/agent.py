@@ -944,7 +944,7 @@ class DataStructureDesignAgent:
                 str(table.get("table_id") or ""),
                 _physical_table_name(table),
             }
-            & entity_target_ids
+            & (entity_target_ids | table_target_ids)
         ]
         failure_types = set(
             instruction.get("failure_types") or [instruction.get("failure_type")]
@@ -1010,12 +1010,17 @@ class DataStructureDesignAgent:
                 scoped_tables,
             )
             if repair_errors:
-                repair_warnings.append(
-                    {
-                        "code": "ERD_REPAIR_PARTIAL",
-                        "message": "일부 엔티티 Repair 응답을 적용하지 못했습니다: "
-                        + "; ".join(repair_errors),
-                    }
+                return self._repair_failed(
+                    previous,
+                    "ERD_REPAIR_PARTIAL",
+                    "일부 엔티티 Repair 응답을 적용하지 못했습니다: "
+                    + "; ".join(repair_errors),
+                )
+            if not candidate_tables:
+                return self._repair_failed(
+                    previous,
+                    "ERD_REPAIR_EMPTY",
+                    "제한 수정 대상에 대한 유효한 Repair 응답이 없습니다.",
                 )
             if candidate_tables:
                 partial_instruction = deepcopy(instruction)
@@ -1051,6 +1056,18 @@ class DataStructureDesignAgent:
             repaired, quality_result = prepare_erd_quality(repaired)
         else:
             quality_result = inspect_erd_quality(repaired)
+        remaining_repair_issues = _remaining_repair_quality_issues(
+            quality_result,
+            failure_types,
+            entity_target_ids | table_target_ids,
+        )
+        if remaining_repair_issues:
+            return self._repair_failed(
+                previous,
+                "ERD_REPAIR_VALIDATION_FAILED",
+                "Repair 후에도 대상 품질 오류가 남아 있습니다: "
+                + "; ".join(remaining_repair_issues),
+            )
         mermaid_json = {
             "entities": [_mermaid_entity_from_table(table) for table in repaired.get("tables", [])],
             "relationships": repaired.get("relationships", []),
@@ -1076,8 +1093,18 @@ class DataStructureDesignAgent:
         """수정 대상별 작은 JSON patch를 병렬 요청하여 응답 잘림을 방지합니다."""
 
         requests = []
+        request_instructions: list[dict[str, Any]] = []
         for table in scoped_tables:
             entity_id = str(table.get("entity_id") or "")
+            request_instruction = _scoped_repair_instruction(instruction, table)
+            if "ENTITY_SEMANTIC_DUPLICATED" in set(
+                request_instruction.get("failure_types")
+                or [request_instruction.get("failure_type")]
+            ):
+                current_name = str(
+                    table.get("entity_name") or table.get("logical_name") or ""
+                ).strip()
+                request_instruction["forbidden_entity_names"] = [current_name] if current_name else []
             target_columns = {
                 scope.split(".", 1)[1]
                 for scope in instruction.get("target_scope", {}).get("column_scopes", [])
@@ -1121,10 +1148,11 @@ class DataStructureDesignAgent:
                             "content": json.dumps(
                                 {
                                     "repair_instruction": {
-                                        "failure_types": instruction.get("failure_types"),
-                                        "must_fix": instruction.get("must_fix"),
-                                        "must_preserve": instruction.get("must_preserve"),
-                                        "forbidden_changes": instruction.get("forbidden_changes"),
+                                        "failure_types": request_instruction.get("failure_types"),
+                                        "must_fix": request_instruction.get("must_fix"),
+                                        "must_preserve": request_instruction.get("must_preserve"),
+                                        "forbidden_changes": request_instruction.get("forbidden_changes"),
+                                        "forbidden_entity_names": request_instruction.get("forbidden_entity_names", []),
                                     },
                                     "target_table": {
                                         "entity_id": entity_id,
@@ -1145,6 +1173,7 @@ class DataStructureDesignAgent:
                     "extra_body": {"response_format": {"type": "json_object"}},
                 }
             )
+            request_instructions.append(request_instruction)
         result = send_parallel(
             requests,
             client=self.llm_client or LLMClient(),
@@ -1155,11 +1184,15 @@ class DataStructureDesignAgent:
 
         candidates: list[dict[str, Any]] = []
         errors: list[str] = []
-        for source, response in zip(scoped_tables, result["data"]):
+        for source, response, request_instruction in zip(
+            scoped_tables,
+            result["data"],
+            request_instructions,
+        ):
             entity_id = str(source.get("entity_id") or "")
             if not response or not response["success"]:
                 message = response["error"]["message"] if response else "empty response"
-                patch = self._retry_minimal_entity_name_repair(instruction, source)
+                patch = self._retry_minimal_entity_name_repair(request_instruction, source)
                 if patch:
                     candidates.append(_apply_repair_patch(source, patch))
                     continue
@@ -1167,7 +1200,7 @@ class DataStructureDesignAgent:
                 continue
             parsed_value = _parse_repair_response(response["data"])
             if parsed_value is None:
-                patch = self._retry_minimal_entity_name_repair(instruction, source)
+                patch = self._retry_minimal_entity_name_repair(request_instruction, source)
                 if patch:
                     candidates.append(_apply_repair_patch(source, patch))
                     continue
@@ -1175,7 +1208,7 @@ class DataStructureDesignAgent:
                 continue
             patch = _extract_repair_patch(parsed_value, entity_id)
             if not patch:
-                patch = self._retry_minimal_entity_name_repair(instruction, source)
+                patch = self._retry_minimal_entity_name_repair(request_instruction, source)
                 if patch:
                     candidates.append(_apply_repair_patch(source, patch))
                     continue
@@ -1198,6 +1231,7 @@ class DataStructureDesignAgent:
             "ENTITY_NAME_MISMATCH",
             "ENTITY_NAME_OVERLONG",
             "ENTITY_NAME_SENTENCE",
+            "ENTITY_SEMANTIC_DUPLICATED",
         }:
             return {}
         entity_id = str(source.get("entity_id") or "")
@@ -1206,6 +1240,17 @@ class DataStructureDesignAgent:
             source,
             compact_evidence,
         )
+        forbidden_name_keys = {
+            _normalized_entity_name_key(value)
+            for value in instruction.get("forbidden_entity_names", [])
+            if _normalized_entity_name_key(value)
+        }
+        if forbidden_name_keys:
+            scored_candidates = [
+                item
+                for item in scored_candidates
+                if _normalized_entity_name_key(item.get("name")) not in forbidden_name_keys
+            ]
         if not scored_candidates:
             self._record_entity_name_resolution(
                 entity_id,
@@ -2034,7 +2079,6 @@ def _merge_scoped_erd_repair(
     result = deepcopy(current)
     target_ids = set(instruction.get("target_scope", {}).get("entity_ids") or [])
     column_scopes = set(instruction.get("target_scope", {}).get("column_scopes") or [])
-    failure_types = set(instruction.get("failure_types") or [instruction.get("failure_type")])
     candidate_by_id = {
         str(table.get("entity_id")): table
         for table in candidates
@@ -2057,20 +2101,26 @@ def _merge_scoped_erd_repair(
         if _physical_table_name(candidate) != _physical_table_name(table):
             return current, f"보존 대상 물리 테이블명이 변경되었습니다: {entity_id}"
         repaired_ids.add(entity_id)
+        table_failure_types = set(
+            _scoped_repair_instruction(instruction, table).get("failure_types") or []
+        )
 
-        if failure_types & {
+        if table_failure_types & {
             "ENTITY_GENERIC_NAME",
             "ENTITY_NAME_MISMATCH",
             "ENTITY_NAME_OVERLONG",
             "ENTITY_NAME_SENTENCE",
+            "ENTITY_SEMANTIC_DUPLICATED",
         }:
             name = str(candidate.get("entity_name") or candidate.get("logical_name") or "").strip()
             if _is_generic_repair_name(name):
                 return current, f"유효한 entity_name을 생성하지 못했습니다: {entity_id}"
             table["entity_name"] = name
             table["logical_name"] = name
+            if "ENTITY_SEMANTIC_DUPLICATED" in table_failure_types:
+                table.pop("semantic_duplicate_of", None)
 
-        if "ENTITY_DESCRIPTION_MISMATCH" in failure_types:
+        if "ENTITY_DESCRIPTION_MISMATCH" in table_failure_types:
             description = str(
                 candidate.get("entity_description")
                 or candidate.get("description")
@@ -2083,7 +2133,7 @@ def _merge_scoped_erd_repair(
             table["description"] = description
             table["table_description"] = description
 
-        if "ENTITY_ATTRIBUTE_MISMATCH" in failure_types:
+        if "ENTITY_ATTRIBUTE_MISMATCH" in table_failure_types:
             error = _merge_repaired_attributes(table, candidate, entity_id, column_scopes)
             if error:
                 return current, error
@@ -2753,6 +2803,114 @@ def _quality_warnings(report: dict[str, Any]) -> list[dict[str, Any]]:
                 }
             )
     return values
+
+
+def _remaining_repair_quality_issues(
+    report: dict[str, Any],
+    failure_types: set[str],
+    target_scopes: set[str],
+) -> list[str]:
+    """Repair 대상으로 지정된 품질 오류가 남았는지 확인합니다."""
+
+    remaining: list[str] = []
+    for issue in report.get("errors", []):
+        if not isinstance(issue, dict):
+            continue
+        code = str(issue.get("code") or "")
+        if code not in failure_types:
+            continue
+        scopes = {str(value) for value in issue.get("target_scope", []) if str(value)}
+        if target_scopes and scopes and not (target_scopes & scopes):
+            continue
+        scope_text = ", ".join(sorted(scopes)) or "unknown"
+        remaining.append(f"{code}({scope_text})")
+    return remaining
+
+
+def _scoped_repair_instruction(
+    instruction: dict[str, Any],
+    table: dict[str, Any],
+) -> dict[str, Any]:
+    """각 엔티티에 실제로 해당하는 실패 유형과 수정 규칙만 남깁니다."""
+
+    scoped = deepcopy(instruction)
+    scope_values = {
+        str(table.get("entity_id") or ""),
+        str(table.get("table_id") or ""),
+        _physical_table_name(table),
+    }
+    scoped_failure_types: list[str] = []
+    for check in instruction.get("validation_checks", []):
+        if not isinstance(check, dict):
+            continue
+        check_scopes = {
+            str(value).split(".", 1)[0]
+            for value in check.get("target_scope", [])
+            if str(value)
+        }
+        if not (scope_values & check_scopes):
+            continue
+        failure_type = str(check.get("failure_type") or "")
+        if failure_type and failure_type not in scoped_failure_types:
+            scoped_failure_types.append(failure_type)
+    if not scoped_failure_types:
+        scoped_failure_types = [
+            str(value)
+            for value in (
+                instruction.get("failure_types")
+                or [instruction.get("failure_type")]
+            )
+            if str(value)
+        ]
+
+    scoped["failure_types"] = scoped_failure_types
+    scoped["failure_type"] = scoped_failure_types[0] if scoped_failure_types else None
+
+    repair_rules = instruction.get("repair_rules") or {}
+    selected_rules = [
+        repair_rules[failure_type]
+        for failure_type in scoped_failure_types
+        if isinstance(repair_rules.get(failure_type), dict)
+    ]
+    if selected_rules:
+        scoped["must_fix"] = list(
+            dict.fromkeys(
+                item
+                for rule in selected_rules
+                for item in rule.get("must_fix", [])
+            )
+        )
+        must_preserve = list(
+            dict.fromkeys(
+                item
+                for rule in selected_rules
+                for item in rule.get("must_preserve", [])
+            )
+        )
+        if set(scoped_failure_types) & {
+            "ENTITY_GENERIC_NAME",
+            "ENTITY_NAME_MISMATCH",
+            "ENTITY_NAME_OVERLONG",
+            "ENTITY_NAME_SENTENCE",
+            "ENTITY_SEMANTIC_DUPLICATED",
+        }:
+            must_preserve = [
+                item for item in must_preserve if item not in {"entity_name", "logical_name"}
+            ]
+        if "ENTITY_DESCRIPTION_MISMATCH" in scoped_failure_types:
+            must_preserve = [
+                item for item in must_preserve if item != "entity_description"
+            ]
+        if "ENTITY_ATTRIBUTE_MISMATCH" in scoped_failure_types:
+            must_preserve = [item for item in must_preserve if item != "columns"]
+        if "FK_RELATION_MISSING" in scoped_failure_types:
+            must_preserve = [item for item in must_preserve if item != "relationships"]
+        scoped["must_preserve"] = must_preserve
+    return scoped
+
+
+def _normalized_entity_name_key(value: Any) -> str:
+    return re.sub(r"[\s_-]+", "", str(value or "")).lower()
 
 
 def _source_items_for_table(table: dict[str, Any], source_items: list[Any]) -> list[Any]:

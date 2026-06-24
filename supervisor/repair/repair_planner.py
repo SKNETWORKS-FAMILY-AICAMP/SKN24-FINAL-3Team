@@ -9,6 +9,7 @@ REPAIRABLE_FAILURE_TYPES = {
     "ENTITY_NAME_MISMATCH",
     "ENTITY_NAME_OVERLONG",
     "ENTITY_NAME_SENTENCE",
+    "ENTITY_SEMANTIC_DUPLICATED",
     "ENTITY_ATTRIBUTE_MISMATCH",
     "ENTITY_DESCRIPTION_MISMATCH",
     "FK_RELATION_MISSING",
@@ -33,6 +34,10 @@ _RULES: dict[str, dict[str, list[str]]] = {
     },
     "ENTITY_NAME_SENTENCE": {
         "must_fix": ["요구사항 문장형 entity_name을 짧은 업무 객체 명사형으로 재추론"],
+        "must_preserve": ["table_name", "physical_name", "entity_description", "columns", "relationships"],
+    },
+    "ENTITY_SEMANTIC_DUPLICATED": {
+        "must_fix": ["중복된 entity_name을 각 엔티티의 물리 테이블명·설명·대표 속성에 맞는 서로 다른 업무 객체명으로 재추론"],
         "must_preserve": ["table_name", "physical_name", "entity_description", "columns", "relationships"],
     },
     "ENTITY_ATTRIBUTE_MISMATCH": {
@@ -93,6 +98,7 @@ def build_repair_instruction(
         "ENTITY_NAME_MISMATCH",
         "ENTITY_NAME_OVERLONG",
         "ENTITY_NAME_SENTENCE",
+        "ENTITY_SEMANTIC_DUPLICATED",
     } & set(failure_types):
         must_preserve = [
             item for item in must_preserve if item not in {"entity_name", "logical_name"}
@@ -127,6 +133,10 @@ def build_repair_instruction(
         "must_fix": must_fix,
         "must_preserve": must_preserve,
         "forbidden_changes": forbidden_changes,
+        "repair_rules": {
+            failure_type: _RULES[failure_type]
+            for failure_type in failure_types
+        },
         "validation_checks": checks,
     }
 
