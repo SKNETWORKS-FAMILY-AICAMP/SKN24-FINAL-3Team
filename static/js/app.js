@@ -230,6 +230,32 @@
     return document.querySelector("[data-job-progress-elapsed]");
   }
 
+  function getDocJobInlineRoot() {
+    return document.querySelector("[data-doc-job-inline]");
+  }
+
+  function getDocJobInlineTitle() {
+    return document.querySelector("[data-doc-job-inline-title]");
+  }
+
+  function getDocJobInlineMessage() {
+    return document.querySelector("[data-doc-job-inline-message]");
+  }
+
+  function getDocJobInlineBadge() {
+    return document.querySelector("[data-doc-job-inline-badge]");
+  }
+
+  function getDocJobInlineElapsed() {
+    return document.querySelector("[data-doc-job-inline-elapsed]");
+  }
+
+  function getDocProgressBadge(documentCode) {
+    return Array.from(document.querySelectorAll("[data-doc-progress-badge]")).find(
+      (node) => node.dataset.docProgressBadge === String(documentCode || ""),
+    );
+  }
+
   function clearDocJobPollTimer() {
     if (!docJobPollTimer) return;
     window.clearTimeout(docJobPollTimer);
@@ -254,9 +280,15 @@
   }
 
   function renderElapsedTime(totalSeconds) {
-    const elapsedNode = getJobProgressElapsed();
-    if (!elapsedNode) return;
-    elapsedNode.textContent = formatElapsedTime(totalSeconds);
+    const formatted = formatElapsedTime(totalSeconds);
+    const progressElapsedNode = getJobProgressElapsed();
+    if (progressElapsedNode) {
+      progressElapsedNode.textContent = formatted;
+    }
+    const inlineElapsedNode = getDocJobInlineElapsed();
+    if (inlineElapsedNode) {
+      inlineElapsedNode.textContent = formatted;
+    }
   }
 
   function startElapsedTimer(initialSeconds = 0) {
@@ -293,12 +325,105 @@
     hideModal(getJobProgressRoot());
   }
 
-  function hideOpenModalsExceptJobProgress() {
-    const jobProgressRoot = getJobProgressRoot();
+  function hideOpenModals() {
     document.querySelectorAll("[data-modal-root].flex").forEach((modal) => {
-      if (modal === jobProgressRoot) return;
       hideModal(modal);
     });
+  }
+
+  function resolveJobStatusCode(payload = {}) {
+    if (payload.job_status_code) {
+      return payload.job_status_code;
+    }
+    if (payload.status === "failed") {
+      return "PRGRS_FAILED";
+    }
+    if (payload.status === "completed") {
+      return "PRGRS_COMPLETED";
+    }
+    if (payload.status === "running" || payload.status === "started") {
+      return "PRGRS_PROCESSING";
+    }
+    return "PRGRS_PENDING";
+  }
+
+  function resolveJobStatusLabel(payload = {}) {
+    if (payload.job_status_label) {
+      return payload.job_status_label;
+    }
+    const statusCode = resolveJobStatusCode(payload);
+    if (statusCode === "PRGRS_PROCESSING") {
+      return "생성 중";
+    }
+    if (statusCode === "PRGRS_COMPLETED") {
+      return "생성 완료";
+    }
+    if (statusCode === "PRGRS_FAILED") {
+      return "생성 실패";
+    }
+    return "생성 대기";
+  }
+
+  function getInlineBadgeClass(statusCode) {
+    if (statusCode === "PRGRS_PROCESSING") {
+      return "inline-flex whitespace-nowrap rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-800";
+    }
+    if (statusCode === "PRGRS_COMPLETED") {
+      return "inline-flex whitespace-nowrap rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800";
+    }
+    if (statusCode === "PRGRS_FAILED") {
+      return "inline-flex whitespace-nowrap rounded-full bg-rose-100 px-3 py-1 text-xs font-semibold text-rose-800";
+    }
+    return "inline-flex whitespace-nowrap rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800";
+  }
+
+  function getProgressBadgeClass(statusCode) {
+    if (statusCode === "PRGRS_PROCESSING") {
+      return "shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800";
+    }
+    if (statusCode === "PRGRS_COMPLETED") {
+      return "shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-800";
+    }
+    if (statusCode === "PRGRS_FAILED") {
+      return "shrink-0 whitespace-nowrap rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-800";
+    }
+    return "shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800";
+  }
+
+  function updateDocJobInline(payload = {}) {
+    const root = getDocJobInlineRoot();
+    if (!root) return;
+
+    const statusCode = resolveJobStatusCode(payload);
+    const statusLabel = resolveJobStatusLabel(payload);
+    const titleNode = getDocJobInlineTitle();
+    const messageNode = getDocJobInlineMessage();
+    const badgeNode = getDocJobInlineBadge();
+
+    root.classList.remove("hidden");
+    if (titleNode) {
+      titleNode.textContent = payload.title || "문서 작업 상태";
+    }
+    if (messageNode) {
+      messageNode.textContent = payload.message || "작업 상태를 확인하고 있습니다.";
+    }
+    if (badgeNode) {
+      badgeNode.className = getInlineBadgeClass(statusCode);
+      badgeNode.textContent = statusLabel;
+    }
+  }
+
+  function updateDocProgressBadge(payload = {}) {
+    const badgeNode = getDocProgressBadge(payload.docs_cd);
+    if (!badgeNode) return;
+    const statusCode = resolveJobStatusCode(payload);
+    badgeNode.className = getProgressBadgeClass(statusCode);
+    badgeNode.textContent = resolveJobStatusLabel(payload);
+  }
+
+  function updateDocJobUi(payload = {}) {
+    updateDocJobInline(payload);
+    updateDocProgressBadge(payload);
   }
 
   function resolveFormSubmitUrl(form, fallbackUrl = window.location.href) {
@@ -327,7 +452,6 @@
     } = options;
 
     if (!pollUrl) {
-      hideJobProgress();
       showAppAlert("작업 상태 조회 경로를 확인할 수 없습니다.", "error");
       return;
     }
@@ -344,7 +468,8 @@
         throw new Error(payload.message || "작업 상태를 확인하지 못했습니다.");
       }
 
-      updateJobProgress({
+      updateDocJobUi({
+        ...payload,
         title: payload.title || title,
         message: payload.message || "작업을 처리하고 있습니다.",
       });
@@ -364,16 +489,24 @@
       }
 
       if (payload.status === "completed") {
-        const redirectUrl = payload.redirect_url || fallbackRedirectUrl || window.location.href;
-        window.location.assign(redirectUrl);
+        window.location.reload();
         return;
       }
 
-      hideJobProgress();
-      const failureDetails = [payload.message, payload.error_cd, payload.error_msg].filter(Boolean).join("\n");
-      showAppAlert(failureDetails || "문서 작업을 완료하지 못했습니다.", payload.status === "failed" ? "error" : "warning");
+      if (payload.status === "failed") {
+        clearDocJobPollTimer();
+        clearDocJobElapsedTimer();
+        const failureDetails = [payload.message, payload.error_cd, payload.error_msg].filter(Boolean).join("\n");
+        showAppAlert(failureDetails || "문서 작업을 완료하지 못했습니다.", "error");
+        return;
+      }
+
+      clearDocJobPollTimer();
+      clearDocJobElapsedTimer();
+      showAppAlert(payload.message || "작업 상태를 확인할 수 없습니다.", "warning");
     } catch (error) {
-      hideJobProgress();
+      clearDocJobPollTimer();
+      clearDocJobElapsedTimer();
       showAppAlert(error.message || "작업 상태를 확인하지 못했습니다.", "error");
     }
   }
@@ -388,10 +521,12 @@
     startElapsedTimer(0);
 
     form.dataset.submitting = "true";
-    hideOpenModalsExceptJobProgress();
-    showJobProgress({
+    hideOpenModals();
+    updateDocJobUi({
       title: fallbackTitle,
       message: "요청을 전송하고 있습니다.",
+      job_status_code: "PRGRS_PENDING",
+      job_status_label: "생성 대기",
     });
 
     try {
@@ -409,13 +544,15 @@
         throw new Error(payload.message || "문서 작업 요청을 처리하지 못했습니다.");
       }
 
-      showJobProgress({
+      hideJobProgress();
+      updateDocJobUi({
+        ...payload,
         title: payload.title || fallbackTitle,
         message: payload.message || "요청을 처리하고 있습니다.",
       });
 
-      if (payload.status === "completed" && payload.redirect_url) {
-        window.location.assign(payload.redirect_url);
+      if (payload.status === "completed") {
+        window.location.reload();
         return;
       }
 
@@ -426,7 +563,8 @@
         fallbackElapsedSeconds: payload.elapsed_seconds || 0,
       });
     } catch (error) {
-      hideJobProgress();
+      clearDocJobPollTimer();
+      clearDocJobElapsedTimer();
       showAppAlert(error.message || "문서 작업 요청 중 오류가 발생했습니다.", "error");
     } finally {
       delete form.dataset.submitting;
@@ -438,9 +576,12 @@
     if (!pageState || pageState.dataset.initialized === "true") return;
 
     pageState.dataset.initialized = "true";
-    showJobProgress({
+    updateDocJobUi({
+      docs_cd: pageState.dataset.docsCd,
       title: pageState.dataset.jobTitle || "문서 작업 진행 중",
       message: pageState.dataset.jobMessage || "작업을 처리하고 있습니다.",
+      job_status_code: pageState.dataset.jobStatusCode || "PRGRS_PENDING",
+      job_status_label: pageState.dataset.jobStatusLabel || "생성 대기",
     });
     startElapsedTimer(Number.parseInt(pageState.dataset.jobElapsedSeconds || "0", 10) || 0);
     pollDocJob(pageState.dataset.pollUrl, {

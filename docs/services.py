@@ -35,6 +35,7 @@ DERIVED_DOCUMENT_CODES = {"DOC_ERD", "DOC_DB", "DOC_TS"}
 APPROVAL_STATUS_SEQUENCE = ("APRV_REQ", "APRV_COM", "APRV_RJT")
 PROJECT_ROLE_CODES = ("ROLE_MANAGER", "ROLE_MEMBER")
 GENERATION_SESSION_KEY = "docs_initial_generation"
+DOC_JOB_SNAPSHOT_SESSION_KEY = "doc_job_snapshots"
 ALLOWED_GENERATION_FILE_CODES = ("FILE_RFP", "FILE_MEETING")
 INTERFACE_REFERENCE_DOCUMENT_CODE = "DOC_ITF"
 ARCHITECTURE_DOCUMENT_CODE = "DOC_ARCH"
@@ -92,6 +93,91 @@ def _build_empty_generation_state(project):
         "confirmed_documents": {},
         "itf_reference_files": [],
     }
+
+
+def get_doc_job_snapshots(session):
+    snapshots = session.get(DOC_JOB_SNAPSHOT_SESSION_KEY, {})
+    return snapshots if isinstance(snapshots, dict) else {}
+
+
+def _normalize_doc_job_snapshot(payload):
+    snapshot = dict(payload or {})
+    snapshot["job_id"] = str(snapshot.get("job_id") or "").strip()
+    snapshot["job_kind"] = str(snapshot.get("job_kind") or "").strip()
+    snapshot["docs_cd"] = str(snapshot.get("docs_cd") or "").strip()
+    snapshot["status"] = "running" if str(snapshot.get("status") or "").strip() in {"", "started", "running"} else str(snapshot.get("status")).strip()
+    snapshot["tracking_document_sn"] = snapshot.get("tracking_document_sn")
+    snapshot["job_status_code"] = str(snapshot.get("job_status_code") or PROGRESS_PENDING).strip()
+    snapshot["job_status_label"] = str(snapshot.get("job_status_label") or "생성 대기").strip()
+    return snapshot
+
+
+def save_doc_job_snapshot(session, payload):
+    snapshot = _normalize_doc_job_snapshot(payload)
+    if not snapshot["job_id"]:
+        return None
+    snapshots = get_doc_job_snapshots(session)
+    snapshots[snapshot["job_id"]] = snapshot
+    session[DOC_JOB_SNAPSHOT_SESSION_KEY] = snapshots
+    session.modified = True
+    return snapshot
+
+
+def _doc_job_snapshot_matches(snapshot, job_kind, document_code, *, job_id=None, tracking_document_sn=None):
+    if not isinstance(snapshot, dict):
+        return False
+    if str(snapshot.get("job_kind") or "").strip() != str(job_kind or "").strip():
+        return False
+    if str(snapshot.get("docs_cd") or "").strip() != str(document_code or "").strip():
+        return False
+    if job_id and str(snapshot.get("job_id") or "").strip() != str(job_id).strip():
+        return False
+    if tracking_document_sn is not None and str(snapshot.get("tracking_document_sn") or "").strip() != str(tracking_document_sn).strip():
+        return False
+    return True
+
+
+def find_doc_job_snapshot(session, job_kind, document_code, *, job_id=None, tracking_document_sn=None):
+    snapshots = get_doc_job_snapshots(session)
+    if job_id:
+        snapshot = snapshots.get(str(job_id).strip())
+        if _doc_job_snapshot_matches(snapshot, job_kind, document_code, job_id=job_id, tracking_document_sn=tracking_document_sn):
+            return snapshot
+    for snapshot in snapshots.values():
+        if _doc_job_snapshot_matches(snapshot, job_kind, document_code, tracking_document_sn=tracking_document_sn):
+            return snapshot
+    return None
+
+
+def clear_doc_job_snapshot(session, *, job_id=None, job_kind=None, document_code=None, tracking_document_sn=None):
+    snapshots = get_doc_job_snapshots(session)
+    if not snapshots:
+        return False
+
+    removed = False
+    if job_id:
+        removed = snapshots.pop(str(job_id).strip(), None) is not None
+    else:
+        remaining = {}
+        for snapshot_job_id, snapshot in snapshots.items():
+            if job_kind and document_code and _doc_job_snapshot_matches(
+                snapshot,
+                job_kind,
+                document_code,
+                tracking_document_sn=tracking_document_sn,
+            ):
+                removed = True
+                continue
+            remaining[snapshot_job_id] = snapshot
+        snapshots = remaining
+
+    if removed:
+        if snapshots:
+            session[DOC_JOB_SNAPSHOT_SESSION_KEY] = snapshots
+        else:
+            session.pop(DOC_JOB_SNAPSHOT_SESSION_KEY, None)
+        session.modified = True
+    return removed
 
 
 def _normalize_reference_filename(filename):
@@ -853,13 +939,28 @@ def parse_fastapi_generation_response(payload, *, fallback_document_code=None):
     job_id = str(raw_job_id).strip() if raw_job_id is not None else ""
     if not job_id:
         return {}
+    raw_status = str(payload.get("status") or "").strip()
+    job_status_code = str(payload.get("job_status_code") or "").strip()
+    if not job_status_code:
+        if raw_status in {"started", "accepted", "queued", "pending"}:
+            job_status_code = PROGRESS_PENDING
+        elif raw_status == "running":
+            job_status_code = PROGRESS_PROCESSING
+        elif raw_status == "failed":
+            job_status_code = PROGRESS_FAILED
+        elif raw_status == "completed":
+            job_status_code = PROGRESS_COMPLETED
+        else:
+            job_status_code = PROGRESS_PENDING
     return {
         "job_id": job_id,
         "request_id": str(payload.get("request_id") or "").strip(),
         "project_sn": _safe_parse_positive_int(payload.get("project_sn")),
         "docs_cd": str(payload.get("docs_cd") or fallback_document_code or "").strip(),
-        "status": str(payload.get("status") or "").strip() or PROGRESS_PENDING,
+        "status": raw_status or "started",
         "status_url": str(payload.get("status_url") or "").strip(),
+        "job_status_code": job_status_code,
+        "job_status_label": str(payload.get("job_status_label") or "").strip(),
         "message": str(payload.get("message") or "").strip() or "Generation accepted.",
     }
 
@@ -1577,7 +1678,7 @@ def is_generation_complete(state):
     return get_current_generation_code(state) is None
 
 
-def get_generation_progress_rows(state):
+def get_generation_progress_rows(state, project=None):
     rows = []
     current_code = get_current_generation_code(state)
     confirmed_documents = state.get("confirmed_documents", {}) or {}
@@ -1587,6 +1688,7 @@ def get_generation_progress_rows(state):
         document_sn = None
         detail_url = ""
         download_url = ""
+        job_status_code = ""
 
         if code in confirmed_documents or str(code) in confirmed_documents:
             status = "confirmed"
@@ -1601,9 +1703,33 @@ def get_generation_progress_rows(state):
             document_sn = draft_documents.get(code) or draft_documents.get(str(code))
             if document_sn:
                 detail_url = reverse("doc_detail", args=[document_sn])
+        elif project is not None:
+            latest_job = find_generation_job(project, code, job_kind=GENERATION_JOB_KIND_INITIAL)
+            latest_job_status = getattr(latest_job, "job_status_id", "")
+            latest_job_label = getattr(getattr(latest_job, "job_status", None), "name", "") or latest_job_status
+            if latest_job_status == PROGRESS_PROCESSING:
+                status = "processing"
+                status_label = latest_job_label or "생성 중"
+                job_status_code = latest_job_status
+            elif latest_job_status == PROGRESS_FAILED:
+                status = "failed"
+                status_label = latest_job_label or "생성 실패"
+                job_status_code = latest_job_status
+            elif latest_job_status == PROGRESS_PENDING and current_code == code:
+                status = "pending"
+                status_label = latest_job_label or "생성 대기"
+                job_status_code = latest_job_status
+            elif current_code == code:
+                status = "pending"
+                status_label = "생성 대기"
+                job_status_code = PROGRESS_PENDING
+            else:
+                status = "locked"
+                status_label = "이전 단계 대기"
         elif current_code == code:
             status = "pending"
             status_label = "생성 대기"
+            job_status_code = PROGRESS_PENDING
         else:
             status = "locked"
             status_label = "이전 단계 대기"
@@ -1614,6 +1740,7 @@ def get_generation_progress_rows(state):
                 "label": get_document_label(code),
                 "status": status,
                 "status_label": status_label,
+                "job_status_code": job_status_code,
                 "document_sn": document_sn,
                 "detail_url": detail_url,
                 "download_url": download_url,

@@ -193,7 +193,7 @@ USE_X_FORWARDED_HOST = True
 
 
 # FASTAPI 연결
-FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "https://sjew63qksfe141-8000.proxy.runpod.net").rstrip("/")
+FASTAPI_BASE_URL = os.getenv("FASTAPI_BASE_URL", "https://ntavqzbxvtbjz9-8000.proxy.runpod.net").rstrip("/")
 FASTAPI_API_KEY = os.getenv("FASTAPI_API_KEY", "").strip()
 DOC_JOB_POLL_INTERVAL_SECONDS = int(os.getenv("DOC_JOB_POLL_INTERVAL_SECONDS", "10"))
 

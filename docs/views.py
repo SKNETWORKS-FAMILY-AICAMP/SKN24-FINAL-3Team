@@ -50,6 +50,7 @@ from .services import (
     can_request_approval,
     cancel_approval_request,
     clear_generation_draft_document,
+    clear_doc_job_snapshot,
     clear_generation_state,
     confirm_document,
     create_project_net,
@@ -57,6 +58,7 @@ from .services import (
     download_remote_content,
     extract_text_from_docx,
     find_generation_job,
+    find_doc_job_snapshot,
     get_actor,
     get_approval_status_choices,
     get_current_generation_code,
@@ -105,6 +107,7 @@ from .services import (
     resolve_document_code,
     restore_revision,
     save_generation_state,
+    save_doc_job_snapshot,
     save_revision,
     set_generation_draft_document,
     update_generation_selected_files,
@@ -234,6 +237,19 @@ def _find_generation_progress_row(progress_rows, document_code):
     return None
 
 
+def _format_elapsed_seconds(total_seconds):
+    try:
+        normalized = max(int(total_seconds or 0), 0)
+    except (TypeError, ValueError):
+        normalized = 0
+    hours = normalized // 3600
+    minutes = (normalized % 3600) // 60
+    seconds = normalized % 60
+    if hours > 0:
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes:02d}:{seconds:02d}"
+
+
 def _is_generation_resume_request(request):
     return request.GET.get("resume") == "1"
 
@@ -260,7 +276,7 @@ def _get_generation_context(request, current_project, actor, document_code, stat
     current_code = get_current_generation_code(state)
     current_draft = get_generation_draft_document(current_project, state, current_code)
 
-    progress_rows = get_generation_progress_rows(state)
+    progress_rows = get_generation_progress_rows(state, current_project)
     return {
         "state": state,
         "selected_files": selected_files,
@@ -389,8 +405,18 @@ def _build_job_response(
 def _build_generation_job_response(job_kind, document_code, message, job, *, status, redirect_url=""):
     started_at, elapsed_seconds = _get_job_timing(job)
     tracking_document_sn = getattr(job, "document_id", None)
-    job_status_code = getattr(job, "job_status_id", "") or getattr(job, "status", "") or ""
-    job_status_label = getattr(getattr(job, "job_status", None), "name", "") or job_status_code
+    job_status_code = getattr(job, "job_status_id", "") or getattr(job, "job_status_code", "") or ""
+    if not job_status_code:
+        raw_status = getattr(job, "status", "") or status
+        if raw_status in {"started", "accepted", "queued", "pending"}:
+            job_status_code = PROGRESS_PENDING
+        elif raw_status == "running":
+            job_status_code = PROGRESS_PROCESSING
+        elif raw_status == "failed":
+            job_status_code = PROGRESS_FAILED
+        elif raw_status == "completed":
+            job_status_code = PROGRESS_COMPLETED
+    job_status_label = getattr(getattr(job, "job_status", None), "name", "") or getattr(job, "job_status_label", "") or job_status_code
     payload = _build_job_response(
         job_kind,
         document_code,
@@ -489,6 +515,7 @@ def _serialize_job_status(request, current_project, document_code, job_kind, job
 def _build_active_job_context(job_payload):
     if not job_payload or job_payload.get("status") != "running":
         return None
+    badge = _build_job_badge(job_payload.get("job_status_code", ""), job_payload.get("job_status_label", ""))
     return {
         "status": job_payload["status"],
         "message": job_payload["message"],
@@ -501,6 +528,10 @@ def _build_active_job_context(job_payload):
         "docs_cd": job_payload["docs_cd"],
         "started_at": job_payload.get("started_at", ""),
         "elapsed_seconds": job_payload.get("elapsed_seconds", 0),
+        "elapsed_display": _format_elapsed_seconds(job_payload.get("elapsed_seconds", 0)),
+        "job_status_code": job_payload.get("job_status_code", ""),
+        "job_status_label": badge["status_label"],
+        "status_badge_class": badge["status_badge_class"],
     }
 
 
@@ -864,16 +895,16 @@ def document_generate(request):
                     return JsonResponse({"message": job_result["message"]}, status=502)
                 messages.error(request, job_result["message"])
                 return redirect(build_generation_redirect_url(document_code=document_code, resume=True))
+            job_payload = _build_generation_job_response(
+                GENERATION_JOB_KIND_INITIAL,
+                current_code,
+                job_result["message"],
+                job_record,
+                status=job_result["status"],
+            )
+            save_doc_job_snapshot(request.session, job_payload)
             if _is_ajax_request(request):
-                return JsonResponse(
-                    _build_generation_job_response(
-                        GENERATION_JOB_KIND_INITIAL,
-                        current_code,
-                        job_result["message"],
-                        job_record,
-                        status=job_result["status"],
-                    )
-                )
+                return JsonResponse(job_payload)
             if job_result["status"] == "started":
                 messages.success(request, f"{get_document_label(current_code)} 생성을 요청했습니다.")
             else:
@@ -998,16 +1029,33 @@ def document_job_status(request):
     if job_kind not in {GENERATION_JOB_KIND_INITIAL, GENERATION_JOB_KIND_AUTO_APPLY}:
         return JsonResponse({"message": "지원하지 않는 작업 유형입니다."}, status=400)
 
-    return JsonResponse(
-        _serialize_job_status(
-            request,
-            current_project,
-            document_code,
+    payload = _serialize_job_status(
+        request,
+        current_project,
+        document_code,
+        job_kind,
+        job_id=job_id,
+        tracking_document_sn=tracking_document_sn,
+    )
+    if payload.get("status") == "idle":
+        snapshot = find_doc_job_snapshot(
+            request.session,
             job_kind,
+            document_code,
             job_id=job_id,
             tracking_document_sn=tracking_document_sn,
         )
-    )
+        if snapshot is not None:
+            return JsonResponse(snapshot)
+    if payload.get("status") in {"completed", "failed", "idle"}:
+        clear_doc_job_snapshot(
+            request.session,
+            job_id=payload.get("job_id") or job_id,
+            job_kind=job_kind,
+            document_code=document_code,
+            tracking_document_sn=tracking_document_sn,
+        )
+    return JsonResponse(payload)
 
 
 @login_required(login_url="home")
@@ -1353,17 +1401,17 @@ def document_auto_apply(request, document_sn):
             return JsonResponse({"message": job_result["message"]}, status=502)
         messages.error(request, job_result["message"])
         return redirect(_document_detail_redirect(document, modal="meeting-files"))
+    job_payload = _build_generation_job_response(
+        GENERATION_JOB_KIND_AUTO_APPLY,
+        document.document_type_id,
+        job_result["message"],
+        job_result["job"],
+        status=job_result["status"],
+    )
+    save_doc_job_snapshot(request.session, job_payload)
 
     if _is_ajax_request(request):
-        return JsonResponse(
-            _build_generation_job_response(
-                GENERATION_JOB_KIND_AUTO_APPLY,
-                document.document_type_id,
-                job_result["message"],
-                job_result["job"],
-                status=job_result["status"],
-            )
-        )
+        return JsonResponse(job_payload)
 
     if job_result["status"] == "started":
         messages.success(request, "회의 내용 자동 적용을 요청했습니다.")

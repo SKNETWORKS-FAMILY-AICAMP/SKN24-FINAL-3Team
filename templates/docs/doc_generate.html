@@ -8,8 +8,11 @@
     <div
       id="doc-job-page-state"
       data-doc-job-page-state
+      data-docs-cd="{{ active_job.docs_cd }}"
       data-job-title="{{ active_job.title }}"
       data-job-message="{{ active_job.message }}"
+      data-job-status-code="{{ active_job.job_status_code }}"
+      data-job-status-label="{{ active_job.job_status_label }}"
       data-poll-url="{{ active_job.poll_url }}"
       data-poll-interval-ms="{{ active_job.poll_interval_ms }}"
       data-job-started-at="{{ active_job.started_at }}"
@@ -42,6 +45,8 @@
   <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
     <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
       <div class="space-y-3">
+        {% include "components/doc_job_status.html" with active_job=active_job %}
+
         <div class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
           <p class="font-semibold text-slate-900">{{ selected_step_guide.title }}</p>
           <p class="mt-1">{{ selected_step_guide.description }}</p>
@@ -322,13 +327,6 @@
           </div>
         {% endif %}
 
-        {% if active_job %}
-          <div class="w-full rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-900 shadow-sm">
-            {{ active_job.title }} 요청이 접수되었습니다.<br>
-            작업이 완료되면 자동으로 문서 상세 화면으로 이동합니다.
-          </div>
-        {% endif %}
-
         {% if current_draft and not active_job %}
           <div class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
             {{ current_document_label }} 초안이 준비되었습니다.<br>
@@ -366,13 +364,17 @@
                 <div class="flex items-center justify-between gap-2">
                   <p class="min-w-0 break-keep text-sm font-medium leading-5 text-slate-900">{{ row.label }}</p>
                   {% if row.status == "confirmed" %}
-                    <span class="shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">{{ row.status_label }}</span>
+                    <span data-doc-progress-badge="{{ row.code }}" class="shrink-0 whitespace-nowrap rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">{{ row.status_label }}</span>
                   {% elif row.status == "review" %}
-                    <span class="shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800">{{ row.status_label }}</span>
+                    <span data-doc-progress-badge="{{ row.code }}" class="shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800">{{ row.status_label }}</span>
+                  {% elif row.status == "processing" %}
+                    <span data-doc-progress-badge="{{ row.code }}" class="shrink-0 whitespace-nowrap rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-semibold text-blue-800">{{ row.status_label }}</span>
+                  {% elif row.status == "failed" %}
+                    <span data-doc-progress-badge="{{ row.code }}" class="shrink-0 whitespace-nowrap rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-800">{{ row.status_label }}</span>
                   {% elif row.status == "pending" %}
-                    <span class="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800">{{ row.status_label }}</span>
+                    <span data-doc-progress-badge="{{ row.code }}" class="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-800">{{ row.status_label }}</span>
                   {% else %}
-                    <span class="shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{{ row.status_label }}</span>
+                    <span data-doc-progress-badge="{{ row.code }}" class="shrink-0 whitespace-nowrap rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">{{ row.status_label }}</span>
                   {% endif %}
                 </div>
                 {% if row.detail_url %}

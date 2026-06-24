@@ -455,6 +455,13 @@ class DocumentWorkflowViewTests(TestCase):
         }
         session.save()
 
+    def _set_doc_job_snapshot(self, **payload):
+        session = self.client.session
+        session["doc_job_snapshots"] = {
+            payload["job_id"]: payload,
+        }
+        session.save()
+
     def test_history_list_shows_generation_button_before_any_confirmed_document_exists(self):
         response = self.client.get(reverse("doc_history_list"), {"docs_cd": "DOC_ITF"})
 
@@ -1017,6 +1024,88 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(payload["status"], "completed")
         self.assertEqual(payload["redirect_url"], reverse("doc_detail", args=[draft.sn]))
 
+    def test_document_job_status_uses_session_snapshot_until_db_job_exists(self):
+        self._set_doc_job_snapshot(
+            status="running",
+            message="문서를 생성 중입니다.",
+            title="사용자 요구사항 정의서 생성",
+            docs_cd="DOC_SRS",
+            job_kind="initial",
+            job_id="job-snapshot-only",
+            request_id="req-snapshot",
+            tracking_document_sn=None,
+            poll_url=reverse("doc_job_status"),
+            poll_interval_ms=10000,
+            redirect_url="",
+            started_at="2026-06-24T00:23:29+00:00",
+            elapsed_seconds=1,
+            job_status_code="PRGRS_PENDING",
+            job_status_label="생성 대기",
+            document_sn=None,
+            error_cd="",
+            error_msg="",
+        )
+
+        response = self.client.get(
+            reverse("doc_job_status"),
+            {
+                "job_kind": "initial",
+                "docs_cd": "DOC_SRS",
+                "job_id": "job-snapshot-only",
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["status"], "running")
+        self.assertEqual(payload["job_id"], "job-snapshot-only")
+        self.assertEqual(payload["job_status_code"], "PRGRS_PENDING")
+
+    def test_document_job_status_clears_snapshot_after_completed_job(self):
+        self._set_doc_job_snapshot(
+            status="running",
+            message="문서를 생성 중입니다.",
+            title="사용자 요구사항 정의서 생성",
+            docs_cd="DOC_SRS",
+            job_kind="initial",
+            job_id="job-completed-clear",
+            request_id="req-completed-clear",
+            tracking_document_sn=None,
+            poll_url=reverse("doc_job_status"),
+            poll_interval_ms=10000,
+            redirect_url="",
+            started_at="2026-06-24T00:23:29+00:00",
+            elapsed_seconds=1,
+            job_status_code="PRGRS_PENDING",
+            job_status_label="생성 대기",
+            document_sn=None,
+            error_cd="",
+            error_msg="",
+        )
+        draft = self._create_document(sn=43, version="0", document_type=self.srs_code)
+        job = self._create_generation_job(
+            sn=43,
+            job_id="job-completed-clear",
+            document=draft,
+            document_type=self.srs_code,
+            job_status=self.progress_completed,
+        )
+
+        response = self.client.get(
+            reverse("doc_job_status"),
+            {
+                "job_kind": "initial",
+                "docs_cd": "DOC_SRS",
+                "job_id": job.job_id,
+            },
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "completed")
+        self.assertEqual(self.client.session.get("doc_job_snapshots"), None)
+
     def test_history_detail_shows_common_document_actions(self):
         document = self._create_document(sn=42, version="1.0", document_type=self.srs_code)
         self._create_detail(sn=42, document=document)
@@ -1045,6 +1134,34 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIsNotNone(response.context["active_job"])
         self.assertEqual(response.context["active_job"]["job_id"], job.job_id)
+
+    def test_doc_generate_progress_rows_reflect_processing_and_failed_jobs(self):
+        processing_job = self._create_generation_job(
+            sn=44,
+            job_id="job-srs-processing",
+            document=None,
+            document_type=self.srs_code,
+            job_status=self.progress_processing,
+        )
+
+        processing_response = self.client.get(reverse("doc_generate"), {"docs_cd": "DOC_SRS", "resume": 1})
+
+        self.assertEqual(processing_response.status_code, 200)
+        processing_row = next(
+            row for row in processing_response.context["progress_rows"] if row["code"] == processing_job.document_type_id
+        )
+        self.assertEqual(processing_row["status"], "processing")
+        self.assertEqual(processing_row["job_status_code"], "PRGRS_PROCESSING")
+
+        processing_job.job_status = self.progress_failed
+        processing_job.save(update_fields=["job_status"])
+
+        failed_response = self.client.get(reverse("doc_generate"), {"docs_cd": "DOC_SRS", "resume": 1})
+
+        self.assertEqual(failed_response.status_code, 200)
+        failed_row = next(row for row in failed_response.context["progress_rows"] if row["code"] == "DOC_SRS")
+        self.assertEqual(failed_row["status"], "failed")
+        self.assertEqual(failed_row["job_status_code"], "PRGRS_FAILED")
 
     def test_history_list_prepends_generation_job_row_when_only_job_exists(self):
         self._create_generation_job(
