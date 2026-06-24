@@ -1082,6 +1082,34 @@ class DataStructureDesignAgent:
                 entity_target_ids | table_target_ids,
             )
             repair_warnings.extend(semantic_corrections)
+        if failure_types & {
+            "ENTITY_GENERIC_NAME",
+            "ENTITY_NAME_MISMATCH",
+            "ENTITY_DESCRIPTION_MISMATCH",
+        }:
+            repaired, consistency_corrections = (
+                _resolve_remaining_name_description_mismatches(
+                    repaired,
+                    entity_target_ids | table_target_ids,
+                )
+            )
+            repair_warnings.extend(consistency_corrections)
+        if "ENTITY_ATTRIBUTE_MISMATCH" in failure_types:
+            repaired, attribute_corrections = _resolve_remaining_attribute_mismatches(
+                repaired,
+                set(instruction.get("target_scope", {}).get("column_scopes") or []),
+            )
+            repair_warnings.extend(attribute_corrections)
+        if failure_types & {
+            "ENTITY_GENERIC_NAME",
+            "ENTITY_NAME_MISMATCH",
+            "ENTITY_SEMANTIC_DUPLICATED",
+        }:
+            repaired, semantic_corrections = _resolve_remaining_semantic_duplicates(
+                repaired,
+                entity_target_ids | table_target_ids,
+            )
+            repair_warnings.extend(semantic_corrections)
         if "FK_RELATION_MISSING" in failure_types:
             repaired, quality_result = prepare_erd_quality(repaired)
         else:
@@ -1720,6 +1748,26 @@ class DataStructureDesignAgent:
                     }
                 )
                 break
+        result, consistency_corrections = _resolve_remaining_name_description_mismatches(
+            result,
+            set(),
+        )
+        warnings.extend(consistency_corrections)
+        remaining_consistency = inspect_entity_consistency(result.get("tables", []))
+        remaining_attribute_scopes = set(
+            remaining_consistency.get("attribute_mismatches") or []
+        )
+        if remaining_attribute_scopes:
+            result, attribute_corrections = _resolve_remaining_attribute_mismatches(
+                result,
+                remaining_attribute_scopes,
+            )
+            warnings.extend(attribute_corrections)
+        result, duplicate_corrections = _resolve_remaining_semantic_duplicates(
+            result,
+            set(),
+        )
+        warnings.extend(duplicate_corrections)
         return result, warnings
 
     def _repair_initial_entity_consistency_once(
@@ -3191,6 +3239,181 @@ def _resolve_remaining_semantic_duplicates(
         if not changed:
             break
     return result, corrections
+
+
+def _resolve_remaining_attribute_mismatches(
+    document: dict[str, Any],
+    target_scopes: set[str],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """LLM이 남긴 대상 속성 불일치를 물리명·접미사 근거로 확정합니다."""
+
+    result = deepcopy(document)
+    current_mismatches = set(
+        inspect_entity_consistency(result.get("tables", [])).get(
+            "attribute_mismatches", []
+        )
+    )
+    targets = current_mismatches & target_scopes if target_scopes else current_mismatches
+    corrections: list[dict[str, Any]] = []
+    if not targets:
+        return result, corrections
+
+    for table in result.get("tables", []):
+        if not isinstance(table, dict):
+            continue
+        entity_id = str(table.get("entity_id") or "")
+        entity_name = str(
+            table.get("entity_name") or table.get("logical_name") or ""
+        ).strip()
+        if not entity_id or not entity_name:
+            continue
+        for column in table.get("columns", []):
+            if not isinstance(column, dict):
+                continue
+            column_id = str(
+                column.get("column_id")
+                or column.get("physical_name")
+                or column.get("column_name")
+                or ""
+            )
+            scope = f"{entity_id}.{column_id}"
+            if scope not in targets:
+                continue
+            previous_name = str(
+                column.get("attribute_name") or column.get("logical_name") or ""
+            ).strip()
+            suffix = _attribute_name_suffix(previous_name, column)
+            resolved_name = f"{entity_name} {suffix}".strip()
+            column["attribute_name"] = resolved_name
+            column["logical_name"] = resolved_name
+            corrections.append(
+                {
+                    "code": "ENTITY_ATTRIBUTE_MISMATCH_RESOLVED",
+                    "message": f"{scope}: {previous_name} -> {resolved_name}",
+                }
+            )
+    return result, corrections
+
+
+def _resolve_remaining_name_description_mismatches(
+    document: dict[str, Any],
+    target_scopes: set[str],
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """이름·설명 불일치를 물리명·속성·기존 설명 근거로 마무리합니다."""
+
+    result = deepcopy(document)
+    tables = [table for table in result.get("tables", []) if isinstance(table, dict)]
+    consistency = inspect_entity_consistency(tables)
+    name_targets = set(consistency.get("name_mismatches") or [])
+    description_targets = set(consistency.get("description_mismatches") or [])
+    if target_scopes:
+        target_roots = {scope.split(".", 1)[0] for scope in target_scopes}
+        name_targets &= target_roots
+        description_targets &= target_roots
+
+    used_name_keys = {
+        _normalized_entity_name_key(
+            table.get("entity_name") or table.get("logical_name")
+        )
+        for table in tables
+        if _normalized_entity_name_key(
+            table.get("entity_name") or table.get("logical_name")
+        )
+    }
+    corrections: list[dict[str, Any]] = []
+    for table in tables:
+        entity_id = str(table.get("entity_id") or "")
+        if entity_id in name_targets:
+            previous_name = str(
+                table.get("entity_name") or table.get("logical_name") or ""
+            ).strip()
+            current_key = _normalized_entity_name_key(previous_name)
+            candidates = _scored_grounded_entity_name_candidates(
+                table,
+                _compact_entity_name_evidence(table, []),
+            )
+            selected_name = next(
+                (
+                    str(candidate.get("name") or "").strip()
+                    for candidate in candidates
+                    if _normalized_entity_name_key(candidate.get("name"))
+                    and _normalized_entity_name_key(candidate.get("name")) != current_key
+                    and _normalized_entity_name_key(candidate.get("name"))
+                    not in used_name_keys
+                ),
+                "",
+            )
+            if selected_name:
+                table["entity_name"] = selected_name
+                table["logical_name"] = selected_name
+                used_name_keys.add(_normalized_entity_name_key(selected_name))
+                corrections.append(
+                    {
+                        "code": "ENTITY_NAME_MISMATCH_RESOLVED",
+                        "message": f"{entity_id}: {previous_name} -> {selected_name}",
+                    }
+                )
+
+        if entity_id in description_targets:
+            entity_name = str(
+                table.get("entity_name") or table.get("logical_name") or ""
+            ).strip()
+            previous_description = str(
+                table.get("entity_description")
+                or table.get("description")
+                or table.get("table_description")
+                or ""
+            ).strip()
+            if entity_name:
+                resolved_description = f"{entity_name} 정보를 관리합니다."
+                if previous_description:
+                    resolved_description += f" {previous_description}"
+                table["entity_description"] = resolved_description
+                table["description"] = resolved_description
+                table["table_description"] = resolved_description
+                corrections.append(
+                    {
+                        "code": "ENTITY_DESCRIPTION_MISMATCH_RESOLVED",
+                        "message": f"{entity_id}: 설명에 {entity_name} 개념을 반영했습니다.",
+                    }
+                )
+    return result, corrections
+
+
+def _attribute_name_suffix(value: Any, column: dict[str, Any]) -> str:
+    text = str(value or "").strip()
+    for suffix in (
+        "상태 코드",
+        "일련번호",
+        "아이디",
+        "번호",
+        "이름",
+        "내용",
+        "상태",
+        "코드",
+        "ID",
+        "명",
+    ):
+        if text.lower().endswith(suffix.lower()):
+            return suffix
+
+    physical_name = str(
+        column.get("physical_name") or column.get("column_name") or ""
+    ).lower()
+    token = physical_name.rsplit("_", 1)[-1]
+    return {
+        "id": "ID",
+        "sn": "일련번호",
+        "no": "번호",
+        "nm": "명",
+        "name": "명",
+        "cd": "코드",
+        "code": "코드",
+        "cn": "내용",
+        "content": "내용",
+        "stts": "상태",
+        "status": "상태",
+    }.get(token, "값")
 
 
 def _source_items_for_table(table: dict[str, Any], source_items: list[Any]) -> list[Any]:
