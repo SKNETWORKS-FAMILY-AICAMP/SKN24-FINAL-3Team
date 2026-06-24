@@ -29,6 +29,28 @@ def prepare_db_quality(document: dict[str, Any]) -> tuple[dict[str, Any], dict[s
     for table in tables:
         table_name = _resolved_table_name(table)
         if valid_table_identifier(table_name):
+            logical_name = str(
+                table.get("entity_name")
+                or table.get("table_logical_name")
+                or table.get("logical_name")
+                or ""
+            ).strip()
+            if logical_name and _english_entity_mapping_mismatch(
+                logical_name,
+                table_name,
+            ):
+                aligned_name = _logical_name_from_table_identifier(table_name)
+                corrections.append(
+                    {
+                        "type": "DB_TABLE_ENTITY_NAME_ALIGNED",
+                        "target": table_name,
+                        "before": logical_name,
+                        "after": aligned_name,
+                    }
+                )
+                table["entity_name"] = aligned_name
+                table["logical_name"] = aligned_name
+                table["table_logical_name"] = aligned_name
             if table.get("table_name") != table_name:
                 corrections.append(
                     {
@@ -172,6 +194,15 @@ def _english_entity_mapping_mismatch(logical_name: str, table_name: str) -> bool
     }
     physical_tokens = set(table_name.removeprefix("tbl_").split("_"))
     return bool(logical_tokens and not logical_tokens.intersection(physical_tokens))
+
+
+def _logical_name_from_table_identifier(table_name: str) -> str:
+    tokens = [
+        token
+        for token in str(table_name).removeprefix("tbl_").split("_")
+        if token
+    ]
+    return " ".join(token.capitalize() for token in tokens)
 
 
 def _issue(code: str, scope: Any, message: str) -> dict[str, Any]:
