@@ -93,6 +93,23 @@ class ApprovalReviewRepository:
         ).mappings().first()
         return dict(row) if row is not None else None
 
+    def get_latest_docs_detail(self, docs_sn: int) -> dict[str, Any] | None:
+        row = self.session.execute(
+            text(
+                """
+                SELECT docs_dtl_sn, docs_sn, docs_dtl_cn, docs_path,
+                       del_yn, crt_dt, creatr_sn
+                FROM tbl_docs_detail
+                WHERE docs_sn = :docs_sn
+                  AND del_yn = 'N'
+                ORDER BY docs_dtl_sn DESC
+                LIMIT 1
+                """
+            ),
+            {"docs_sn": docs_sn},
+        ).mappings().first()
+        return dict(row) if row is not None else None
+
     def get_docs_detail(
         self, docs_sn: int, docs_dtl_sn: int
     ) -> dict[str, Any] | None:
