@@ -246,6 +246,7 @@ def _normalize_entity(index: int, entity: dict[str, Any]) -> dict[str, Any]:
     table_id = str(entity.get("table_id") or f"TABLE-{index:03d}").strip()
     entity_id = str(entity.get("entity_id") or f"ENT-{index:03d}").strip()
     description = str(entity.get("description") or entity.get("table_description") or "").strip()
+    table_description = str(entity.get("table_description") or description).strip()
     return {
         **entity,
         "table_id": table_id,
@@ -253,7 +254,7 @@ def _normalize_entity(index: int, entity: dict[str, Any]) -> dict[str, Any]:
         "logical_name": logical_name,
         "physical_name": physical_name,
         "description": description,
-        "table_description": description,
+        "table_description": table_description,
         "columns": [
             _normalize_column(index, column_index, column)
             for column_index, column in enumerate(entity.get("columns") or [], start=1)

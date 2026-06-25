@@ -527,7 +527,7 @@ def _fill_interface_process_table(table: Table, items: list[dict[str, Any]]) -> 
 def _fill_erd_entity_table(table: Table, entity: dict[str, Any]) -> None:
     _set_cell_safe(table, 0, 2, _pick(entity, "entity_id", "table_id", default=""))
     _set_cell_safe(table, 0, 7, _pick(entity, "entity_name", "logical_name", "table_logical_name"))
-    _set_cell_safe(table, 1, 4, _pick(entity, "entity_description", "table_comment", "description"))
+    _set_cell_safe(table, 1, 4, _pick(entity, "entity_description", "table_description", "table_comment", "description"))
     rows = [_erd_column_to_row(column) for column in _entity_columns(entity)]
     _fill_repeating_table(table, rows, base_row_idx=3)
 
