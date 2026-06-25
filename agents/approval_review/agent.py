@@ -36,21 +36,37 @@ class ApprovalReviewAgent:
         docs = self.repository.get_docs(docs_sn)
         if docs is None:
             raise LookupError(f"tbl_docs row not found: docs_sn={docs_sn}")
-        if hasattr(self.repository, "get_previous_docs_detail"):
+        if hasattr(self.repository, "get_review_docs_detail_pair"):
+            before_detail, after_detail = self.repository.get_review_docs_detail_pair(
+                docs_sn,
+                approval_request_docs_dtl_sn,
+            )
+        elif hasattr(self.repository, "get_baseline_docs_detail"):
+            before_detail = self.repository.get_baseline_docs_detail(
+                docs_sn,
+                approval_request_docs_dtl_sn,
+            )
+            after_detail = self.repository.get_docs_detail(
+                docs_sn, approval_request_docs_dtl_sn
+            )
+        elif hasattr(self.repository, "get_previous_docs_detail"):
             before_detail = self.repository.get_previous_docs_detail(
                 docs_sn,
                 approval_request_docs_dtl_sn,
             )
+            after_detail = self.repository.get_docs_detail(
+                docs_sn, approval_request_docs_dtl_sn
+            )
         else:
             before_detail = self.repository.get_first_docs_detail(docs_sn)
+            after_detail = self.repository.get_docs_detail(
+                docs_sn, approval_request_docs_dtl_sn
+            )
         if before_detail is None:
             raise LookupError(
                 "before detail not found: "
                 f"docs_sn={docs_sn}, after_docs_dtl_sn={approval_request_docs_dtl_sn}"
             )
-        after_detail = self.repository.get_docs_detail(
-            docs_sn, approval_request_docs_dtl_sn
-        )
         if after_detail is None:
             raise LookupError(
                 "approval request detail not found: "
