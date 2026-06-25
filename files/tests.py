@@ -7,6 +7,7 @@ from django.urls import reverse
 
 from common.models import Code, YesNoChoices
 from common.storage import build_s3_uri, save_bytes
+from docs.models import Document
 from projects.models import Project, ProjectUserRole
 from users.models import User
 
@@ -367,3 +368,36 @@ class FileListViewTests(TestCase):
 
         follow_up = self.client.get(reverse("file_list"))
         self.assertEqual(follow_up.context["current_project"].name, "Second Project")
+
+    def test_set_current_project_redirects_document_detail_to_document_type_entry(self):
+        second_project = self._create_project(2, "Second Project")
+        self._grant_project_role(2, second_project, self.role_member)
+        srs_code, _ = Code.objects.get_or_create(
+            code="DOC_SRS",
+            defaults={"name": "사용자 요구사항 정의서", "created_by": self.user, "updated_by": self.user},
+        )
+        progress_code, _ = Code.objects.get_or_create(
+            code="PRGRS_COMPLETED",
+            defaults={"name": "생성 완료", "created_by": self.user, "updated_by": self.user},
+        )
+        document = Document.objects.create(
+            sn=137,
+            project=self.project,
+            document_type=srs_code,
+            progress_status=progress_code,
+            version="1.0",
+            modification_content="저장",
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        response = self.client.post(
+            reverse("set_current_project"),
+            {
+                "project_sn": second_project.sn,
+                "next": f"{reverse('doc_detail', args=[document.sn])}?mode=view",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"{reverse('doc_generate')}?docs_cd=DOC_SRS&resume=1")

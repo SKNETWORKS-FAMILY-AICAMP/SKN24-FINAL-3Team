@@ -80,6 +80,7 @@ from .services import (
     get_generation_state,
     get_generation_itf_references,
     get_generation_prerequisite_error,
+    is_same_docx_revision,
     get_latest_generation_job,
     get_latest_detail,
     get_latest_approval_review_job,
@@ -1319,10 +1320,11 @@ def document_save(request, document_sn):
                 baseline_detail_sn = int(baseline_value)
             except ValueError:
                 baseline_detail_sn = getattr(latest_detail, "sn", None)
+        baseline_detail = get_detail_by_sn(document, baseline_detail_sn) or latest_detail
         try:
             force_save_result = request_force_save(
                 document,
-                latest_detail=latest_detail,
+                latest_detail=baseline_detail,
                 userdata=f"doc-save-{document.sn}-{actor.sn}",
                 request=request,
             )
@@ -1569,12 +1571,16 @@ def document_history_preview(request, document_sn, detail_sn):
 def document_content(request, document_sn):
     token = request.GET.get("token", "").strip()
     document = _get_document_by_sn_or_404(document_sn)
-    if not validate_document_content_token(document, token):
+    detail_sn = request.GET.get("detail_sn")
+    detail = get_detail_by_sn(document, detail_sn) if detail_sn else None
+    if not validate_document_content_token(document, token, detail_sn=detail_sn):
         current_project, _ = resolve_current_project(request)
         actor = get_actor(request)
         _ensure_document_access(current_project, actor, document)
+    if detail_sn and detail is None:
+        raise Http404
 
-    latest_detail = get_latest_detail(document)
+    latest_detail = detail or get_latest_detail(document)
     try:
         content = get_document_detail_bytes(latest_detail)
     except ValueError:
@@ -1609,19 +1615,28 @@ def document_callback(request, document_sn):
     payload = parse_callback_payload(request)
     status = payload.get("status")
     if status in {2, 6}:
+        baseline_detail = None
+        baseline_detail_sn = request.GET.get("baseline_detail_sn")
+        if baseline_detail_sn:
+            baseline_detail = get_detail_by_sn(document, baseline_detail_sn)
+        if baseline_detail is None:
+            baseline_detail = get_latest_detail(document)
+
         content_bytes = None
         if payload.get("url"):
             try:
                 content_bytes = download_remote_content(payload["url"])
             except Exception:
                 content_bytes = None
-        save_revision(
-            document,
-            document.updated_by or document.created_by,
-            content_bytes=content_bytes,
-            text_content=None if content_bytes else payload.get("content_text") or extract_text_from_docx(get_document_detail_bytes(get_latest_detail(document))),
-            modification_content="OnlyOffice 저장",
-        )
+        if content_bytes:
+            baseline_bytes = get_document_detail_bytes(baseline_detail) if baseline_detail is not None else b""
+            if not baseline_bytes or not is_same_docx_revision(content_bytes, baseline_bytes):
+                save_revision(
+                    document,
+                    document.updated_by or document.created_by,
+                    content_bytes=content_bytes,
+                    modification_content="OnlyOffice 저장",
+                )
     return JsonResponse({"error": 0})
 
 

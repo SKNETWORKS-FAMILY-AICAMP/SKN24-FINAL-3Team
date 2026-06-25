@@ -1,7 +1,7 @@
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import redirect
 
-from common.project_selection import get_safe_next_url, resolve_current_project, set_current_project
+from common.project_selection import get_project_switch_next_url, resolve_current_project, set_current_project
 
 
 @login_required(login_url="home")
@@ -20,4 +20,4 @@ def set_current_project_view(request):
 
     set_current_project(request, next_project)
     setattr(request, "_project_selection_cache", (next_project, available_projects))
-    return redirect(get_safe_next_url(request))
+    return redirect(get_project_switch_next_url(request))

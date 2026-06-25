@@ -3,17 +3,19 @@ import json
 import os
 import time
 import traceback
+import hashlib
 from pathlib import Path
 from types import SimpleNamespace
+from zipfile import BadZipFile, ZipFile
 import requests
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urljoin, urlparse
+from urllib.parse import urlencode, urljoin
 from urllib.request import Request, urlopen
 from uuid import uuid4
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F, Window
+from django.db.models import F, Max, Window
 from django.db.models.functions import RowNumber
 from django.urls import reverse
 from docx import Document as DocxDocument
@@ -433,6 +435,32 @@ def get_document_prerequisite_codes(document_code):
     return tuple(DOCUMENT_PREREQUISITES.get(document_code, ()))
 
 
+def get_generation_dependent_codes(document_code):
+    target_code = resolve_document_code(document_code)
+    if not target_code:
+        return ()
+
+    dependent_codes = set()
+    pending_codes = [target_code]
+    while pending_codes:
+        current_code = pending_codes.pop()
+        for candidate_code, prerequisite_codes in DOCUMENT_PREREQUISITES.items():
+            if candidate_code == target_code or candidate_code in dependent_codes:
+                continue
+            if current_code in prerequisite_codes:
+                dependent_codes.add(candidate_code)
+                pending_codes.append(candidate_code)
+
+    return tuple(code for code in get_document_code_sequence() if code in dependent_codes)
+
+
+def get_generation_regeneration_target_codes(document_code):
+    target_code = resolve_document_code(document_code)
+    if not target_code:
+        return ()
+    return (target_code, *get_generation_dependent_codes(target_code))
+
+
 def get_actor(request):
     return get_request_user(request)
 
@@ -471,8 +499,8 @@ def get_document_title(document):
 def build_document_key(document, latest_detail=None):
     if latest_detail is None:
         latest_detail = get_latest_detail(document)
-    timestamp = int(latest_detail.created_at.timestamp()) if latest_detail else document.sn
-    return f"docs-{document.sn}-v{document.version}-{timestamp}"
+    detail_part = getattr(latest_detail, "sn", None) or "none"
+    return f"docs-{document.sn}-v{document.version}-detail-{detail_part}"
 
 
 def build_docx_bytes(title, body_lines):
@@ -514,6 +542,20 @@ def get_document_detail_bytes(detail):
     return read_bytes_from_uri(detail_path)
 
 
+def get_docx_revision_fingerprint(content_bytes):
+    content = content_bytes or b""
+    try:
+        with ZipFile(io.BytesIO(content)) as archive:
+            document_xml = archive.read("word/document.xml")
+    except (BadZipFile, KeyError):
+        document_xml = content
+    return hashlib.sha256(document_xml).hexdigest()
+
+
+def is_same_docx_revision(left_bytes, right_bytes):
+    return get_docx_revision_fingerprint(left_bytes) == get_docx_revision_fingerprint(right_bytes)
+
+
 def download_remote_content(url):
     if not url:
         return None
@@ -544,11 +586,7 @@ def get_onlyoffice_document_server_url(request=None, *, browser=False):
 
     if configured_url.startswith(("http://", "https://")):
         if browser:
-            parsed_url = urlparse(configured_url)
-            browser_path = parsed_url.path.rstrip("/")
-            if browser_path:
-                return browser_path
-            return "/onlyoffice"
+            return configured_url
         return configured_url
 
     normalized_path = f"/{configured_url.lstrip('/')}".rstrip("/")
@@ -1003,6 +1041,14 @@ def _matches_generation_job_kind(job, job_kind=None):
     return get_generation_job_kind(job) == job_kind
 
 
+def _filter_generation_job_kind(queryset, job_kind=None):
+    if job_kind == GENERATION_JOB_KIND_AUTO_APPLY:
+        return queryset.filter(request_payload__udt_yn="Y")
+    if job_kind == GENERATION_JOB_KIND_INITIAL:
+        return queryset.exclude(request_payload__udt_yn="Y")
+    return queryset
+
+
 def get_generation_job(project, *, job_sn=None, job_id=None):
     queryset = _generation_job_queryset(project)
     if job_sn is not None:
@@ -1024,16 +1070,14 @@ def find_generation_job(
     queryset = _generation_job_queryset(project, document_code)
     if status_codes:
         queryset = queryset.filter(job_status_id__in=status_codes)
+    queryset = _filter_generation_job_kind(queryset, job_kind)
     if job_id:
         return queryset.filter(job_id=str(job_id).strip()).first()
     if tracking_document_sn:
-        tracked_job = queryset.filter(document_id=tracking_document_sn).order_by("-requested_at", "-sn").first()
-        if tracked_job is not None and _matches_generation_job_kind(tracked_job, job_kind):
+        tracked_job = queryset.filter(document_id=tracking_document_sn).order_by("-sn").first()
+        if tracked_job is not None:
             return tracked_job
-    for job in queryset.order_by("-requested_at", "-sn"):
-        if _matches_generation_job_kind(job, job_kind):
-            return job
-    return None
+    return queryset.order_by("-sn").first()
 
 
 def get_running_generation_job(project, document_code, *, job_kind=None, tracking_document_sn=None):
@@ -1507,10 +1551,14 @@ def create_approval_request(document, actor, request_content):
 def get_latest_approval_review_job(approval):
     if approval is None:
         return None
+    latest_sn = ApprovalReviewJob.objects.filter(approval_id=approval.approval_sn).aggregate(
+        latest_sn=Max("sn"),
+    )["latest_sn"]
+    if latest_sn is None:
+        return None
     return (
-        ApprovalReviewJob.objects.filter(approval_id=approval.approval_sn)
+        ApprovalReviewJob.objects.filter(sn=latest_sn)
         .select_related("before_detail", "after_detail", "approval_request_detail")
-        .order_by("-sn")
         .first()
     )
 
@@ -1560,9 +1608,9 @@ def hydrate_generation_state_from_existing_documents(project, state):
     브라우저 세션이 비어 있어도 DB에 이미 저장 완료된 산출물이 있으면
     순차 생성 진행 상태를 이어받습니다.
 
-    단, 재생성 모드(regeneration_from)가 있으면 선택한 산출물 이전까지만
-    저장 완료 상태로 복구합니다. 예를 들어 DOC_ARCH 재생성이면 DOC_SRS, DOC_ITF만
-    완료 상태로 유지하고 DOC_ARCH부터 다시 생성 대기로 둡니다.
+    단, 재생성 모드(regeneration_targets)가 있으면 선택한 산출물만
+    저장 완료 상태 복구에서 제외합니다. 예를 들어 DOC_DB 재생성이면
+    DOC_DB만 생성 대기로 두고 DOC_TS 등 다른 저장 완료 산출물은 유지합니다.
     """
     if project is None:
         return state
@@ -1570,12 +1618,18 @@ def hydrate_generation_state_from_existing_documents(project, state):
     confirmed = state.setdefault("confirmed_documents", {})
     draft_documents = state.setdefault("draft_documents", {})
     sequence = get_document_code_sequence()
-    regeneration_from = state.get("regeneration_from")
-    hydration_sequence = sequence
-    if regeneration_from in sequence:
-        hydration_sequence = sequence[: sequence.index(regeneration_from)]
+    regeneration_targets = set(state.get("regeneration_targets") or ())
+    legacy_regeneration_from = state.get("regeneration_from")
+    if legacy_regeneration_from in sequence and not regeneration_targets:
+        regeneration_targets.add(legacy_regeneration_from)
 
-    for code in hydration_sequence:
+    for code in sequence:
+        if code in regeneration_targets:
+            confirmed.pop(str(code), None)
+            confirmed.pop(code, None)
+            draft_documents.pop(str(code), None)
+            draft_documents.pop(code, None)
+            continue
         if str(code) in confirmed:
             confirmed_document = get_generation_saved_document(project, code, state)
             if confirmed_document is not None:
@@ -1600,6 +1654,7 @@ def begin_generation_regeneration(session, project, document_code):
     state = _build_empty_generation_state(project)
     state["regeneration_mode"] = True
     state["regeneration_from"] = target_code
+    state["regeneration_targets"] = list(get_generation_regeneration_target_codes(target_code))
     hydrate_generation_state_from_existing_documents(project, state)
     save_generation_state(session, state)
     return state
@@ -1618,6 +1673,7 @@ def get_generation_state(session, project):
     state.setdefault("confirmed_documents", {})
     state.setdefault("itf_reference_files", [])
     state.setdefault("regeneration_mode", False)
+    state.setdefault("regeneration_targets", [])
     return hydrate_generation_state_from_existing_documents(project, state)
 
 
@@ -1938,20 +1994,31 @@ def build_editor_config(request, document, actor, mode):
     if not public_base_url:
         public_base_url = request.build_absolute_uri("/").rstrip("/")
 
-    document_query = ""
+    document_query_items = []
+    if latest_detail is not None:
+        document_query_items.append(("detail_sn", str(latest_detail.sn)))
     if settings.ONLYOFFICE_JWT_SECRET:
-        document_query = urlencode(
-            {
-                "token": encode_jwt(
-                    {"document_sn": document.sn, "project_sn": document.project_id},
+        document_query_items.append(
+            (
+                "token",
+                encode_jwt(
+                    {
+                        "document_sn": document.sn,
+                        "project_sn": document.project_id,
+                        "detail_sn": getattr(latest_detail, "sn", None),
+                    },
                     settings.ONLYOFFICE_JWT_SECRET,
-                )
-            }
+                ),
+            )
         )
 
     document_url = f"{public_base_url}{reverse('doc_content', args=[document.sn])}"
-    if document_query:
-        document_url = f"{document_url}?{document_query}"
+    if document_query_items:
+        document_url = f"{document_url}?{urlencode(document_query_items)}"
+
+    callback_url = f"{public_base_url}{reverse('doc_callback', args=[document.sn])}"
+    if latest_detail is not None:
+        callback_url = f"{callback_url}?{urlencode({'baseline_detail_sn': latest_detail.sn})}"
 
     payload = {
         "documentType": "word",
@@ -1970,7 +2037,7 @@ def build_editor_config(request, document, actor, mode):
             },
         },
         "editorConfig": {
-            "callbackUrl": f"{public_base_url}{reverse('doc_callback', args=[document.sn])}",
+            "callbackUrl": callback_url,
             "mode": mode,
             "user": {"id": str(actor.sn), "name": actor.name},
         },
@@ -1998,17 +2065,23 @@ def parse_callback_payload(request):
     return payload
 
 
-def validate_document_content_token(document, token):
+def validate_document_content_token(document, token, detail_sn=None):
     if not settings.ONLYOFFICE_JWT_SECRET or not token:
         return False
     try:
         payload = decode_jwt(token, settings.ONLYOFFICE_JWT_SECRET)
     except Exception:
         return False
-    return (
+    valid = (
         str(payload.get("document_sn")) == str(document.sn)
         and str(payload.get("project_sn")) == str(document.project_id)
     )
+    if not valid:
+        return False
+    token_detail_sn = payload.get("detail_sn")
+    if detail_sn is not None and token_detail_sn is not None:
+        return str(token_detail_sn) == str(detail_sn)
+    return True
 
 
 def _coerce_json_value(value):

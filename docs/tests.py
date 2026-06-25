@@ -694,6 +694,61 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(self.client.session["docs_initial_generation"]["itf_reference_files"], [])
         self.assertTrue(reference_key.endswith(".png"))
 
+    def test_reset_generation_only_resets_selected_document_type(self):
+        completed_documents = {}
+        for index, code in enumerate(
+            [self.srs_code, self.itf_code, self.arch_code, self.erd_code, self.db_code, self.ts_code],
+            start=1,
+        ):
+            document = self._create_completed_initial_document(sn=index, document_type=code)
+            completed_documents[code.code] = document.sn
+        self._set_generation_state(confirmed_documents=completed_documents)
+
+        response = self.client.post(
+            reverse("doc_generate"),
+            {"action": "reset_generation", "docs_cd": "DOC_DB"},
+        )
+        self.assertEqual(response.status_code, 302)
+
+        follow_up = self.client.get(response["Location"])
+        self.assertEqual(follow_up.status_code, 200)
+        progress_by_code = {row["code"]: row for row in follow_up.context["progress_rows"]}
+        self.assertEqual(progress_by_code["DOC_DB"]["status"], "pending")
+        self.assertEqual(progress_by_code["DOC_TS"]["status"], "confirmed")
+        self.assertEqual(progress_by_code["DOC_TS"]["document_sn"], completed_documents["DOC_TS"])
+
+    def test_reset_generation_resets_dependency_descendants(self):
+        scenarios = [
+            ("DOC_SRS", {"DOC_SRS", "DOC_ITF", "DOC_ARCH", "DOC_ERD", "DOC_DB", "DOC_TS"}),
+            ("DOC_ITF", {"DOC_ITF", "DOC_TS"}),
+            ("DOC_ERD", {"DOC_ERD", "DOC_DB"}),
+        ]
+
+        for scenario_index, (target_code, pending_codes) in enumerate(scenarios, start=1):
+            with self.subTest(target_code=target_code):
+                completed_documents = {}
+                sn_base = scenario_index * 100
+                for index, code in enumerate(
+                    [self.srs_code, self.itf_code, self.arch_code, self.erd_code, self.db_code, self.ts_code],
+                    start=sn_base,
+                ):
+                    document = self._create_completed_initial_document(sn=index, document_type=code)
+                    completed_documents[code.code] = document.sn
+                self._set_generation_state(confirmed_documents=completed_documents)
+
+                response = self.client.post(
+                    reverse("doc_generate"),
+                    {"action": "reset_generation", "docs_cd": target_code},
+                )
+                self.assertEqual(response.status_code, 302)
+
+                follow_up = self.client.get(response["Location"])
+                self.assertEqual(follow_up.status_code, 200)
+                progress_by_code = {row["code"]: row for row in follow_up.context["progress_rows"]}
+                for code in completed_documents:
+                    expected_status = "pending" if code in pending_codes else "confirmed"
+                    self.assertEqual(progress_by_code[code]["status"], expected_status)
+
     def test_start_current_generation_ajax_returns_job_payload(self):
         project_file = self._create_project_file()
         self._set_generation_state(selected_file_ids=[project_file.sn])
@@ -1646,14 +1701,29 @@ class DocumentWorkflowViewTests(TestCase):
         document = self._create_document(sn=1, version="0", user=None)
         self._create_detail(sn=1, document=document, content=b"seed")
 
-        response = self.client.post(
-            reverse("doc_callback", args=[document.sn]),
-            data='{"status": 2, "content_text": "OnlyOffice save"}',
-            content_type="application/json",
-        )
+        with patch("docs.views.download_remote_content", return_value=b"OnlyOffice save"):
+            response = self.client.post(
+                f"{reverse('doc_callback', args=[document.sn])}?baseline_detail_sn=1",
+                data='{"status": 2, "url": "http://document-server/edited.docx"}',
+                content_type="application/json",
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(DocumentDetail.objects.filter(document=document).count(), 2)
+
+    def test_document_callback_skips_revision_when_onlyoffice_content_is_unchanged(self):
+        document = self._create_document(sn=1, version="0", user=None)
+        self._create_detail(sn=1, document=document, content=b"seed")
+
+        with patch("docs.views.download_remote_content", return_value=b"seed"):
+            response = self.client.post(
+                f"{reverse('doc_callback', args=[document.sn])}?baseline_detail_sn=1",
+                data='{"status": 2, "url": "http://document-server/unchanged.docx"}',
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(DocumentDetail.objects.filter(document=document).count(), 1)
 
     def test_editor_config_uses_desktop_type_for_edit_mode(self):
         document = self._create_document(sn=1, version="1.0", user=self.user)

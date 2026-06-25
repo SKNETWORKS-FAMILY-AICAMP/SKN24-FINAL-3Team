@@ -1,3 +1,7 @@
+import re
+from urllib.parse import urlsplit
+
+from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 
 from common.models import YesNoChoices
@@ -8,6 +12,8 @@ from users.models import User
 CURRENT_PROJECT_SESSION_KEY = "current_project_sn"
 PROJECT_ROLE_CODES = ("ROLE_MEMBER", "ROLE_MANAGER")
 _REQUEST_CACHE_ATTR = "_project_selection_cache"
+_DOCUMENT_DETAIL_PATH_RE = re.compile(r"^/docs/documents/(?P<document_sn>\d+)(?:/|$)")
+_APPROVAL_DETAIL_PATH_RE = re.compile(r"^/docs/approvals/(?P<approval_sn>\d+)(?:/|$)")
 
 
 def get_request_user(request):
@@ -51,6 +57,34 @@ def get_safe_next_url(request):
     ):
         return next_url
     return request.META.get("HTTP_REFERER") or "/"
+
+
+def get_project_switch_next_url(request):
+    next_url = get_safe_next_url(request)
+    path = urlsplit(next_url).path
+
+    document_match = _DOCUMENT_DETAIL_PATH_RE.match(path)
+    if document_match:
+        document_code = ""
+        try:
+            from docs.models import Document
+
+            document = (
+                Document.objects.filter(sn=document_match.group("document_sn"))
+                .only("document_type_id")
+                .first()
+            )
+            document_code = getattr(document, "document_type_id", "") or ""
+        except Exception:
+            document_code = ""
+        if document_code:
+            return f"{reverse('doc_generate')}?docs_cd={document_code}&resume=1"
+        return f"{reverse('doc_history_list')}?docs_cd=all"
+
+    if _APPROVAL_DETAIL_PATH_RE.match(path):
+        return reverse("doc_approval_list")
+
+    return next_url
 
 
 def resolve_current_project(request):
