@@ -205,6 +205,55 @@ class FileListViewTests(TestCase):
         self.assertEqual(len(documents), 1)
         self.assertEqual(documents[0]["name"], "RFP_20260520.pdf")
 
+    def test_file_list_only_shows_rfp_and_meeting_files(self):
+        other_code, _ = Code.objects.get_or_create(
+            code="FILE_ETC",
+            defaults={
+                "name": "Etc",
+                "created_by": self.user,
+                "updated_by": self.user,
+            },
+        )
+        ProjectFile.objects.create(
+            sn=1,
+            project=self.project,
+            file_type=self.rfp_code,
+            name="RFP_20260520.pdf",
+            path=build_s3_uri(f"project-files/{self.project.sn}/1-RFP_20260520.pdf"),
+            size=3,
+            extension="pdf",
+            created_by=self.user,
+            updated_by=self.user,
+        )
+        ProjectFile.objects.create(
+            sn=2,
+            project=self.project,
+            file_type=self.meeting_code,
+            name="meeting_20260520.docx",
+            path=build_s3_uri(f"project-files/{self.project.sn}/2-meeting_20260520.docx"),
+            size=7,
+            extension="docx",
+            created_by=self.user,
+            updated_by=self.user,
+        )
+        ProjectFile.objects.create(
+            sn=3,
+            project=self.project,
+            file_type=other_code,
+            name="other_20260520.pdf",
+            path=build_s3_uri(f"project-files/{self.project.sn}/3-other_20260520.pdf"),
+            size=5,
+            extension="pdf",
+            created_by=self.user,
+            updated_by=self.user,
+        )
+
+        response = self.client.get(reverse("file_list"))
+
+        self.assertEqual(response.status_code, 200)
+        document_names = [document["name"] for document in response.context["documents"]]
+        self.assertEqual(document_names, ["meeting_20260520.docx", "RFP_20260520.pdf"])
+
     def test_delete_and_download_selected_files(self):
         with self.settings(ALPLED_LOCAL_STORAGE_ROOT=self.temp_dir):
             project_file = self._create_stored_project_file(1, "proposal.pdf", b"download-me")

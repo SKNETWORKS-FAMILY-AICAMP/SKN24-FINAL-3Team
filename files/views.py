@@ -16,6 +16,7 @@ from users.models import User
 
 from .models import ProjectFile
 from .services import (
+    FILE_TYPE_SEQUENCE,
     SEARCH_FIELD_CHOICES,
     apply_file_filters,
     build_project_file_rows,
@@ -175,12 +176,19 @@ def file_list(request):
     documents = ProjectFile.objects.none()
     if current_project is not None:
         documents = (
-            ProjectFile.objects.filter(project=current_project)
+            ProjectFile.objects.filter(
+                project=current_project,
+                file_type_id__in=FILE_TYPE_SEQUENCE,
+            )
             .select_related("file_type", "created_by")
             .order_by("-created_at", "-sn")
         )
 
-    documents, file_type, search_field, query = apply_file_filters(request.GET, documents)
+    documents, file_type, search_field, query = apply_file_filters(
+        request.GET,
+        documents,
+        allowed_file_types=FILE_TYPE_SEQUENCE,
+    )
 
     context = {
         "active_menu": "files",
@@ -190,7 +198,7 @@ def file_list(request):
         "file_type": file_type,
         "search_field": search_field,
         "query": query,
-        "file_type_choices": get_file_type_choices(),
+        "file_type_choices": get_file_type_choices(allowed_codes=FILE_TYPE_SEQUENCE),
         "search_field_choices": SEARCH_FIELD_CHOICES,
         "max_upload_files": MAX_UPLOAD_FILES,
         "max_file_size_mb": MAX_FILE_SIZE // (1024 * 1024),
