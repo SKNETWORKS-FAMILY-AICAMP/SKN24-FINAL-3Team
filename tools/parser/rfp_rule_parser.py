@@ -18,7 +18,7 @@ from tools.parser.pdf_parser import parse_pdf
 
 RuleParser = Callable[[str], Any]
 
-ID_PATTERN = re.compile(r"^[A-Za-z]{2,5}[\-\u2013\u2014]\d{2,4}$")
+ID_PATTERN = re.compile(r"^[A-Za-z]{2,10}[\-\u2013\u2014_]\d{1,5}$")
 
 DEFAULT_PREFIX_MAP = {
     "SFR": "기능",
@@ -108,6 +108,8 @@ def parse_rfp_requirements(
             )
         if not isinstance(requirements, list):
             raise ValueError("파서 결과는 요구사항 목록이어야 합니다.")
+        if not requirements:
+            raise ValueError("RFP 문서에서 요구사항 항목을 추출하지 못했습니다.")
         functional_requirements = [
             requirement
             for requirement in requirements
@@ -208,7 +210,20 @@ def extract_requirements_from_rfp_docx(file_path: str) -> list[dict[str, Any]]:
 
             current["detail_parts"].extend(cell for cell in cells if cell not in BLACKLIST)
 
-    return [_build_requirement(data) for data in requirements_map.values() if _is_valid_requirement(data)]
+    table_requirements = [
+        _build_requirement(data)
+        for data in requirements_map.values()
+        if _is_valid_requirement(data)
+    ]
+    if table_requirements:
+        return table_requirements
+
+    text_lines = _docx_text_lines(document)
+    return _extract_requirements_from_lines(
+        text_lines,
+        source_name=path.name,
+        source_type="detailed_requirement_text",
+    )
 
 
 @contextmanager
@@ -315,6 +330,90 @@ def extract_requirements_from_rfp_pdf(file_path: str) -> list[dict[str, Any]]:
             line_index += 1
 
     return [_build_requirement(data) for data in requirements_map.values() if _is_valid_requirement(data)]
+
+
+def _docx_text_lines(document: Any) -> list[str]:
+    lines: list[str] = []
+    lines.extend(
+        normalize_text(paragraph.text)
+        for paragraph in document.paragraphs
+        if normalize_text(paragraph.text)
+    )
+    for table in document.tables:
+        for row in table.rows:
+            cells = _unique_cells(row.cells)
+            if cells:
+                lines.append(" ".join(cells))
+    return [line for line in lines if line]
+
+
+def _extract_requirements_from_lines(
+    lines: list[str],
+    *,
+    source_name: str,
+    source_type: str,
+) -> list[dict[str, Any]]:
+    requirements_map: dict[str, dict[str, Any]] = {}
+    current_id: str | None = None
+    line_index = 0
+    while line_index < len(lines):
+        line = lines[line_index]
+        requirement_id = _find_requirement_id_in_text(line)
+        if requirement_id:
+            current_id = requirement_id
+            current = requirements_map.setdefault(
+                requirement_id,
+                _new_requirement(
+                    requirement_id,
+                    source_name,
+                    0,
+                    line_index,
+                    source_type=source_type,
+                ),
+            )
+            rest = _remove_requirement_id_label(line, requirement_id)
+            if rest:
+                field_value = _split_pdf_field(rest)
+                if field_value:
+                    _apply_pdf_field(current, field_value[0], field_value[1])
+                else:
+                    current["detail_parts"].append(rest)
+            line_index += 1
+            continue
+
+        if not current_id:
+            line_index += 1
+            continue
+
+        current = requirements_map[current_id]
+        field_value = _split_pdf_field(line)
+        if field_value:
+            field, value = field_value
+            _apply_pdf_field(current, field, value)
+            line_index += 1
+            continue
+
+        field = _detect_field(line)
+        if field:
+            value, next_index = _collect_pdf_field_value(lines, line_index + 1, field)
+            if value:
+                _apply_pdf_field(current, field, value)
+                line_index = next_index
+            else:
+                line_index += 1
+            continue
+
+        if _looks_like_section_boundary(line):
+            line_index += 1
+            continue
+        current["detail_parts"].append(line)
+        line_index += 1
+
+    return [
+        _build_requirement(data)
+        for data in requirements_map.values()
+        if _is_valid_requirement(data)
+    ]
 
 
 def _new_requirement(
@@ -436,12 +535,14 @@ def _find_requirement_id(cells: list[str]) -> str | None:
 
 def _find_requirement_id_in_text(text: str) -> str | None:
     normalized = _normalize_id(text)
-    match = re.search(r"\b[A-Z]{2,5}-\d{2,4}\b", normalized)
+    match = re.search(r"\b[A-Z]{2,10}-\d{1,5}\b", normalized)
     return match.group(0) if match else None
 
 
 def _normalize_id(text: str) -> str:
-    return re.sub(r"[\-\u2013\u2014]", "-", text.strip()).upper()
+    value = re.sub(r"[\-\u2013\u2014_]", "-", text.strip()).upper()
+    value = re.sub(r"\b([A-Z]{2,10})\s+(\d{1,5})\b", r"\1-\2", value)
+    return value
 
 
 def normalize_text(text: str) -> str:
