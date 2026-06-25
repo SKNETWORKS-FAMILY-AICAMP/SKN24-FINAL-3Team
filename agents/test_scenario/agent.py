@@ -6,6 +6,7 @@ from agents.test_scenario.prompts import compact_requirement_for_ts
 from agents.test_scenario.processors import (
     apply_scenario_rules,
     build_step_detail_list,
+    ensure_requirement_coverage,
     filter_function_requirements,
     generate_scenario_descriptions,
     generate_scenarios,
@@ -51,6 +52,8 @@ class TestScenarioGenerationAgent:
 
         compacted_functional = [compact_requirement_for_ts(item) for item in functional]
         scenarios, warnings = generate_scenarios(compacted_functional, llm_client=self.llm_client)
+        scenarios, coverage_warnings = ensure_requirement_coverage(scenarios, compacted_functional)
+        warnings.extend(coverage_warnings)
         cases, case_warnings = generate_test_cases(scenarios, llm_client=self.llm_client)
         steps, step_warnings = generate_steps_with_llm(cases, interfaces, llm_client=self.llm_client)
         warnings.extend(case_warnings)

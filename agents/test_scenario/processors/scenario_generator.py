@@ -43,6 +43,41 @@ def generate_scenarios(
     return [_normalize_scenario(item, index) for index, item in enumerate(scenarios)], warnings
 
 
+def ensure_requirement_coverage(
+    scenarios: list[dict[str, Any]],
+    requirements: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """기능 요구사항이 최소 1개 시나리오에 추적되도록 누락분을 보정합니다."""
+
+    covered_ids = {
+        str(req_id).strip()
+        for scenario in scenarios
+        if isinstance(scenario, dict)
+        for req_id in scenario.get("source_requirement_ids", [])
+        if str(req_id).strip()
+    }
+    repaired = list(scenarios)
+    warnings: list[dict[str, Any]] = []
+    for requirement in requirements:
+        if not isinstance(requirement, dict):
+            continue
+        requirement_id = _requirement_id(requirement, len(repaired))
+        if requirement_id in covered_ids:
+            continue
+        scenario = _normalize_scenario(requirement, len(repaired))
+        repaired.append(scenario)
+        covered_ids.add(requirement_id)
+        warnings.append(
+            {
+                "code": "TS_REQUIREMENT_COVERAGE_REPAIRED",
+                "message": f"누락된 기능 요구사항 {requirement_id}에 대한 시험 시나리오를 자동 추가했습니다.",
+                "requirement_id": requirement_id,
+                "scenario_id": scenario.get("scenario_id"),
+            }
+        )
+    return repaired, warnings
+
+
 def refine_scenarios(
     scenarios: list[dict[str, Any]],
     *,

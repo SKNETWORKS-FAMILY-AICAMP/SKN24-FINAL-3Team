@@ -1,5 +1,6 @@
 from agents.test_scenario.processors.scenario_generator import (
     apply_scenario_rules,
+    ensure_requirement_coverage,
     filter_function_requirements,
     generate_scenarios,
     refine_scenarios,
@@ -18,6 +19,7 @@ from agents.test_scenario.processors.testcase_generator import (
 __all__ = [
     "apply_scenario_rules",
     "build_step_detail_list",
+    "ensure_requirement_coverage",
     "filter_function_requirements",
     "generate_scenario_descriptions",
     "generate_scenarios",

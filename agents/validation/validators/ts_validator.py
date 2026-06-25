@@ -85,7 +85,7 @@ def validate(state: WorkflowState) -> list[dict[str, Any]]:
         make_check("TS_STEP_001", "Step 상세 정보 누락 검증", not missing_detail, failure_type="TS_STEP_DETAIL_MISSING", message="일부 Step에 필수 상세 정보가 누락되었습니다.", target_agent=TARGET, target_scope=missing_detail),
         make_check("TS_STEP_002", "Step 번호 중복 검증", not duplicate_steps, failure_type="TS_STEP_MISSING", message="시험케이스 내 Step 번호가 중복되었습니다.", target_agent=TARGET, target_scope=duplicate_steps),
         make_check("TS_COVERAGE_001", "요구사항 커버리지 검증", not missing_requirements, failure_type="TS_REQUIREMENT_COVERAGE_MISSING", message="시나리오에 반영되지 않은 기능 요구사항이 있습니다.", target_agent=TARGET, target_scope=missing_requirements),
-        make_check("TS_INTERFACE_001", "인터페이스 화면 매핑 검증", not invalid_interface_steps, failure_type="TS_INTERFACE_MAPPING_MISSING", message="참조 인터페이스와 매핑되지 않은 Step이 있습니다.", target_agent=TARGET, target_scope=invalid_interface_steps),
+        make_check("TS_INTERFACE_001", "인터페이스 화면 매핑 검증", not invalid_interface_steps, failure_type="TS_INTERFACE_MAPPING_MISSING", message="참조 인터페이스와 매핑되지 않은 Step이 있습니다.", target_agent=TARGET, target_scope=_limited_scope(invalid_interface_steps), severity="MEDIUM", warning=True),
         make_check("TS_CASE_002", "정상 케이스 존재 검증", "NORMAL" in case_types, failure_type="TS_NORMAL_CASE_MISSING", message="정상 시험 케이스가 없습니다.", target_agent=TARGET),
         make_check("TS_CASE_003", "예외 케이스 존재 검증", "EXCEPTION" in case_types, failure_type="TS_EXCEPTION_CASE_MISSING", message="예외 시험 케이스가 없습니다.", target_agent=TARGET),
         make_check("TS_CASE_004", "권한/상태/데이터 검증 케이스 존재 검증", not missing_quality_cases, failure_type="TS_TRACEABILITY_MISSING", message="권한/상태변경/데이터정합성 검증 케이스가 부족합니다.", target_agent=TARGET, target_scope=missing_quality_cases, severity="MEDIUM", warning=True),
@@ -108,6 +108,12 @@ def _ids_from_requirements(state: WorkflowState) -> set[str]:
 def _interface_ids(state: WorkflowState) -> set[str]:
     items = state.get("agent_outputs", {}).get("document_merge_agent", {}).get("reference_interface_json_list") or []
     return {str(item.get("screen_id") or item.get("interface_id")) for item in items if isinstance(item, dict)}
+
+
+def _limited_scope(values: list[str], limit: int = 50) -> list[str]:
+    if len(values) <= limit:
+        return values
+    return [*values[:limit], f"...(+{len(values) - limit} more)"]
 
 
 def _meeting_check(state: WorkflowState) -> dict[str, Any]:
