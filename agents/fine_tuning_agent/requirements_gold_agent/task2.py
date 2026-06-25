@@ -133,6 +133,98 @@ def repair_task2_missing_atomic_assignments(source_fur_id: str, atomics: list[di
 
     return repaired, records
 
+
+def _atomic_reference_aliases(source_fur_id: str, atomic_id: str) -> set[str]:
+    atomic_id = str(atomic_id).strip()
+    local_id = atomic_id.split('::')[-1]
+    aliases = {atomic_id, local_id}
+
+    number_match = re.search(r'(\d+)$', local_id)
+    if number_match:
+        number = number_match.group(1)
+        compact_number = number.lstrip('0') or '0'
+        padded_number = number.zfill(3)
+        aliases.update(
+            {
+                compact_number,
+                padded_number,
+                f'A-{padded_number}',
+                f'{source_fur_id}-{padded_number}',
+                f'{source_fur_id}_{padded_number}',
+                f'{source_fur_id}.{padded_number}',
+            }
+        )
+
+    return {alias for alias in aliases if alias}
+
+
+def _build_atomic_reference_alias_map(source_fur_id: str, atomics: list[dict]) -> dict[str, str]:
+    alias_map: dict[str, str | None] = {}
+    for atomic in atomics:
+        atomic_id = str(atomic['atomic_id']).strip()
+        for alias in _atomic_reference_aliases(source_fur_id, atomic_id):
+            previous = alias_map.get(alias)
+            if previous is None and alias in alias_map:
+                continue
+            if previous and previous != atomic_id:
+                alias_map[alias] = None
+            else:
+                alias_map[alias] = atomic_id
+    return {alias: atomic_id for alias, atomic_id in alias_map.items() if atomic_id}
+
+
+def repair_task2_unknown_atomic_references(source_fur_id: str, atomics: list[dict], normalized: list[dict]) -> tuple[list[dict], list[dict]]:
+    expected_ids = {str(item['atomic_id']).strip() for item in atomics}
+    alias_map = _build_atomic_reference_alias_map(source_fur_id, atomics)
+    repaired = []
+    records = []
+
+    def repair_refs(task2_id: str, field: str, values: Any) -> list[str]:
+        fixed = []
+        for value in dedupe_preserve(values or []):
+            original = str(value).strip()
+            if not original:
+                continue
+            canonical = canonical_atomic_reference(source_fur_id, original)
+            if canonical in expected_ids:
+                fixed.append(canonical)
+                continue
+
+            local = canonical.split('::')[-1]
+            mapped = alias_map.get(canonical) or alias_map.get(local) or alias_map.get(original)
+            if mapped:
+                fixed.append(mapped)
+                records.append(
+                    {
+                        'task2_id': task2_id,
+                        'field': field,
+                        'from': canonical,
+                        'to': mapped,
+                        'reason': 'TASK2 generated a known atomic-id alias; normalized to TASK1 atomic_id.',
+                    }
+                )
+                continue
+
+            records.append(
+                {
+                    'task2_id': task2_id,
+                    'field': field,
+                    'dropped': canonical,
+                    'reason': 'TASK2 referenced an unknown atomic_id not present in TASK1 output.',
+                }
+            )
+        return dedupe_preserve(fixed)
+
+    for item in normalized:
+        item = dict(item)
+        task2_id = str(item.get('task2_id', '')).strip()
+        item['merged_from'] = repair_refs(task2_id, 'merged_from', item.get('merged_from', []))
+        item['reference_context_ids'] = repair_refs(task2_id, 'reference_context_ids', item.get('reference_context_ids', []))
+        repaired.append(item)
+
+    return repaired, records
+
+
 def validate_task2_atomic_coverage(atomics: list[dict], normalized: list[dict]) -> None:
     expected_ids = {str(item['atomic_id']).strip() for item in atomics}
     referenced_ids = set()
@@ -166,8 +258,10 @@ def stage_task2(doc_id: str, source_requirement_id: str, atomics: list[dict], *,
     user_obj = {'task_type': TASK2, 'document_id': doc_id, 'source_requirement_id': source_requirement_id, 'atomic_requirements': atomics, 'reference_contexts': [], 'lineage_constraints': {'all_atomic_ids': atomic_ids, 'merged_from_rule': '각 atomic_id는 normalized_requirements 전체의 merged_from에 정확히 1회만 배정한다.', 'reference_context_rule': '다른 요구사항의 참고 근거로 재사용할 때만 reference_context_ids에 넣는다.', 'no_new_ids': True}}
     obj, _ = get_runtime().run_task(TASK2, user_obj, raw_log_path=raw_log_path)
     normalized = normalize_task2_local_output(source_requirement_id, obj['normalized_requirements'])
+    normalized, unknown_repair_records = repair_task2_unknown_atomic_references(source_requirement_id, atomics, normalized)
     normalized, repair_records = repair_task2_primary_assignments(atomics, normalized)
     normalized, missing_repair_records = repair_task2_missing_atomic_assignments(source_requirement_id, atomics, normalized)
+    repair_records = [{'unknown_atomic_reference_repair': item} for item in unknown_repair_records] + repair_records
     repair_records.extend({'missing_atomic_fallback': item} for item in missing_repair_records)
     if repair_records:
         repair_path = raw_log_path.with_name(f'{raw_log_path.stem}_lineage_repair.json')

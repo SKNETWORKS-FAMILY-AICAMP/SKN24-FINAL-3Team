@@ -4026,11 +4026,17 @@ def _merge_db_column(base_column: dict[str, Any], candidate_column: dict[str, An
     for key in ("description", "default", "constraint"):
         value = candidate_column.get(key)
         if value not in (None, "", []):
+            if key == "constraint" and _looks_like_standard_evidence_constraint(value):
+                continue
             merged[key] = value
 
     base_constraints = base_column.get("constraints") if isinstance(base_column.get("constraints"), list) else []
     candidate_constraints = candidate_column.get("constraints") if isinstance(candidate_column.get("constraints"), list) else []
-    merged["constraints"] = list(dict.fromkeys([*base_constraints, *candidate_constraints]))
+    merged["constraints"] = [
+        item
+        for item in dict.fromkeys([*base_constraints, *candidate_constraints])
+        if not _looks_like_standard_evidence_constraint(item)
+    ]
     merged["type_and_length"] = format_type_and_length(
         base_column.get("type_and_length") or base_column.get("data_type"),
         base_column.get("length"),
@@ -4057,15 +4063,35 @@ def _db_constraints(columns: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _db_column_constraint(column: dict[str, Any]) -> str:
     explicit = column.get("constraint")
-    if explicit not in (None, "", []):
+    if explicit not in (None, "", []) and not _looks_like_standard_evidence_constraint(explicit):
         return str(explicit)
     constraints = column.get("constraints") if isinstance(column.get("constraints"), list) else []
     filtered = [
         str(item)
         for item in constraints
         if str(item).upper() not in {"PK", "FK", "INDEX", "IDX", "NOT NULL"}
+        and not _looks_like_standard_evidence_constraint(item)
     ]
     return "; ".join(filtered)
+
+
+def _looks_like_standard_evidence_constraint(value: Any) -> bool:
+    text = re.sub(r"\s+", " ", str(value or "").strip().lstrip("\ufeff"))
+    if not text:
+        return False
+    if re.search(
+        r"(?:^|[\s\[\(])(?:공통표준(?:용어|단어|도메인)|standard[_ -]?(?:term|word|domain))[_\-\s]*\d*\s*[:：]",
+        text,
+        re.IGNORECASE,
+    ):
+        return True
+    if re.search(r"\d+\s*자리\s*이내\s*문자(?:로)?\s*저장", text):
+        return True
+    if re.search(r"(?:Y/N|YN|코드|문자열?|숫자|날짜|일시|BOOLEAN|BOOL).{0,24}(?:형식|포맷|타입|도메인).{0,24}저장", text, re.IGNORECASE):
+        return True
+    if re.search(r"(?:형식|포맷|타입|도메인)(?:으로)?\s*저장", text):
+        return True
+    return False
 
 
 def _dedupe_results(results: list[Any]) -> list[dict[str, Any]]:

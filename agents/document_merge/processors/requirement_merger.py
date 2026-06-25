@@ -31,10 +31,18 @@ def merge_items(
 def _find_index(items: list[Any], target_id: Any) -> int | None:
     if target_id is None:
         return None
+    target = str(target_id)
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
-        values = (item.get("req_id"), item.get("id"), item.get("artifact_id"), item.get("screen_id"))
-        if target_id in values:
+        values = (
+            item.get("req_id"),
+            item.get("requirement_id"),
+            item.get("gold_id"),
+            item.get("id"),
+            item.get("artifact_id"),
+            item.get("screen_id"),
+        )
+        if any(str(value) == target for value in values if value is not None):
             return index
     return None

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from copy import deepcopy
 from typing import Any
 
@@ -595,10 +596,12 @@ def _extract_structured_requirements(
                 required_columns,
                 required_relationships,
             )
-        ):
+            ):
             continue
 
+        entity_tables, entity_columns = _normalize_required_entities(required_entities)
         columns = []
+        columns.extend(entity_columns)
         for column_group in required_columns or []:
             if not isinstance(column_group, dict):
                 continue
@@ -607,6 +610,7 @@ def _extract_structured_requirements(
                 or column_group.get("table")
                 or ""
             )
+            table_name = _normalize_requirement_table_name(table_name)
             for column in column_group.get("columns", []):
                 if isinstance(column, dict):
                     columns.append(
@@ -641,19 +645,19 @@ def _extract_structured_requirements(
         for relation in required_relationships or []:
             if not isinstance(relation, dict):
                 continue
-            parent = str(
+            parent = _normalize_requirement_table_name(
                 relation.get("from")
                 or relation.get("parent")
                 or relation.get("parent_table")
-                or ""
+                or "",
             )
-            child = str(
+            child = _normalize_requirement_table_name(
                 relation.get("to")
                 or relation.get("child")
                 or relation.get("child_table")
-                or ""
+                or "",
             )
-            via = str(relation.get("via") or "")
+            via = _normalize_requirement_table_name(relation.get("via") or "")
             relation_type = str(
                 relation.get("type")
                 or relation.get("relationship_type")
@@ -685,9 +689,7 @@ def _extract_structured_requirements(
                     or source.get("label")
                     or f"회의록 변경사항 {index}"
                 ),
-                "required_tables": [
-                    str(item) for item in required_entities or [] if item
-                ],
+                "required_tables": entity_tables,
                 "alternative_tables": [],
                 "required_columns": columns,
                 "required_relationships": relation_pairs,
@@ -702,6 +704,96 @@ def _extract_structured_requirements(
             }
         )
     return extracted
+
+
+def _normalize_required_entities(required_entities: Any) -> tuple[list[str], list[dict[str, Any]]]:
+    tables: list[str] = []
+    columns: list[dict[str, Any]] = []
+    if not isinstance(required_entities, list):
+        return tables, columns
+
+    for entity in required_entities:
+        if isinstance(entity, dict):
+            table_name = _entity_requirement_name(entity)
+            if table_name:
+                tables.append(table_name)
+            for column in entity.get("columns", []):
+                if not isinstance(column, dict):
+                    continue
+                column_name = str(
+                    column.get("column")
+                    or column.get("physical_name")
+                    or column.get("column_name")
+                    or ""
+                ).strip()
+                if not column_name:
+                    continue
+                columns.append(
+                    {
+                        **column,
+                        "table": table_name,
+                        "column": column_name,
+                        "logical_name": str(
+                            column.get("logical_name")
+                            or column.get("name")
+                            or column.get("column")
+                            or column_name
+                        ),
+                    }
+                )
+            continue
+
+        table_name = str(entity or "").strip()
+        if table_name:
+            tables.append(table_name)
+
+    return list(dict.fromkeys(tables)), columns
+
+
+def _entity_requirement_name(entity: dict[str, Any]) -> str:
+    return _normalize_requirement_table_name(
+        entity.get("table")
+        or entity.get("table_name")
+        or entity.get("physical_name")
+        or entity.get("entity")
+        or entity.get("entity_name")
+        or entity.get("logical_name")
+        or entity.get("name")
+        or ""
+    )
+
+
+def _normalize_requirement_table_name(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = re.sub(r"[\s_-]+", "", text.lower())
+    mapping = {
+        "사용자": "tbl_user",
+        "권한": "tbl_role",
+        "역할": "tbl_role",
+        "사용자권한": "tbl_user_role",
+        "사용자권한이력": "tbl_user_role",
+        "문서": "tbl_document",
+        "태그": "tbl_tag",
+        "문서태그": "tbl_document_tag",
+        "ai모델": "tbl_model_ai",
+        "모델": "tbl_model_ai",
+        "ai평가결과": "tbl_ai_model_eval",
+        "모델평가결과": "tbl_ai_model_eval",
+        "rag": "tbl_rag",
+        "rag지식베이스": "tbl_rag",
+        "rag버전": "tbl_rag_version",
+        "작업": "tbl_job",
+        "job": "tbl_job",
+        "작업실행로그": "tbl_job_log",
+        "실행로그": "tbl_job_log",
+        "알림": "tbl_notification",
+        "notification": "tbl_notification",
+        "조직": "tbl_org",
+        "organization": "tbl_org",
+    }
+    return mapping.get(normalized, text)
 
 
 def _column_map(table: dict[str, Any]) -> dict[str, dict[str, Any]]:

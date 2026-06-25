@@ -118,8 +118,9 @@ def _fill_srs_template(
 
     header = document.tables[0]
     _set_cell_safe(header, 1, 1, _pick(metadata, "system_name", "project_name"))
-    _set_cell_safe(header, 2, 3, str(date.today()))
-    _set_cell_safe(header, 2, 5, _pick(metadata, "version"))
+    _set_cell_safe(header, 2, 1, _pick(metadata, "stage_name", default="분석"))
+    _set_cell_safe(header, 2, 5, _pick(metadata, "created_date", "write_date", default=str(date.today())))
+    _set_cell_safe(header, 2, 7, _pick(metadata, "version"))
 
     table = document.tables[1]
     base_row_idx = 1
@@ -1066,16 +1067,22 @@ def _column_constraint_text(column: dict[str, Any]) -> str:
 
 
 def _looks_like_standard_evidence(text: Any) -> bool:
-    normalized = _to_plain_text(text).strip()
+    normalized = re.sub(r"\s+", " ", _to_plain_text(text).strip().lstrip("\ufeff"))
     if not normalized:
         return False
-    if re.match(r"^(공통표준(?:용어|단어|도메인)|standard[_ -]?(?:term|word|domain))[_\-\s]*\d*\s*[:：]", normalized, re.IGNORECASE):
-        return True
-    if re.search(r"공통표준(?:용어|단어|도메인)[_\-\s]*\d*\s*[:：]", normalized):
+    if re.search(
+        r"(?:^|[\s\[\(])(?:공통표준(?:용어|단어|도메인)|standard[_ -]?(?:term|word|domain))[_\-\s]*\d*\s*[:：]",
+        normalized,
+        re.IGNORECASE,
+    ):
         return True
     if re.search(r"\d+\s*자리\s*이내\s*문자(?:로)?\s*저장", normalized):
         return True
     if re.search(r"(?:문자열?|숫자|날짜|일시)(?:로)?\s*저장", normalized):
+        return True
+    if re.search(r"(?:Y/N|YN|코드|문자열?|숫자|날짜|일시|BOOLEAN|BOOL).{0,24}(?:형식|포맷|타입|도메인).{0,24}저장", normalized, re.IGNORECASE):
+        return True
+    if re.search(r"(?:형식|포맷|타입|도메인)(?:으로)?\s*저장", normalized):
         return True
     return False
 

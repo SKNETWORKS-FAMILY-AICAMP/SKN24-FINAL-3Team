@@ -127,6 +127,8 @@ class RequirementGenerationAgent:
             max_workers=self.max_parallel_workers,
         )
         warnings.extend(supplement_warnings)
+        final_items, duplicate_name_warnings = _dedupe_requirement_names(final_items)
+        warnings.extend(duplicate_name_warnings)
 
         output: dict[str, Any] = {
             "status": "SUCCESS",
@@ -298,6 +300,53 @@ def _extract_gold_items(gold_output: dict[str, Any]) -> list[dict[str, Any]]:
         if isinstance(value, list):
             return [dict(item) for item in value if isinstance(item, dict)]
     return []
+
+
+def _dedupe_requirement_names(items: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    seen: dict[str, int] = {}
+    result: list[dict[str, Any]] = []
+    warnings: list[dict[str, Any]] = []
+
+    for index, item in enumerate(items, start=1):
+        copied = dict(item)
+        name = str(copied.get("requirement_name") or copied.get("req_name") or "").strip()
+        if not name:
+            result.append(copied)
+            continue
+
+        key = _normalized_requirement_name_key(name)
+        count = seen.get(key, 0) + 1
+        seen[key] = count
+        if count > 1:
+            suffix = _requirement_suffix(copied, count)
+            new_name = f"{name} ({suffix})"
+            copied["requirement_name"] = new_name
+            if "req_name" in copied:
+                copied["req_name"] = new_name
+            warnings.append(
+                {
+                    "code": "SRS_DUPLICATE_REQUIREMENT_NAME_RENAMED",
+                    "message": "중복 요구사항명을 자동으로 구분했습니다.",
+                    "original_name": name,
+                    "new_name": new_name,
+                    "index": index,
+                }
+            )
+        result.append(copied)
+
+    return result, warnings
+
+
+def _normalized_requirement_name_key(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _requirement_suffix(item: dict[str, Any], count: int) -> str:
+    for key in ("requirement_id", "req_id", "gold_id", "id"):
+        value = str(item.get(key) or "").strip()
+        if value:
+            return value
+    return str(count)
 
 
 def _document_id(state: WorkflowState) -> str:

@@ -1056,15 +1056,21 @@ def _clean_column_constraints(value: Any) -> list[str]:
 
 
 def _looks_like_standard_evidence(text: str) -> bool:
-    normalized = str(text or "").strip()
+    normalized = re.sub(r"\s+", " ", str(text or "").strip().lstrip("\ufeff"))
     if not normalized:
         return False
-    if re.match(r"^(공통표준(?:용어|단어|도메인)|standard[_ -]?(?:term|word|domain))[_\-\s]*\d*\s*[:：]", normalized, re.IGNORECASE):
-        return True
-    if re.search(r"공통표준(?:용어|단어|도메인)[_\-\s]*\d*\s*[:：]", normalized):
+    if re.search(
+        r"(?:^|[\s\[\(])(?:공통표준(?:용어|단어|도메인)|standard[_ -]?(?:term|word|domain))[_\-\s]*\d*\s*[:：]",
+        normalized,
+        re.IGNORECASE,
+    ):
         return True
     if re.search(r"\d+\s*자리\s*이내\s*문자(?:로)?\s*저장", normalized):
         return True
     if re.search(r"(?:문자열?|숫자|날짜|일시)(?:로)?\s*저장", normalized):
+        return True
+    if re.search(r"(?:Y/N|YN|코드|문자열?|숫자|날짜|일시|BOOLEAN|BOOL).{0,24}(?:형식|포맷|타입|도메인).{0,24}저장", normalized, re.IGNORECASE):
+        return True
+    if re.search(r"(?:형식|포맷|타입|도메인)(?:으로)?\s*저장", normalized):
         return True
     return False

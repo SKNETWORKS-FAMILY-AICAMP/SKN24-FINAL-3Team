@@ -5,5 +5,5 @@ qdrant_storage/
 requests/
 tests/
 old/
-logs/alpled.log
+logs/
 requests/generate.http

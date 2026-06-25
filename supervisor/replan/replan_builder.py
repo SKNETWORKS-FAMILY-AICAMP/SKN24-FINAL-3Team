@@ -27,6 +27,11 @@ def build_replan(
         target_agents = _infer_agents_from_failure_type(failure_type)
 
     agents = list(target_agents)
+    if docs_cd == "SRS" and udt_yn == "Y":
+        agents = [
+            "document_merge_agent" if agent == "requirement_generation_agent" else agent
+            for agent in agents
+        ]
     if docs_cd == "ERD" and "data_structure_design_agent" in agents:
         data_index = agents.index("data_structure_design_agent")
         if "mermaid_generation_agent" not in agents:

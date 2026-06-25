@@ -68,7 +68,38 @@ Content-Type: application/json
 
 {
   "project_sn": {{projectSn}},
-  "docs_cd": "ARCH",
+  "docs_cd": "SRS",
+  "udt_yn": "N",
+  "file_list": [3],
+  "image_list": [],
+  "etc": {
+    "debug": true
+  }
+}
+
+
+### Generate ARCH from RFP
+POST https://sjew63qksfe141-8000.proxy.runpod.net/generate
+Content-Type: application/json
+
+{
+  "project_sn": {{projectSn}},
+  "docs_cd": "ERD",
+  "udt_yn": "N",
+  "file_list": [],
+  "image_list": [],
+  "etc": {
+    "debug": true
+  }
+}
+
+### Generate ARCH from RFP
+POST http://localhost:8000/generate
+Content-Type: application/json
+
+{
+  "project_sn": {{projectSn}},
+  "docs_cd": "ERD",
   "udt_yn": "N",
   "file_list": [],
   "image_list": [],
