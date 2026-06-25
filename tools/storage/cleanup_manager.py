@@ -55,6 +55,7 @@ def cleanup_workflow_resources(
 
     config = settings or get_settings()
     cleanup_targets = [
+        state.get("workflow_temp_dir"),
         *state.get("input_file_paths", []),
         *state.get("input_image_paths", []),
         *state.get("extracted_image_paths", []),

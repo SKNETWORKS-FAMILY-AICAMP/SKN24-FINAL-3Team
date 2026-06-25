@@ -23,6 +23,7 @@ class WorkflowState(TypedDict, total=False):
     etc: dict[str, Any]
 
     # 3. Local Resource
+    workflow_temp_dir: str | None
     input_file_paths: list[str]
     input_image_paths: list[str]
 

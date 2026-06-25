@@ -1,6 +1,7 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, cast
 from urllib.parse import urlparse
 
@@ -101,6 +102,7 @@ def request_preprocess_node(
             result["file_list"],
             file_records,
             dependencies,
+            result,
         )
         result["base_rfp_path"] = _select_downloaded_rfp_path(
             result["file_list"],
@@ -109,7 +111,7 @@ def request_preprocess_node(
         )
 
         _log_info(result, "preprocess_download_images", "Resolving input images")
-        result["input_image_paths"] = _download_image_paths(result["image_list"], dependencies)
+        result["input_image_paths"] = _download_image_paths(result["image_list"], dependencies, result)
 
         _log_info(
             result,
@@ -157,6 +159,8 @@ def request_preprocess_node(
 
 
 def _initialize_state(state: WorkflowState) -> WorkflowState:
+    settings = get_settings()
+    workflow_temp_dir = _workflow_temp_dir(state, settings.input_dir)
     return {
         "project_sn": state.get("project_sn"),  # type: ignore[typeddict-item]
         "docs_cd": normalize_docs_cd(state.get("docs_cd")) if state.get("docs_cd") is not None else None,  # type: ignore[typeddict-item]
@@ -169,6 +173,7 @@ def _initialize_state(state: WorkflowState) -> WorkflowState:
         "file_list": list(state.get("file_list", [])),
         "image_list": list(state.get("image_list", [])),
         "etc": dict(state.get("etc", {})),
+        "workflow_temp_dir": str(workflow_temp_dir),
         "input_file_paths": [],
         "input_image_paths": [],
         "base_rfp_path": None,
@@ -184,12 +189,12 @@ def _initialize_state(state: WorkflowState) -> WorkflowState:
         "agent_outputs": {},
         "execution_plan": {},
         "current_round": 0,
-        "max_round": get_settings().max_round,
+        "max_round": settings.max_round,
         "supervisor_decision": None,
         "repair_history": [],
         "current_repair_instruction": None,
         "repair_round": 0,
-        "max_repair_round": get_settings().max_round,
+        "max_repair_round": settings.max_round,
         "validation_result": None,
         "final_document_json": None,
         "export_result": None,
@@ -197,6 +202,21 @@ def _initialize_state(state: WorkflowState) -> WorkflowState:
         "warnings": [],
         "errors": [],
     }
+
+
+def _workflow_temp_dir(state: WorkflowState, input_dir: Path) -> Path:
+    identifier = (
+        (state.get("etc") or {}).get("request_id")
+        or (state.get("etc") or {}).get("job_id")
+        or state.get("request_id")
+        or state.get("job_id")
+        or f"{state.get('project_sn') or 'project'}_{state.get('docs_cd') or 'docs'}_{id(state)}"
+    )
+    safe_identifier = "".join(
+        character if character.isalnum() or character in {"-", "_"} else "_"
+        for character in str(identifier)
+    ).strip("_")
+    return (input_dir / (safe_identifier or "workflow")).resolve()
 
 
 def _validate_request(state: WorkflowState) -> None:
@@ -257,12 +277,14 @@ def _resolve_required_documents(
             state["existing_output_path"] = _download_required_document(
                 context["before"],
                 dependencies,
+                state,
                 missing_code="BEFORE_OUTPUT_NOT_FOUND",
                 missing_message="수정 전 ERD 문서를 찾을 수 없습니다.",
             )
             state["requested_output_path"] = _download_required_document(
                 context["requested"],
                 dependencies,
+                state,
                 missing_code="REQUESTED_OUTPUT_NOT_FOUND",
                 missing_message="승인 요청 ERD 문서를 찾을 수 없습니다.",
             )
@@ -307,6 +329,7 @@ def _resolve_required_documents(
         state["existing_output_path"] = _download_required_document(
             active_doc,
             dependencies,
+            state,
             missing_code="EXISTING_OUTPUT_NOT_FOUND",
             missing_message="Existing generated document could not be found for update mode.",
         )
@@ -321,6 +344,7 @@ def _resolve_required_documents(
     state["base_requirement_json_path"] = _download_required_document(
         active_srs,
         dependencies,
+        state,
         missing_code="BASE_REQUIREMENT_JSON_NOT_FOUND",
         missing_message="Latest requirement JSON could not be found for this project.",
     )
@@ -333,6 +357,7 @@ def _resolve_required_documents(
         state["erd_file_path"] = _download_required_document(
             active_erd,
             dependencies,
+            state,
             missing_code="ACTIVE_ERD_NOT_FOUND",
             missing_message="Latest ERD document is required before DB generation.",
         )
@@ -351,6 +376,7 @@ def _resolve_required_documents(
         state["interface_file_path"] = _download_required_document(
             active_interface,
             dependencies,
+            state,
             missing_code="ACTIVE_INTERFACE_NOT_FOUND",
             missing_message="Latest INTERFACE document is required before TS generation.",
         )
@@ -423,13 +449,15 @@ def _download_file_records(
     file_sn_list: list[int],
     records_by_sn: dict[int, Any],
     dependencies: RequestPreprocessDependencies,
+    state: WorkflowState,
 ) -> list[str]:
-    return [_download_record(records_by_sn[file_sn], dependencies) for file_sn in file_sn_list]
+    return [_download_record(records_by_sn[file_sn], dependencies, state) for file_sn in file_sn_list]
 
 
 def _download_image_paths(
     image_list: list[str],
     dependencies: RequestPreprocessDependencies,
+    state: WorkflowState,
 ) -> list[str]:
     downloaded_paths: list[str] = []
 
@@ -443,7 +471,7 @@ def _download_image_paths(
         else:
             record = {"s3_key": source}
 
-        downloaded_paths.append(_download_record(record, dependencies))
+        downloaded_paths.append(_download_record(record, dependencies, state))
 
     return downloaded_paths
 
@@ -451,6 +479,7 @@ def _download_image_paths(
 def _download_active_doc(
     docs_detail: Any | None,
     dependencies: RequestPreprocessDependencies,
+    state: WorkflowState,
 ) -> str:
     if docs_detail is None:
         raise PreprocessError("ACTIVE_DOC_NOT_FOUND", "Active document could not be found.")
@@ -465,6 +494,7 @@ def _download_active_doc(
                 or str(docs_path).replace("\\", "/").split("/")[-1],
             },
             dependencies,
+            state,
         )
 
     file_sn = _read_value(docs_detail, "file_sn")
@@ -478,12 +508,13 @@ def _download_active_doc(
     if file_record is None:
         raise PreprocessError("FILE_NOT_FOUND", f"File record could not be found: {file_sn}")
 
-    return _download_record(file_record, dependencies)
+    return _download_record(file_record, dependencies, state)
 
 
 def _download_required_document(
     record: Any | None,
     dependencies: RequestPreprocessDependencies,
+    state: WorkflowState,
     *,
     missing_code: str,
     missing_message: str,
@@ -491,7 +522,7 @@ def _download_required_document(
     if record is None:
         raise PreprocessError(missing_code, missing_message)
 
-    return _download_active_doc(record, dependencies)
+    return _download_active_doc(record, dependencies, state)
 
 
 def _read_docs_detail_json(docs_detail: Any | None) -> dict[str, Any] | None:
@@ -525,6 +556,7 @@ def _read_docs_detail_json(docs_detail: Any | None) -> dict[str, Any] | None:
 def _download_record(
     file_record: Any,
     dependencies: RequestPreprocessDependencies,
+    state: WorkflowState,
 ) -> str:
     file_path = _read_value(file_record, "file_path")
     s3_key = _read_value(file_record, "s3_key")
@@ -542,6 +574,7 @@ def _download_record(
         s3_key=s3_key,
         s3_bucket=s3_bucket,
         file_name=file_name,
+        destination_dir=state.get("workflow_temp_dir"),
     )
 
     if not download_result["success"]:
