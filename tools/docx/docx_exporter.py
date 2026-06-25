@@ -1050,14 +1050,34 @@ def _erd_key_marker(column: dict[str, Any], constraints: Any, marker: str) -> st
 
 def _column_constraint_text(column: dict[str, Any]) -> str:
     explicit = _pick(column, "constraint")
-    if explicit:
+    if explicit and not _looks_like_standard_evidence(explicit):
         return explicit
     constraints = column.get("constraints")
     if isinstance(constraints, list):
-        filtered = [str(item) for item in constraints if str(item).upper() not in {"PK", "FK", "INDEX", "IDX", "NOT NULL"}]
+        filtered = [
+            str(item)
+            for item in constraints
+            if str(item).upper() not in {"PK", "FK", "INDEX", "IDX", "NOT NULL"}
+            and not _looks_like_standard_evidence(str(item))
+        ]
         if filtered:
             return ", ".join(filtered)
     return ""
+
+
+def _looks_like_standard_evidence(text: Any) -> bool:
+    normalized = _to_plain_text(text).strip()
+    if not normalized:
+        return False
+    if re.match(r"^(공통표준(?:용어|단어|도메인)|standard[_ -]?(?:term|word|domain))[_\-\s]*\d*\s*[:：]", normalized, re.IGNORECASE):
+        return True
+    if re.search(r"공통표준(?:용어|단어|도메인)[_\-\s]*\d*\s*[:：]", normalized):
+        return True
+    if re.search(r"\d+\s*자리\s*이내\s*문자(?:로)?\s*저장", normalized):
+        return True
+    if re.search(r"(?:문자열?|숫자|날짜|일시)(?:로)?\s*저장", normalized):
+        return True
+    return False
 
 
 def _clean_optional_text(value: Any) -> str:

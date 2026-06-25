@@ -465,7 +465,7 @@ def _constraints(table: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _column_constraint_text(column: dict[str, Any]) -> str:
-    constraints = column.get("constraints") if isinstance(column.get("constraints"), list) else []
+    constraints = _clean_column_constraints(column.get("constraints"))
     return "; ".join(
         str(item)
         for item in constraints
@@ -510,7 +510,8 @@ def _apply_column_standard(
     column: dict[str, Any],
     standards: list[dict[str, str]],
 ) -> dict[str, Any]:
-    is_pk = "PK" in column.get("constraints", [])
+    source_constraints = _clean_column_constraints(column.get("constraints"))
+    is_pk = "PK" in source_constraints
     physical = str(column.get("physical_name") or column.get("column_name") or "")
     fallback_logical = display_column_name(column.get("logical_name"), physical, table.get("physical_name"), is_pk)
     standard = _best_standard_match(fallback_logical, column.get("logical_name"), physical, standards)
@@ -520,7 +521,7 @@ def _apply_column_standard(
             physical_name=physical,
             logical_name=fallback_logical,
             data_type=data_type,
-            constraints=column.get("constraints", []),
+            constraints=source_constraints,
             default_value=column.get("default"),
             table_physical_name=table.get("physical_name"),
         )
@@ -532,7 +533,7 @@ def _apply_column_standard(
             "synonym": _clean_optional_text(column.get("synonym")),
             "standard_source": column.get("standard_source"),
             "default": default_value,
-            "constraints": list(dict.fromkeys([*(column.get("constraints") or []), *inferred_constraints])),
+            "constraints": list(dict.fromkeys([*source_constraints, *inferred_constraints])),
         }
 
     data_type, length = _standard_type_and_length(standard, column)
@@ -541,7 +542,7 @@ def _apply_column_standard(
         physical_name=physical_name,
         logical_name=standard.get("term") or fallback_logical,
         data_type=data_type,
-        constraints=column.get("constraints", []),
+        constraints=source_constraints,
         default_value=column.get("default"),
         table_physical_name=table.get("physical_name"),
     )
@@ -553,7 +554,7 @@ def _apply_column_standard(
         "length": length,
         "synonym": _clean_optional_text(standard.get("synonym") or column.get("synonym")),
         "default": default_value,
-        "constraints": list(dict.fromkeys([*(column.get("constraints") or []), *inferred_constraints])),
+        "constraints": list(dict.fromkeys([*source_constraints, *inferred_constraints])),
         "standard_source": {
             "doc_type": standard.get("doc_type"),
             "title": standard.get("title"),
@@ -879,6 +880,8 @@ def _normalize_column_constraints(raw_constraints: Any, raw_constraint: Any, is_
         text = str(candidate).strip()
         if not text:
             continue
+        if _looks_like_standard_evidence(text):
+            continue
         upper = text.upper()
         if upper in {"PK", "PRIMARY KEY"}:
             if "PK" not in values:
@@ -1000,6 +1003,8 @@ def _truthy(value: Any) -> bool:
 
 
 def _looks_like_business_constraint(text: str) -> bool:
+    if _looks_like_standard_evidence(text):
+        return False
     keywords = {
         "마스킹",
         "암호",
@@ -1036,5 +1041,30 @@ def _looks_like_db_constraint(text: str) -> bool:
     if upper.startswith("FK "):
         return True
     if "/" in text and len(text) <= 80:
+        return True
+    return False
+
+
+def _clean_column_constraints(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [
+        str(item).strip()
+        for item in value
+        if str(item).strip() and not _looks_like_standard_evidence(str(item))
+    ]
+
+
+def _looks_like_standard_evidence(text: str) -> bool:
+    normalized = str(text or "").strip()
+    if not normalized:
+        return False
+    if re.match(r"^(공통표준(?:용어|단어|도메인)|standard[_ -]?(?:term|word|domain))[_\-\s]*\d*\s*[:：]", normalized, re.IGNORECASE):
+        return True
+    if re.search(r"공통표준(?:용어|단어|도메인)[_\-\s]*\d*\s*[:：]", normalized):
+        return True
+    if re.search(r"\d+\s*자리\s*이내\s*문자(?:로)?\s*저장", normalized):
+        return True
+    if re.search(r"(?:문자열?|숫자|날짜|일시)(?:로)?\s*저장", normalized):
         return True
     return False
