@@ -20,7 +20,7 @@ def analyze_meetings(
         parsed = parse_artifact(path)
         if parsed["success"]:
             data = parsed["data"]
-            texts.append((path, str(data.get("text") or json.dumps(data.get("raw_json", data), ensure_ascii=False))))
+            texts.append((path, _meeting_text(data)))
         else:
             warnings.append({"code": "MEETING_PARSE_FAILED", "message": parsed["error"]["message"], "file_path": path})
 
@@ -68,3 +68,32 @@ def analyze_meetings(
         {"change_type": "UPDATE", "source_path": path, "target_id": None, "content": text}
         for path, text in texts
     ], warnings
+
+
+def _meeting_text(data: dict[str, Any]) -> str:
+    parts: list[str] = []
+    text = str(data.get("text") or "").strip()
+    if text:
+        parts.append(text)
+
+    tables = data.get("tables")
+    if isinstance(tables, list):
+        table_lines: list[str] = []
+        for table_index, table in enumerate(tables, start=1):
+            if not isinstance(table, list):
+                continue
+            rows = []
+            for row in table:
+                if not isinstance(row, list):
+                    continue
+                cells = [str(cell).strip() for cell in row if str(cell).strip()]
+                if cells:
+                    rows.append(" | ".join(cells))
+            if rows:
+                table_lines.append(f"[표 {table_index}]\n" + "\n".join(rows))
+        if table_lines:
+            parts.append("\n\n".join(table_lines))
+
+    if parts:
+        return "\n\n".join(parts)
+    return str(json.dumps(data.get("raw_json", data), ensure_ascii=False))

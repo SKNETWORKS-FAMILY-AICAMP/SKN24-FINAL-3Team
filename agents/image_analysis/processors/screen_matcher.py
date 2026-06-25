@@ -59,12 +59,13 @@ def match_creation_screens(
 
 
 def match_update_screens(
-    artifacts: list[dict[str, Any]],
+    artifacts: list[Any],
     analyses: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     screens: list[dict[str, Any]] = []
     used_images: set[str] = set()
-    for index, artifact in enumerate(artifacts):
+    for index, raw_artifact in enumerate(artifacts):
+        artifact = _normalize_update_artifact(raw_artifact, index)
         matched = next((analysis for analysis in analyses if _matches(artifact, analysis)), None)
         if matched:
             used_images.add(matched["image_path"])
@@ -97,6 +98,41 @@ def match_update_screens(
                 }
             )
     return screens
+
+
+def _normalize_update_artifact(item: Any, index: int) -> dict[str, Any]:
+    """기존 INTERFACE 산출물이 비구조 텍스트로 파싱돼도 수정 흐름이 죽지 않게 보정합니다."""
+
+    if isinstance(item, dict):
+        return item
+
+    text = _artifact_text(item).strip()
+    screen_name = _guess_screen_name(text, index)
+    return {
+        "screen_id": f"SCR-{index + 1:03d}",
+        "screen_name": screen_name,
+        "name": screen_name,
+        "description": text,
+        "screen_overview": text,
+        "matched_requirement_ids": ["UNKNOWN"],
+        "parse_warning": "INTERFACE artifact was not structured and was normalized from text.",
+    }
+
+
+def _artifact_text(item: Any) -> str:
+    if item is None:
+        return ""
+    if isinstance(item, (list, tuple, set)):
+        return " ".join(_artifact_text(value) for value in item if value is not None)
+    return str(item)
+
+
+def _guess_screen_name(text: str, index: int) -> str:
+    for line in text.splitlines():
+        candidate = line.strip()
+        if candidate:
+            return candidate[:80]
+    return f"화면 {index + 1}"
 
 
 def _matches(requirement: dict[str, Any], analysis: dict[str, Any]) -> bool:
