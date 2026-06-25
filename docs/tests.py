@@ -1543,6 +1543,10 @@ class DocumentWorkflowViewTests(TestCase):
         self.assertEqual(response.context["history_scope_label"], "같은 산출물 종류의 문서 버전 이력을 확인할 수 있습니다.")
         self.assertEqual(len(response.context["revision_rows"]), 1)
         self.assertEqual(response.context["revision_rows"][0]["sn"], document.sn)
+        self.assertEqual(
+            response.context["revision_rows"][0]["preview_url"],
+            reverse("doc_history_preview", args=[document.sn, 44]),
+        )
 
     def test_edit_mode_revision_history_uses_current_document_details(self):
         document = self._create_document(sn=144, version="0", user=self.user)

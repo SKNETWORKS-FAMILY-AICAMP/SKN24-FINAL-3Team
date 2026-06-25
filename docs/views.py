@@ -1205,7 +1205,11 @@ def document_detail(request, document_sn):
         )
         revision_rows = []
         for revision_document in document_revisions:
-            revision_detail = get_latest_detail(revision_document)
+            revision_detail = (
+                revision_document.details.filter(is_deleted="N")
+                .order_by("created_at", "sn")
+                .first()
+            )
             revision_rows.append(
                 {
                     "sn": revision_document.sn,
