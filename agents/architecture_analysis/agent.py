@@ -18,6 +18,7 @@ from agents.architecture_analysis.processors import (
     build_component_relations,
     build_deployment_environment,
     build_layers,
+    ensure_component_connectivity,
     extract_existing_structure,
     filter_architecture_requirements,
     normalize_architecture_config,
@@ -301,7 +302,11 @@ class ArchitectureAnalysisAgent:
             "ARCH_RELATION_LLM_FAILED",
         )
         relations = value.get("relations") if isinstance(value, dict) else None
-        return normalize_relations(relations if isinstance(relations, list) and relations else fallback, components)
+        return ensure_component_connectivity(
+            normalize_relations(relations if isinstance(relations, list) and relations else fallback, components),
+            components,
+            architecture_config=architecture_config,
+        )
 
     def _build_layers(
         self,

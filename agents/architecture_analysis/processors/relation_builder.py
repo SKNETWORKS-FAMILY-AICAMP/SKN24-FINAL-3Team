@@ -85,7 +85,11 @@ def build_component_relations(
     if not relations:
         relations = _minimal_layer_relations(normalized_components, architecture_config)
 
-    return normalize_relations(relations, normalized_components)
+    return ensure_component_connectivity(
+        normalize_relations(relations, normalized_components),
+        normalized_components,
+        architecture_config=architecture_config,
+    )
 
 
 def normalize_relations(
@@ -118,6 +122,177 @@ def normalize_relations(
             }
         )
     return relations
+
+
+def ensure_component_connectivity(
+    relations: list[dict[str, Any]],
+    components: list[dict[str, Any]],
+    architecture_config: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """고립 컴포넌트가 생기지 않도록 최소 관계를 보강합니다.
+
+    LLM이 일부 컴포넌트의 relation을 누락해도 ARCH_COMPONENT_002 검증에서 실패하지 않도록,
+    컴포넌트의 역할/계층을 기준으로 가장 자연스러운 허브에 연결합니다.
+    """
+    architecture_config = architecture_config or {}
+    normalized_components = [c for c in components if isinstance(c, dict) and c.get("component_id")]
+    if len(normalized_components) < 2:
+        return normalize_relations(relations, normalized_components)
+
+    result = normalize_relations(relations, normalized_components)
+    component_by_id = {str(component["component_id"]): component for component in normalized_components}
+
+    while True:
+        connected = {
+            str(value)
+            for relation in result
+            for value in (relation.get("source"), relation.get("target"))
+            if value
+        }
+        isolated_ids = [cid for cid in component_by_id if cid not in connected]
+        if not isolated_ids:
+            return _renumber_relations(result)
+
+        appended = False
+        for component_id in isolated_ids:
+            component = component_by_id[component_id]
+            relation = _connect_isolated_component(
+                component,
+                normalized_components,
+                connected,
+                architecture_config,
+            )
+            if not relation:
+                continue
+            candidate = normalize_relations([relation], normalized_components)
+            if not candidate:
+                continue
+            rel = candidate[0]
+            exists = any(
+                existing.get("source") == rel.get("source")
+                and existing.get("target") == rel.get("target")
+                and existing.get("description") == rel.get("description")
+                for existing in result
+            )
+            if exists:
+                continue
+            result.append(rel)
+            appended = True
+
+        if not appended:
+            # 모든 컴포넌트가 고립된 특수 상황에서는 계층 순서 기반 최소 체인으로 보강합니다.
+            result.extend(normalize_relations(_minimal_layer_relations(normalized_components, architecture_config), normalized_components))
+            return _renumber_relations(result)
+
+
+def _connect_isolated_component(
+    component: dict[str, Any],
+    components: list[dict[str, Any]],
+    connected_ids: set[str],
+    architecture_config: dict[str, Any],
+) -> dict[str, Any] | None:
+    component_id = str(component.get("component_id") or "")
+    if not component_id:
+        return None
+
+    layer = str(component.get("layer") or "")
+    text = _component_text(component)
+    by_layer = _group_by_layer(components)
+
+    app_hub = _select_hub(
+        components,
+        connected_ids,
+        preferred_layers=["Application Layer", "Agent Orchestration Layer", "Presentation Layer"],
+        preferred_words=["api", "backend", "application", "service", "업무", "was", "workflow"],
+        exclude_id=component_id,
+    )
+    entry_hub = _select_hub(
+        components,
+        connected_ids,
+        preferred_layers=["External Actor", "Presentation Layer"],
+        preferred_words=["user", "client", "web", "portal", "사용자", "화면"],
+        exclude_id=component_id,
+    )
+
+    if any(word in text for word in ["security", "보안", "firewall", "방화벽", "waf", "gate", "gateway"]):
+        target = app_hub or _first_non_self(components, component_id)
+        if target:
+            return _rel(component, target, "보안 정책 적용 후 업무 요청 전달", _external_protocol(architecture_config))
+        source = entry_hub or _first_non_self(components, component_id)
+        return _rel(source, component, "보안 정책 및 접근 제어 적용", _external_protocol(architecture_config)) if source else None
+
+    if layer in DATA_LAYERS or any(word in text for word in ["cache", "redis", "session", "세션", "캐시", "database", "storage", "bucket", "vector"]):
+        source = app_hub or _first(by_layer, ["Agent Orchestration Layer", "Application Layer", "Presentation Layer"]) or _first_non_self(components, component_id)
+        return _rel(source, component, _data_description(component, workflow=_is_workflow_component(source)), _data_protocol(component, architecture_config)) if source else None
+
+    if layer in OPERATION_LAYERS or any(word in text for word in ["log", "monitor", "metric", "운영", "로그", "모니터"]):
+        source = app_hub or _first_non_self(components, component_id)
+        return _rel(source, component, "업무 처리 로그 및 상태 수집", _operation_protocol(component, architecture_config)) if source else None
+
+    source = app_hub or entry_hub or _first_non_self(components, component_id)
+    return _rel(source, component, "컴포넌트 간 처리 흐름", _internal_protocol(architecture_config)) if source else None
+
+
+def _select_hub(
+    components: list[dict[str, Any]],
+    connected_ids: set[str],
+    *,
+    preferred_layers: list[str],
+    preferred_words: list[str],
+    exclude_id: str,
+) -> dict[str, Any] | None:
+    candidates = [component for component in components if str(component.get("component_id") or "") != exclude_id]
+    connected_candidates = [component for component in candidates if str(component.get("component_id") or "") in connected_ids]
+    search_order = connected_candidates + [component for component in candidates if component not in connected_candidates]
+
+    for layer in preferred_layers:
+        for component in search_order:
+            if str(component.get("layer") or "") == layer and _looks_like(component, preferred_words):
+                return component
+    for layer in preferred_layers:
+        for component in search_order:
+            if str(component.get("layer") or "") == layer:
+                return component
+    for component in search_order:
+        if _looks_like(component, preferred_words):
+            return component
+    return search_order[0] if search_order else None
+
+
+def _first_non_self(components: list[dict[str, Any]], component_id: str) -> dict[str, Any] | None:
+    for component in components:
+        if str(component.get("component_id") or "") != component_id:
+            return component
+    return None
+
+
+def _is_workflow_component(component: dict[str, Any] | None) -> bool:
+    if not component:
+        return False
+    return str(component.get("layer") or "") in ORCHESTRATION_LAYERS or _looks_like(component, ["workflow", "orchestration", "agent", "워크플로우", "에이전트"])
+
+
+def _component_text(component: dict[str, Any]) -> str:
+    return f"{component.get('component_id', '')} {component.get('name', '')} {component.get('description', '')} {component.get('role', '')}".lower()
+
+
+def _renumber_relations(relations: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for relation in relations:
+        if not isinstance(relation, dict):
+            continue
+        source = str(relation.get("source") or "")
+        target = str(relation.get("target") or "")
+        description = str(relation.get("description") or "컴포넌트 간 연동")
+        if not source or not target or source == target:
+            continue
+        key = (source, target, description)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized.append({**relation, "relation_id": f"REL-{len(normalized) + 1:03d}"})
+    return normalized
 
 
 def _group_by_layer(components: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:

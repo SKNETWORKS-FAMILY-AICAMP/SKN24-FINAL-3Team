@@ -25,6 +25,7 @@ from agents.architecture_analysis.processors.config_normalizer import (
 )
 from agents.architecture_analysis.processors.relation_builder import (
     build_component_relations,
+    ensure_component_connectivity,
     normalize_relations,
 )
 
@@ -42,6 +43,7 @@ __all__ = [
     "build_component_candidates",
     "merge_components_with_stack_fallback",
     "build_component_relations",
+    "ensure_component_connectivity",
     "build_deployment_environment",
     "build_layers",
     "extract_existing_structure",
