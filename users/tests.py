@@ -231,6 +231,26 @@ class UserViewTests(TestCase):
         self.assertEqual(self.admin.department, "Platform")
         self.assertEqual(self.admin.position, "Lead")
 
+    def test_profile_update_allows_blank_department_and_position(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("user_profile"),
+            {
+                "name": "Updated Admin",
+                "department": "",
+                "position": "",
+                "new_password": "",
+                "new_password_confirm": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.name, "Updated Admin")
+        self.assertIsNone(self.admin.department)
+        self.assertIsNone(self.admin.position)
+
     def test_profile_page_renders_same_validation_constraints_as_user_modals(self):
         self.client.force_login(self.admin)
 
@@ -241,9 +261,9 @@ class UserViewTests(TestCase):
         self.assertContains(response, 'pattern="[A-Za-z가-힣 ]+"', html=False)
         self.assertContains(response, 'title="이름은 한글 또는 영문으로 2자 이상 100자 이하로 입력해 주세요."', html=False)
         self.assertContains(response, 'id="profile-department"', html=False)
-        self.assertContains(response, 'title="부서는 한글 또는 영문으로 2자 이상 100자 이하로 입력해 주세요."', html=False)
+        self.assertContains(response, 'title="부서는 한글 또는 영문으로 최대 100자까지 입력해 주세요."', html=False)
         self.assertContains(response, 'id="profile-position"', html=False)
-        self.assertContains(response, 'title="직급은 한글 또는 영문으로 2자 이상 100자 이하로 입력해 주세요."', html=False)
+        self.assertContains(response, 'title="직급은 한글 또는 영문으로 최대 100자까지 입력해 주세요."', html=False)
 
     def test_profile_update_rejects_invalid_name_department_and_position_values(self):
         self.client.force_login(self.admin)
@@ -258,11 +278,11 @@ class UserViewTests(TestCase):
             ),
             (
                 {"name": "Admin", "department": "Platform1", "position": "Lead"},
-                "부서는 한글 또는 영문으로 최소 2자에서 최대 100자까지 입력할 수 있습니다.",
+                "부서는 한글 또는 영문으로 최대 100자까지 입력할 수 있습니다.",
             ),
             (
                 {"name": "Admin", "department": "Platform", "position": "Lead1"},
-                "직급은 한글 또는 영문으로 최소 2자에서 최대 100자까지 입력할 수 있습니다.",
+                "직급은 한글 또는 영문으로 최대 100자까지 입력할 수 있습니다.",
             ),
         ]
 
@@ -387,6 +407,27 @@ class UserViewTests(TestCase):
         self.assertEqual(created_user.use_yn, YesNoChoices.NO)
         self.assertTrue(created_user.check_password(TEMP_PASSWORD))
 
+    def test_create_user_allows_blank_department_and_position(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("user_list"),
+            {
+                "action": "create_user",
+                "user_id": "EMP202406",
+                "name": "Hong",
+                "department": "",
+                "position": "",
+                "use_yn": YesNoChoices.YES,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        created_user = User.objects.get(user_id="EMP202406")
+        self.assertIsNone(created_user.department)
+        self.assertIsNone(created_user.position)
+
     def test_create_user_validates_registration_constraints(self):
         self.client.force_login(self.admin)
 
@@ -396,12 +437,12 @@ class UserViewTests(TestCase):
                 "이름은 한글 또는 영문으로 최소 2자에서 최대 100자까지 입력할 수 있습니다.",
             ),
             (
-                {"user_id": "EMP202403", "name": "Hong", "department": "D", "position": "Manager"},
-                "부서는 한글 또는 영문으로 최소 2자에서 최대 100자까지 입력할 수 있습니다.",
+                {"user_id": "EMP202403", "name": "Hong", "department": "Development1", "position": "Manager"},
+                "부서는 한글 또는 영문으로 최대 100자까지 입력할 수 있습니다.",
             ),
             (
-                {"user_id": "EMP202404", "name": "Hong", "department": "Development", "position": "M"},
-                "직급은 한글 또는 영문으로 최소 2자에서 최대 100자까지 입력할 수 있습니다.",
+                {"user_id": "EMP202404", "name": "Hong", "department": "Development", "position": "Manager1"},
+                "직급은 한글 또는 영문으로 최대 100자까지 입력할 수 있습니다.",
             ),
             (
                 {"user_id": "EMP20240", "name": "Hong1", "department": "Development", "position": "Manager"},
@@ -448,12 +489,12 @@ class UserViewTests(TestCase):
                 "이름은 한글 또는 영문으로 최소 2자에서 최대 100자까지 입력할 수 있습니다.",
             ),
             (
-                {"name": "Member", "department": "QA1", "position": "Lead"},
-                "부서는 한글 또는 영문으로 최소 2자에서 최대 100자까지 입력할 수 있습니다.",
+                {"name": "Member", "department": "Platform1", "position": "Lead"},
+                "부서는 한글 또는 영문으로 최대 100자까지 입력할 수 있습니다.",
             ),
             (
                 {"name": "Member", "department": "Platform", "position": "Lead1"},
-                "직급은 한글 또는 영문으로 최소 2자에서 최대 100자까지 입력할 수 있습니다.",
+                "직급은 한글 또는 영문으로 최대 100자까지 입력할 수 있습니다.",
             ),
         ]
 
@@ -477,6 +518,28 @@ class UserViewTests(TestCase):
                     (self.member.name, self.member.department, self.member.position),
                     original_values,
                 )
+
+    def test_update_user_allows_blank_department_and_position(self):
+        self.client.force_login(self.admin)
+
+        response = self.client.post(
+            reverse("user_list"),
+            {
+                "action": "update_user",
+                "user_sn": str(self.member.sn),
+                "name": "Updated Member",
+                "department": "",
+                "position": "",
+                "use_yn": YesNoChoices.YES,
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+
+        self.member.refresh_from_db()
+        self.assertEqual(self.member.name, "Updated Member")
+        self.assertIsNone(self.member.department)
+        self.assertIsNone(self.member.position)
 
     def test_create_user_rejects_duplicate_user_id(self):
         self.client.force_login(self.admin)

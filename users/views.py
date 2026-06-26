@@ -143,7 +143,7 @@ def _build_create_form_data(request=None):
     }
 
 
-def _validate_user_text(value, field_subject):
+def _validate_required_user_text(value, field_subject):
     length = len(value)
     if (
         length < USER_TEXT_MIN_LENGTH
@@ -151,6 +151,14 @@ def _validate_user_text(value, field_subject):
         or not USER_TEXT_PATTERN.fullmatch(value)
     ):
         return f"{field_subject} 한글 또는 영문으로 최소 2자에서 최대 100자까지 입력할 수 있습니다."
+    return ""
+
+
+def _validate_optional_user_text(value, field_subject):
+    if not value:
+        return ""
+    if len(value) > USER_TEXT_MAX_LENGTH or not USER_TEXT_PATTERN.fullmatch(value):
+        return f"{field_subject} 한글 또는 영문으로 최대 100자까지 입력할 수 있습니다."
     return ""
 
 
@@ -181,15 +189,13 @@ def _update_profile(request, user):
         messages.error(request, "이름을 입력해 주세요.")
         return False, form_data
 
-    error_message = _validate_user_text(form_data["name"], "이름은")
+    error_message = _validate_required_user_text(form_data["name"], "이름은")
     if error_message:
         messages.error(request, error_message)
         return False, form_data
 
     for field_name, field_label in (("department", "부서는"), ("position", "직급은")):
-        if not form_data[field_name]:
-            continue
-        error_message = _validate_user_text(form_data[field_name], field_label)
+        error_message = _validate_optional_user_text(form_data[field_name], field_label)
         if error_message:
             messages.error(request, error_message)
             return False, form_data
@@ -243,20 +249,13 @@ def _create_user(request):
         messages.error(request, "이름을 입력해 주세요.")
         return False, form_data
 
-    if not form_data["department"]:
-        messages.error(request, "부서를 입력해 주세요.")
+    error_message = _validate_required_user_text(form_data["name"], "이름은")
+    if error_message:
+        messages.error(request, error_message)
         return False, form_data
 
-    if not form_data["position"]:
-        messages.error(request, "직급을 입력해 주세요.")
-        return False, form_data
-
-    for field_name, field_label in (
-        ("name", "이름은"),
-        ("department", "부서는"),
-        ("position", "직급은"),
-    ):
-        error_message = _validate_user_text(form_data[field_name], field_label)
+    for field_name, field_label in (("department", "부서는"), ("position", "직급은")):
+        error_message = _validate_optional_user_text(form_data[field_name], field_label)
         if error_message:
             messages.error(request, error_message)
             return False, form_data
@@ -342,19 +341,13 @@ def _update_user(request):
     if not form_data["name"]:
         messages.error(request, "이름을 입력해 주세요.")
         return
-    if not form_data["department"]:
-        messages.error(request, "부서를 입력해 주세요.")
-        return
-    if not form_data["position"]:
-        messages.error(request, "직급을 입력해 주세요.")
+    error_message = _validate_required_user_text(form_data["name"], "이름은")
+    if error_message:
+        messages.error(request, error_message)
         return
 
-    for field_name, field_label in (
-        ("name", "이름은"),
-        ("department", "부서는"),
-        ("position", "직급은"),
-    ):
-        error_message = _validate_user_text(form_data[field_name], field_label)
+    for field_name, field_label in (("department", "부서는"), ("position", "직급은")):
+        error_message = _validate_optional_user_text(form_data[field_name], field_label)
         if error_message:
             messages.error(request, error_message)
             return
@@ -364,8 +357,8 @@ def _update_user(request):
         return
 
     target_user.name = form_data["name"]
-    target_user.department = form_data["department"]
-    target_user.position = form_data["position"]
+    target_user.department = form_data["department"] or None
+    target_user.position = form_data["position"] or None
     target_user.use_yn = form_data["use_yn"]
     target_user.updated_by = request.user
     target_user.save(update_fields=["name", "department", "position", "use_yn", "updated_by"])
