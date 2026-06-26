@@ -20,6 +20,10 @@ GENERIC_TABLE_IDENTIFIERS = {
     "tbl_object",
     "tbl_item",
 }
+DISTINCT_SIMILAR_TABLE_TOKEN_PAIRS = {
+    tuple(sorted(("stats", "status"))),
+    tuple(sorted(("stat", "status"))),
+}
 
 
 def prepare_db_quality(document: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -136,7 +140,7 @@ def inspect_db_quality(document: dict[str, Any]) -> dict[str, Any]:
             named_tables.append((resolved_name.removeprefix("tbl_"), resolved_name))
     for index, (left_name, left_scope) in enumerate(named_tables):
         for right_name, right_scope in named_tables[index + 1 :]:
-            if left_name != right_name and SequenceMatcher(None, left_name, right_name).ratio() >= 0.9:
+            if _looks_like_duplicate_table_identifier(left_name, right_name):
                 similar_scopes.add(tuple(sorted((left_scope, right_scope))))
     for scopes in sorted(similar_scopes):
         errors.append(_issue("DB_TABLE_SEMANTIC_DUPLICATED", list(scopes), "유사한 물리 테이블명이 중복 후보로 확인되었습니다."))
@@ -203,6 +207,22 @@ def _logical_name_from_table_identifier(table_name: str) -> str:
         if token
     ]
     return " ".join(token.capitalize() for token in tokens)
+
+
+def _looks_like_duplicate_table_identifier(left_name: str, right_name: str) -> bool:
+    if left_name == right_name:
+        return False
+    normalized_pair = tuple(sorted((left_name, right_name)))
+    if normalized_pair in DISTINCT_SIMILAR_TABLE_TOKEN_PAIRS:
+        return False
+    ratio = SequenceMatcher(None, left_name, right_name).ratio()
+    if ratio < 0.95:
+        return False
+    left_tokens = set(left_name.split("_"))
+    right_tokens = set(right_name.split("_"))
+    if ("_" in left_name or "_" in right_name) and left_tokens and right_tokens and left_tokens.isdisjoint(right_tokens):
+        return False
+    return True
 
 
 def _issue(code: str, scope: Any, message: str) -> dict[str, Any]:

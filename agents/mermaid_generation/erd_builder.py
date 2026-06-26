@@ -15,7 +15,7 @@ def build_erd_mermaid(
     entities = structure.get("entities") or structure.get("tables") or []
     relationships = structure.get("relationships") or structure.get("relations") or []
     entity_identifier_by_physical = _entity_identifier_map(entities)
-    lines = ["erDiagram"]
+    lines = [_mermaid_init_directive(), "erDiagram"]
     for entity in entities:
         name = str(
             entity.get("entity_name")
@@ -68,7 +68,7 @@ def build_erd_domain_summary_mermaid(structure: dict[str, Any]) -> str:
         domain = str(entity.get("domain_group") or entity.get("table_type") or "ETC")
         by_domain[domain].append(entity)
 
-    lines = ["flowchart TD"]
+    lines = [_mermaid_init_directive(), "flowchart TD"]
     for domain in sorted(by_domain):
         domain_id = _identifier(f"DOMAIN_{domain}")
         lines.append(f"    subgraph {domain_id}[{_summary_label(domain)}]")
@@ -89,6 +89,24 @@ def _core_columns(columns: list[dict[str, Any]], *, max_columns: int = 6) -> lis
         if _is_core_column(column):
             selected.append(column)
     return selected[:max_columns]
+
+
+def _mermaid_init_directive() -> str:
+    return (
+        '%%{init: {"theme": "base", '
+        '"themeVariables": {'
+        '"fontFamily": "NanumGothic, Noto Sans CJK KR, Noto Sans KR, Malgun Gothic, Arial, sans-serif", '
+        '"fontSize": "18px", '
+        '"primaryTextColor": "#111827", '
+        '"lineColor": "#64748B"'
+        '}, '
+        '"themeCSS": ".er.entityBox, .er.attributeBoxEven, .er.attributeBoxOdd, .er.relationshipLabel, '
+        '.er.entityLabel, .er.attributeLabel, .er.cardinalityText { '
+        'font-family: NanumGothic, Noto Sans CJK KR, Noto Sans KR, Malgun Gothic, Arial, sans-serif !important; '
+        'font-size: 18px !important; }", '
+        '"er": {"useMaxWidth": false}'
+        '} }%%'
+    )
 
 
 def _is_core_column(column: dict[str, Any]) -> bool:
