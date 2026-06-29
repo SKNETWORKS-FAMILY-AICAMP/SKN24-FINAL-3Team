@@ -75,7 +75,7 @@
 
 ### **<h3> 2.3.2. AI-DLC(AI Driven Development Lifecycle)** </h3>
 
-![필요성2](./image/필요성2.webp)
+![필요성2](./image/필요성3_2.webp)
 
 - AI-DLC는 AI가 단순한 보조 도구를 넘어 소프트웨어 개발의 전 과정을 주도하는 차세대 방법론이며, AI-DLC는 기존 SDLC를 대체하는 완전히 새로운 개념이라기보다, AI Agent를 중심으로 개발 생명주기를 재구성한 구조임
 <br>
