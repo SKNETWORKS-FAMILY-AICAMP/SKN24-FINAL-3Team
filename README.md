@@ -266,7 +266,7 @@ AIDLC는 단순 모델 테스트에 그치지 않고, 사용자가 실제로 프
 * **산출물 다운로드 및 이력 관리 지원** : 최종 승인된 산출물과 이전 생성 결과를 관리하여 프로젝트 산출물의 추적성과 재사용성을 높임
 
 ## 11. 수행결과
-
+[시연영상](https://drive.google.com/file/d/1fwwHMRIUXacZywl-572xzIK7LrnTVQaO/view?usp=sharing)
 
 ## 12. 한 줄 회고
 
