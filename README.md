@@ -54,12 +54,14 @@
 
 본 프로젝트는 **AI-DLC(AI 협업 소프트웨어 개발 방법론)**를 기반으로 소프트웨어 개발 생명주기에서 반복적으로 작성되는 주요 개발 산출물을 자동 생성 및 워크스페이스 내에서 수정하여 개발 산출물들을 관리하는 플랫폼입니다.
 <br>
-(./image/메인페이지.png)
+![메인페이지](./image/메인페이지.png)
  
 
 ## **2.3 프로젝트 배경 및 필요성**
 
 ### **<h3> 2.3.1. 전통적인 SDLC의 한계** </h3>
+
+![필요성1](./image/필요성1.webp)
 
 - SDLC는 SI 프로젝트를 개발할때 필수적으로 사용하는 소프트웨어 개발 생명주기이며 성공적인 프로젝트 수행을 위해 단계별로 문서화되어야 함
 <br>
@@ -72,6 +74,8 @@
 
 
 ### **<h3> 2.3.2. AI-DLC(AI Driven Development Lifecycle)** </h3>
+
+![필요성2](./image/필요성2.webp)
 
 - AI-DLC는 AI가 단순한 보조 도구를 넘어 소프트웨어 개발의 전 과정을 주도하는 차세대 방법론이며, AI-DLC는 기존 SDLC를 대체하는 완전히 새로운 개념이라기보다, AI Agent를 중심으로 개발 생명주기를 재구성한 구조임
 <br>
@@ -88,6 +92,8 @@
 
 
 ### **<h3> 2.3.3. AI-DLC 글로벌 시장 현황** </h3>
+
+![필요성3](./image/필요성3.webp)
 
 - 생성형 AI 시장의 규모 및 성장은 2025년 6.9억 달러에서 2026년 9.6억 달러 (성장률 38.6%)로 증가했고 2030년 29.2억 달러 (연평균 성장률 32.2%)로 전망
 <br>
@@ -187,21 +193,21 @@
 - **Qwen3-VL-8B-Instruct 선택 이유**: 문서 산출물 생성 품질, 근거 반영 정확도, 구조화 출력 준수율이 비교 모델 중 가장 우수하게 나타남. ALPLED는 사용자 요구사항 정의서, 인터페이스 설계서, 아키텍처 설계서 등 정형 산출물을 생성해야 하므로, 단순 추론 속도보다 실제 산출물이 얼마나 정확하고 안정적으로 생성되는지를 우선하여 **Qwen3-VL-8B-Instruct**를 선정함.
 
 ## 5. 🧩시스템 아키텍처
-![시스템 아키텍처](./image/시스템아키텍처.png)
+![시스템 아키텍처](./image/시스템%20아키텍처.png)
 
 ## 5.1. ERD
 ![ERD](./image/erd.png)
 
 ## 6. 🖼️ WBS
-![WBS](https://drive.google.com/file/d/1GexfIF200kazt--7p8Y_9_unNBqGNcEq/view)
+[WBS](https://drive.google.com/file/d/1GexfIF200kazt--7p8Y_9_unNBqGNcEq/view)
 ## 7. 📝요구사항 명세서
-![요구사항 명세서]( https://drive.google.com/file/d/1u4lXpHCEdzL4BWZ9JUSXrgniPfX2l5X-/view)
+[요구사항 명세서]( https://drive.google.com/file/d/1u4lXpHCEdzL4BWZ9JUSXrgniPfX2l5X-/view)
 
 ## 8. 📺화면 설계서
-![화면 설계서](https://drive.google.com/file/d/1dsYRLhlAViEpEZvITHu3XkqBcuFsZD_-/view)
+[화면 설계서](https://drive.google.com/file/d/1dsYRLhlAViEpEZvITHu3XkqBcuFsZD_-/view)
 
 ## 9. 📻 테스트 계획 및 결과 보고서
-![테스트 계획 및 결과 보고서](https://drive.google.com/file/d/1uB1gkUaUf935MfTbedQ-kZDzgOW14FA1/view)
+[테스트 계획 및 결과 보고서](https://drive.google.com/file/d/1uB1gkUaUf935MfTbedQ-kZDzgOW14FA1/view)
 ## 10. 서비스모델 성능 개선을 위한 노력
 
 ### ☑️ 주요 개선 사항 1 : Supervisor Node 기반 멀티에이전트 오케스트레이션
