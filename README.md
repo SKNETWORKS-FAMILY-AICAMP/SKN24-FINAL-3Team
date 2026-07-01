@@ -21,7 +21,6 @@
 | 김정현 | <a href="https://github.com/Jeich-16"><img src="https://img.shields.io/badge/Jeich--16-181717?style=for-the-badge&logo=github&logoColor=white"/></a> |
 | 박세현 | <a href="https://github.com/parksay"><img src="https://img.shields.io/badge/parksay-181717?style=for-the-badge&logo=github&logoColor=white"/></a> |
 | 정재훈 | <a href="https://github.com/JeaHoon-J"><img src="https://img.shields.io/badge/JeaHoon--J-181717?style=for-the-badge&logo=github&logoColor=white"/></a> |
-| 정준하 | <a href="https://github.com/junhaj27-jpg"><img src="https://img.shields.io/badge/junhaj27--jpg-181717?style=for-the-badge&logo=github&logoColor=white"/></a> |
 
 # **Contents**
 
@@ -277,5 +276,4 @@ AIDLC는 단순 모델 테스트에 그치지 않고, 사용자가 실제로 프
 | 김정현   |  ㅇ |
 | 박세현   |  ㅇ |
 | 정재훈   |  ㅇ |
-| 정준하   |  ㅇ |
 
